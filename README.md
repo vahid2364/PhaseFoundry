@@ -13,19 +13,14 @@ Features:
 
 Contributors:
 -------------
-- Vahid Attari, Arroyave Research Group, Texas A&M University
-- Adapted from original MATLAB implementation (CH_EI.m)
-
-Model Name:
-------------
-CALPHAD-Reinforced CH-PFM (Cahn–Hilliard Phase-Field Model)
-
-Model Name:
-------------
 - Phase-field Models: Vahid Attari, Ph.D., TAMU (attari.v@tamu.edu)
   - Semi-implicit solver for Cahn-Hillaird Model coupled to semi-analytic derivatives of thermodynamic properties
 - pyCALPHAD model: Courtney Kunselman, TAMU (cjkunselman18@tamu.edu)
   - semi-analytic derivatives of thermodynamic properties
+  
+Model Name:
+------------
+CALPHAD-Reinforced Microstructure Modeling using Cahn–Hilliard Phase-Field Model
 
 License:
 ---------
