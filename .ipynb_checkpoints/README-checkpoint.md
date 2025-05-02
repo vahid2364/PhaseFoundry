@@ -1,5 +1,6 @@
-PROOJECT PhaseFoundry: A “foundry” for phase-field, CALPHAD, and ML interatomic potentials 
+PROOJECT PhaseFoundry: 
 ====================================
+- A “foundry” for phase-field, CALPHAD, and ML interatomic potentials 
 
 Description:
 -------------
