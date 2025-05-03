@@ -13,10 +13,12 @@ Features:
 
 Contributors:
 -------------
-- Phase-field Models: Vahid Attari, Ph.D., TAMU (attari.v@tamu.edu)
+- From Thermodynamic Potentials to Microstructure Evolution: Vahid Attari, Ph.D., TAMU (attari.v@tamu.edu)
   - Semi-implicit solver for Cahn-Hillaird Model coupled to semi-analytic derivatives of thermodynamic properties
-- pyCALPHAD model: Courtney Kunselman, TAMU (cjkunselman18@tamu.edu)
-  - semi-analytic derivatives of thermodynamic potentials
+- From Thermodynamic description to Chemical Potentials: Courtney Kunselman, TAMU (cjkunselman18@tamu.edu)
+  - Semi-analytic derivatives of thermodynamic potentials
+- From Phase to Thermodynamic Description: Doguhan Sariturk, TAMU (sariturk@tamu.edu)
+  - Accelerating CALPHAD-based Phase Diagram Predictions Using machine learning interatomic potentials (MLIPs)
   
 Model Name:
 ------------
