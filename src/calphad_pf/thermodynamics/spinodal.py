@@ -318,6 +318,156 @@ def spinodal_boundary_multi(
     return results
 
 
+# ── PFM parameter recommendation ─────────────────────────────────────────────
+
+def recommend_pfm_params(
+    calphad_fit: dict,
+    temperature_K: float,
+    c0: float,
+    n_interfaces: int = 10,
+    delta_over_dx: float = 5.0,
+    safety: float = 0.4,
+    M: float | None = None,
+) -> dict:
+    """
+    Recommend phase-field simulation parameters derived from the G_m spline.
+
+    Uses the Cahn-Hilliard length scales:
+
+        Interface width   δ  = sqrt(κ / |d²G/dx²|_max)
+        Most unstable λ*     = 4π · sqrt(κ / |d²G/dx²|_c0)
+        Stable dt            = safety · dx² / (M_eff_max · |d²G/dx²|_max)
+
+    Parameters
+    ----------
+    calphad_fit : dict
+        Output of ``build_gm_spline_surrogate()``.
+    temperature_K : float
+        Simulation temperature in Kelvin.
+    c0 : float
+        Mean initial composition (mol fraction of reference element).
+    n_interfaces : int
+        Number of spinodal wavelengths λ* that the domain should contain.
+        Controls the recommended domain size Lx = n_interfaces × λ*.
+    delta_over_dx : float
+        Required number of grid points per interface width.
+        Controls the grid spacing: dx = δ / delta_over_dx.
+    safety : float
+        Stability safety factor for dt (default 0.4).
+    M : float, optional
+        Mobility [m⁵/(J·s)].  Required for dt recommendation.
+
+    Returns
+    -------
+    dict with keys:
+        kappa_min   float   Minimum κ for δ = delta_over_dx × dx  [J·m²/mol]
+        lambda_star float   Most unstable spinodal wavelength at c0  [m]
+        lambda_crit float   Critical wavelength (onset of instability)  [m]
+        delta       float   Interface width at kappa_min  [m]
+        Lx_min      float   Minimum domain size  [m]
+        N_min       int     Minimum grid points (next power of 2)
+        dx          float   Grid spacing  [m]
+        dt_stable   float or None   Stable time step if M is given  [s]
+        d2G_max     float   |d²G/dx²|_max  [J/mol]
+        d2G_c0      float   |d²G/dx²| at c0  [J/mol]
+        spinodal_lo float or None   Lower spinodal boundary
+        spinodal_hi float or None   Upper spinodal boundary
+        c0_in_spinodal bool   Whether c0 lies inside the spinodal region
+    """
+    stored_T = np.array(calphad_fit["temperatures_K"])
+    T_K      = stored_T[int(np.argmin(np.abs(stored_T - temperature_K)))]
+    el_key   = list(calphad_fit["fits"][T_K]["models"].keys())[0]
+    mdl      = calphad_fit["fits"][T_K]["models"][el_key]
+
+    if "spline_dfdx" not in mdl:
+        raise ValueError(
+            "recommend_pfm_params() requires a calphad_gm_spline surrogate "
+            "(spline_dfdx key missing). Use build_gm_spline_surrogate()."
+        )
+
+    spl_dfdx = mdl["spline_dfdx"]
+    x        = np.linspace(0.01, 0.99, 2000)
+    d2G      = spl_dfdx.derivative()(x)
+
+    d2G_max = float(np.max(np.abs(d2G)))
+    d2G_c0  = float(abs(float(spl_dfdx.derivative()(c0))))
+
+    # Spinodal boundaries: zero-crossings of d²G/dx²
+    sign      = np.sign(d2G)
+    crossings = np.where(np.diff(sign) != 0)[0]
+    boundaries = []
+    for idx in crossings:
+        x0, x1 = x[idx], x[idx + 1]
+        f0, f1 = d2G[idx], d2G[idx + 1]
+        if f1 != f0:
+            boundaries.append(float(x0 - f0 * (x1 - x0) / (f1 - f0)))
+    sp_lo = min(boundaries) if len(boundaries) >= 2 else None
+    sp_hi = max(boundaries) if len(boundaries) >= 2 else None
+    c0_in_spinodal = (sp_lo is not None and sp_hi is not None
+                      and sp_lo < c0 < sp_hi)
+
+    # κ_min: interface spans delta_over_dx grid points
+    # δ = sqrt(κ / d2G_max)  and  δ = delta_over_dx × dx
+    # λ* = 4π sqrt(κ / d2G_c0)
+    # dx = δ / delta_over_dx  →  κ_min determined by choosing δ = 5×dx self-consistently
+    # Starting guess: any κ; solve dx = Lx/N with N large enough
+    # Simplest: set δ/dx = delta_over_dx and pick κ, then derive Lx from λ*
+
+    # We want: δ = delta_over_dx × dx  and  Lx = n_interfaces × λ*
+    # From δ = sqrt(κ/d2G_max): κ = δ² × d2G_max
+    # From λ* = 4π sqrt(κ/d2G_c0): λ* = 4π × δ × sqrt(d2G_max/d2G_c0)
+    # dx = δ / delta_over_dx
+    # N = Lx / dx = n_interfaces × λ* / dx
+
+    d2G_c0_safe = max(d2G_c0, 1e-10)
+    d2G_max_safe = max(d2G_max, 1e-10)
+
+    lambda_star = 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)   # at κ=1 (scale below)
+    lambda_crit = 2.0 * np.pi * np.sqrt(2.0 / d2G_c0_safe)
+
+    # Choose κ_min such that δ = delta_over_dx × (Lx/N) and N is power-of-2
+    # Iterative: start with N=256, compute dx, then δ, then κ, then λ*, then Lx, then N
+    N_guess = 256
+    for _ in range(10):
+        Lx_guess = n_interfaces * 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)
+        dx_guess = Lx_guess / N_guess
+        delta_guess = delta_over_dx * dx_guess
+        kappa_min = delta_guess ** 2 * d2G_max_safe
+        lambda_star = 4.0 * np.pi * np.sqrt(kappa_min / d2G_c0_safe)
+        lambda_crit = 2.0 * np.pi * np.sqrt(2.0 * kappa_min / d2G_c0_safe)
+        Lx_min = n_interfaces * lambda_star
+        dx = delta_guess / delta_over_dx
+        N_raw = Lx_min / dx
+        # Round up to next power of 2
+        N_min = int(2 ** np.ceil(np.log2(N_raw)))
+        if abs(N_min - N_guess) < 2:
+            break
+        N_guess = N_min
+
+    delta = delta_guess
+
+    dt_stable = None
+    if M is not None:
+        M_eff_max = M * 0.25   # degenerate mobility peak at c=0.5
+        dt_stable = safety * dx ** 2 / (M_eff_max * d2G_max_safe)
+
+    return {
+        "kappa_min":       kappa_min,
+        "lambda_star":     lambda_star,
+        "lambda_crit":     lambda_crit,
+        "delta":           delta,
+        "Lx_min":          Lx_min,
+        "N_min":           N_min,
+        "dx":              dx,
+        "dt_stable":       dt_stable,
+        "d2G_max":         d2G_max,
+        "d2G_c0":          d2G_c0,
+        "spinodal_lo":     sp_lo,
+        "spinodal_hi":     sp_hi,
+        "c0_in_spinodal":  c0_in_spinodal,
+    }
+
+
 # ── plotting ──────────────────────────────────────────────────────────────────
 
 def plot_spinodal(

@@ -891,3 +891,123 @@ def plot_free_energy_history(
     if show:
         plt.show()
     plt.close()
+
+
+def plot_gm_with_pfm(
+    result: CHResult,
+    calphad_fit: dict,
+    temperature_K: float,
+    output_dir: str | Path | None = None,
+    show: bool = False,
+) -> None:
+    """
+    Combined figure: G_m landscape (left) + final PFM composition field (right).
+
+    The left panel shows the molar Gibbs energy G_m(c) from the CALPHAD spline,
+    with the spinodal region shaded and vertical lines marking the initial mean
+    composition c0, and the min/max compositions reached at the final snapshot.
+    The right panel shows the final composition field from the PFM simulation.
+
+    Parameters
+    ----------
+    result : CHResult
+        Output of solve_cahn_hilliard_binary().
+    calphad_fit : dict
+        Output of build_gm_spline_surrogate() — must contain spline_gm.
+    temperature_K : float
+        Temperature used in the simulation (for labelling).
+    output_dir : str or Path, optional
+        If given, saves ``gm_pfm_combined.png`` there.
+    show : bool
+        Call plt.show().
+    """
+    stored_T = np.array(calphad_fit["temperatures_K"])
+    T_K      = stored_T[int(np.argmin(np.abs(stored_T - temperature_K)))]
+    el_key   = list(calphad_fit["fits"][T_K]["models"].keys())[0]
+    mdl      = calphad_fit["fits"][T_K]["models"][el_key]
+
+    if "spline_gm" not in mdl or "spline_dfdx" not in mdl:
+        raise ValueError(
+            "plot_gm_with_pfm() requires calphad_gm_spline surrogate "
+            "(spline_gm and spline_dfdx keys required)."
+        )
+
+    spl_gm   = mdl["spline_gm"]
+    spl_dfdx = mdl["spline_dfdx"]
+
+    x    = np.linspace(0.001, 0.999, 600)
+    gm   = spl_gm(x)
+    d2G  = spl_dfdx.derivative()(x)
+
+    # Mechanical mixture (linear) reference
+    gm_0 = float(spl_gm(0.0))
+    gm_1 = float(spl_gm(1.0))
+    linear_ref = gm_0 * (1.0 - x) + gm_1 * x
+
+    # Final composition stats
+    c_final = result.composition
+    c0_mean = result.composition_history[0].mean()
+    c_min   = float(c_final.min())
+    c_max   = float(c_final.max())
+    t_final = result.time_history[-1]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    # ── left: G_m landscape ───────────────────────────────────────────────
+    ax = axes[0]
+    ax.plot(x, gm, color="#1f77b4", lw=2.2, label="$G_m(x)$  CALPHAD spline")
+    ax.plot(x, linear_ref, color="gray", lw=1.2, ls="--", label="Mechanical mixture (ref)")
+
+    # ΔG_mix = G_m - linear_ref shaded where negative
+    dGmix = gm - linear_ref
+    ax.fill_between(x, gm, linear_ref, where=(dGmix < 0),
+                    alpha=0.15, color="#d62728", label="$\\Delta G_{mix} < 0$  (driving force)")
+
+    # Spinodal region: where d²G/dx² < 0
+    spinodal_mask = d2G < 0
+    if spinodal_mask.any():
+        ax.fill_between(x, gm.min() - 500, gm, where=spinodal_mask,
+                        alpha=0.08, color="#9467bd", label="Spinodal region ($d^2G/dx^2 < 0$)")
+
+    # Mark compositions
+    ax.axvline(c0_mean, color="#2ca02c", lw=1.5, ls=":", label=f"$c_0$ = {c0_mean:.3f}")
+    ax.axvline(c_min,   color="#d62728", lw=1.5, ls="-.",
+               label=f"$c_{{min}}$ = {c_min:.3f}  (Nb-rich)")
+    ax.axvline(c_max,   color="#1f77b4", lw=1.5, ls="-.",
+               label=f"$c_{{max}}$ = {c_max:.3f}  (V-rich)")
+
+    ax.set_xlabel("$x_V$  (mol fraction V)", fontsize=12)
+    ax.set_ylabel("$G_m$  (J/mol)", fontsize=12)
+    ax.set_title(
+        f"$G_m$ landscape — {temperature_K - 273.15:.0f} °C\n"
+        f"Nb-V BCC",
+        fontsize=11,
+    )
+    ax.legend(fontsize=8, frameon=False, loc="upper right")
+    ax.grid(False)
+
+    # ── right: final PFM composition field ───────────────────────────────
+    ax2 = axes[1]
+    im = ax2.imshow(
+        c_final, cmap="RdBu_r", origin="lower",
+        vmin=c_min, vmax=c_max,
+    )
+    plt.colorbar(im, ax=ax2, label="$x_V$  (mol fraction V)", shrink=0.85)
+    ax2.set_title(
+        f"PFM composition field\n$t$ = {t_final:.3g} s  "
+        f"($c_0$ = {c0_mean:.2f})",
+        fontsize=11,
+    )
+    ax2.set_xticks([])
+    ax2.set_yticks([])
+    ax2.grid(False)
+
+    plt.tight_layout()
+
+    if output_dir is not None:
+        p = Path(output_dir) / "gm_pfm_combined.png"
+        plt.savefig(p, dpi=150, bbox_inches="tight")
+        print(f"  Saved → {p}")
+    if show:
+        plt.show()
+    plt.close()

@@ -29,7 +29,7 @@ from .storage import load_table, save_table, table_info
 from .plot import plot_free_energy_vs_composition, plot_chemical_potential_vs_composition
 from .spinodal import (
     spinodal_boundary_binary, spinodal_boundary_multi, plot_spinodal,
-    binodal_boundary_binary, plot_phase_diagram,
+    binodal_boundary_binary, plot_phase_diagram, recommend_pfm_params,
 )
 from .fitting import fit_delta_mu, save_fits, load_fits, eval_delta_mu, build_spline_surrogate, build_gm_spline_surrogate
 
