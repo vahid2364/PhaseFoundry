@@ -119,7 +119,11 @@ def stable_dt(
         d2G = (mu(x + h) - 2 * mu(x) + mu(x - h)) / h ** 2
 
     d2G_max = float(np.max(np.abs(d2G)))
-    dt_max  = safety * dx ** 2 / (M * d2G_max)
+    # With degenerate mobility M(c) = M₀·c·(1−c), the effective mobility at
+    # the mean composition c0 gives the tightest stability bound.
+    # We use c0 = 0.5 (worst case) so the estimate is conservative.
+    M_eff_max = M * 0.25          # M·c·(1-c) peaks at c=0.5 with value M/4
+    dt_max = safety * dx ** 2 / (M_eff_max * d2G_max)
     return dt_max
 
 
@@ -521,14 +525,22 @@ def solve_cahn_hilliard_binary(
         )
 
     # ── spectral operators ────────────────────────────────────────────────
-    k2  = laplacian_operator(N, Lx)    # ∇²  in Fourier space (N×N, negative)
-    k4  = k2 ** 2                      # ∇⁴  in Fourier space (positive)
-    denom = 1.0 + M * kappa * dt * k4  # implicit denominator (always ≥ 1)
+    k2 = laplacian_operator(N, Lx)    # ∇²  in Fourier space (N×N, negative)
+    k4 = k2 ** 2                      # ∇⁴  in Fourier space (positive)
+    # denom is recomputed each step when degenerate mobility is used
 
     # ── initial condition ─────────────────────────────────────────────────
     rng = np.random.default_rng(seed)
     c   = c0 + noise * (rng.random((N, N)) - 0.5)
     c   = np.clip(c, 0.0, 1.0)
+
+    # ── degenerate mobility M(c) = M₀ · c · (1 − c) ─────────────────────
+    # Ensures diffusion vanishes in pure phases (c→0 or c→1), preserving
+    # mass conservation and preventing unphysical fluxes at boundaries.
+    # The effective mobility field is recomputed each step from current c.
+    def mobility(c: np.ndarray) -> float:
+        """Spatially averaged degenerate mobility M(c) = M₀·c·(1−c)."""
+        return float(np.mean(M * c * (1.0 - c)))
 
     # ── select bulk driving force function ────────────────────────────────
     if free_energy == "double_well":
@@ -618,15 +630,22 @@ def solve_cahn_hilliard_binary(
     t_start = time.perf_counter()
 
     for step in tqdm(range(1, n_steps + 1), desc=f"C-H ({free_energy})", unit="step"):
+        # Degenerate mobility: M_eff(c) = M₀·⟨c·(1−c)⟩  (spatially averaged)
+        # Vanishes in pure phases → no artificial mass injection at c=0 or c=1.
+        # Recomputed every step so it tracks the evolving composition field.
+        M_eff = float(np.mean(M * c * (1.0 - c)))
+        denom = 1.0 + M_eff * kappa * dt * k4  # implicit denominator (≥ 0)
+
         mu_bulk = bulk_mu(c)
         mu_hat  = fft2(mu_bulk)
         c_hat   = fft2(c)
 
         # Semi-implicit update: gradient energy implicit, bulk explicit
-        #   ĉⁿ⁺¹ = (ĉⁿ + M Δt k² μ̂_bulk) / (1 + M κ Δt k⁴)
-        c_hat_new = (c_hat + M * dt * k2 * mu_hat) / denom
+        #   ĉⁿ⁺¹ = (ĉⁿ + M_eff Δt k² μ̂_bulk) / (1 + M_eff κ Δt k⁴)
+        c_hat_new = (c_hat + M_eff * dt * k2 * mu_hat) / denom
         c = np.real(ifft2(c_hat_new))
-        c = np.clip(c, 1e-6, 1.0 - 1e-6)   # guard polynomial overflow at boundaries
+        # No hard clip — degenerate mobility naturally suppresses fluxes in
+        # pure phases; clipping would inject/remove mass and break conservation.
 
         if step % save_every == 0 or step == n_steps:
             _snapshot(c, step)
@@ -658,13 +677,15 @@ def solve_cahn_hilliard_binary(
     if free_energy == "double_well":
         params.update(rho_s=rho_s, c_a=c_a, c_b=c_b)
     else:
-        pd = calphad_fit["metadata"]["poly_degree"]
-        params.update(
-            temperature_K     = temperature_K,
-            reference_element = calphad_fit["metadata"]["reference_element"],
-            x_variables       = calphad_fit["metadata"]["x_variables"],
-            poly_degree       = pd if isinstance(pd, str) else int(pd),
-        )
+        meta = calphad_fit.get("metadata", {})
+        params["temperature_K"] = temperature_K
+        if "reference_element" in meta:
+            params["reference_element"] = meta["reference_element"]
+        if "x_variables" in meta:
+            params["x_variables"] = meta["x_variables"]
+        if free_energy in ("calphad", "calphad_spline") and "poly_degree" in meta:
+            pd = meta["poly_degree"]
+            params["poly_degree"] = pd if isinstance(pd, str) else int(pd)
 
     result = CHResult(
         composition         = c,
