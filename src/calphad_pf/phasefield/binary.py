@@ -866,7 +866,7 @@ def plot_free_energy_history(
     ax.set_ylabel("|Free energy|  (J/mol)  [log scale]", fontsize=12)
     ax.set_title("Free energy contributions", fontsize=12)
     ax.legend(fontsize=11, frameon=False)
-    ax.grid(True, alpha=0.25, which="both")
+    ax.grid(False)
 
     # ── right: min/max composition vs time ────────────────────────────────
     ax2 = axes[1]
@@ -880,7 +880,7 @@ def plot_free_energy_history(
     ax2.set_ylabel("$x_V$  (mol fraction V)", fontsize=12)
     ax2.set_title("Phase composition evolution", fontsize=12)
     ax2.legend(fontsize=11, frameon=False)
-    ax2.grid(True, alpha=0.25)
+    ax2.grid(False)
 
     plt.tight_layout()
 
