@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-V Binary System — Pipeline Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# All paths are relative to the repository root.
+# Override any value on the command line:
+#   python workflows/run_all.py --config configs/nb_v.yaml \
+#       --set simulation.kappa=1e-10 simulation.n_steps=10000
+
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbVTi.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200           # composition grid points per temperature
+  temperatures_C:    [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+
+simulation:
+  temperature_C: 500
+  N:             256               # grid points (NxN domain)
+  Lx:            1.0e-6            # domain size [m]
+  kappa:         1.0e-12           # gradient energy coefficient [J·m²/mol]
+  M:             5.0e-21           # mobility [m⁵/(J·s)]
+  c0:            0.4               # mean initial composition (mol fraction V)
+  noise:         0.01              # initial perturbation amplitude
+  seed:          42                # random seed
+  dt:            1.0e-2            # time step [s]  (None = auto stable dt)
+  n_steps:       30000
+  save_every:    5000
+
+output:
+  data_dir:     data/nb_v/fine
+  results_dir:  results/nb_v
+  run_name:     pf_nb_v_500C_kappa1e12_dt1e2    # subfolder inside results_dir

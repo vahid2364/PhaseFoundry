@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools_scm[toml]>=6.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "calphad-pf"
+dynamic = ["version"]
+description = "Integrated CALPHAD / phase-field modelling toolkit for multicomponent alloys"
+readme = "README.rst"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
+    "h5py>=3.8",
+    "tqdm>=4.65",
+    "scikit-learn>=1.2",
+    "pycalphad>=0.11",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]

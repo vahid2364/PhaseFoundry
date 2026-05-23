@@ -1,0 +1,105 @@
+"""
+Nb-V Integrated Pipeline
+========================
+Runs all 4 workflow steps end-to-end, driven by a YAML config file.
+
+Usage
+-----
+    # Full pipeline with default config
+    python workflows/run_all.py --config configs/nb_v.yaml
+
+    # Resume from step 2
+    python workflows/run_all.py --config configs/nb_v.yaml --from 2
+
+    # Run only step 3
+    python workflows/run_all.py --config configs/nb_v.yaml --only 3
+
+    # Override config values on the fly (no file editing needed)
+    python workflows/run_all.py --config configs/nb_v.yaml \
+        --set simulation.kappa=1e-10 simulation.n_steps=10000 \
+              output.run_name=pf_nb_v_500C_kappa1e10_test
+
+    # Use a different config file entirely (new alloy system)
+    python workflows/run_all.py --config configs/hfnbtiv.yaml
+"""
+
+from __future__ import annotations
+import argparse
+import importlib.util
+import sys
+from pathlib import Path
+
+import pycalphad  # noqa: F401 — must be imported first
+
+_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT))
+
+from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
+
+STEP_SCRIPTS = {
+    1: _ROOT / "workflows" / "01_generate_thermo_data" / "run_nb_v.py",
+    2: _ROOT / "workflows" / "02_fit_surrogate"        / "run_nb_v.py",
+    3: _ROOT / "workflows" / "03_simulate"             / "run_nb_v.py",
+    4: _ROOT / "workflows" / "04_postprocess"          / "run_nb_v.py",
+}
+STEP_LABELS = {
+    1: "Generate thermodynamic tables",
+    2: "Fit G_m spline surrogate",
+    3: "Phase-field simulation",
+    4: "Post-processing & figures",
+}
+
+
+def _load_step(path: Path):
+    spec = importlib.util.spec_from_file_location("step", path)
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Integrated CALPHAD / phase-field pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("--config", default="configs/nb_v.yaml",
+                        help="Path to YAML config file  (default: configs/nb_v.yaml)")
+    parser.add_argument("--from", dest="from_step", type=int, default=1,
+                        metavar="N", help="Start from step N  (1–4)")
+    parser.add_argument("--only", dest="only_step", type=int, default=None,
+                        metavar="N", help="Run only step N")
+    parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
+                        help="Override config values, e.g. --set simulation.kappa=1e-10")
+    args = parser.parse_args()
+
+    # Load and resolve config
+    cfg = load_config(args.config)
+    cfg = apply_overrides(cfg, args.set or [])
+    cfg = resolve_paths(cfg, _ROOT)
+
+    steps = [args.only_step] if args.only_step else list(range(args.from_step, 5))
+
+    print("=" * 60)
+    print("  Integrated CALPHAD / Phase-Field Pipeline")
+    print(f"  Config  : {args.config}")
+    print(f"  System  : {cfg['system']['name'].upper()}")
+    print(f"  Steps   : {steps}")
+    print("=" * 60)
+    print(summary(cfg))
+
+    for s in steps:
+        print(f"\n{'─' * 60}")
+        print(f"  Step {s}: {STEP_LABELS[s]}")
+        print(f"{'─' * 60}")
+        mod = _load_step(STEP_SCRIPTS[s])
+        mod.run(cfg)
+
+    print("\n" + "=" * 60)
+    print("  Pipeline complete.")
+    print(f"  Results → {cfg['output']['results_dir']}/{cfg['output']['run_name']}")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()
