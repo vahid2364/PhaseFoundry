@@ -228,7 +228,9 @@ def write_simulation_params(
     lambda_star  = 4.0 * np.pi * np.sqrt(kappa / max(d2G_c0, 1e-30))
     lambda_crit  = 2.0 * np.pi * np.sqrt(2.0 * kappa / max(d2G_c0, 1e-30))
     t_total      = dt * n_steps
-    stability_ratio = M * d2G_max * dt / dx ** 2
+    # Stability ratio with degenerate mobility: effective M peaks at c=0.5 → M/4
+    M_eff_max       = M * 0.25
+    stability_ratio = M_eff_max * d2G_max * dt / dx ** 2
 
     # ── warnings ──────────────────────────────────────────────────────────────
     warn_delta  = "  ⚠  δ < dx — interface UNRESOLVED on grid!" if delta < dx else ""
