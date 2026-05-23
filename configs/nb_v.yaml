@@ -17,7 +17,7 @@ thermo:
   composition_ranges:
     NB: [0.001, 0.999]
   n_points:          200           # composition grid points per temperature
-  temperatures_C:    [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+  temperatures_C:    [25, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950, 1000, 1025, 1050, 1075, 1100]
 
 simulation:
   temperature_C: 500

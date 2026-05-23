@@ -655,6 +655,23 @@ def plot_phase_diagram(
         ax.scatter(lo_s, T_s, color="#d62728", s=30, zorder=5)
         ax.scatter(hi_s, T_s, color="#d62728", s=30, zorder=5)
 
+    # ── critical point: apex of spinodal (highest T where spinodal exists) ──
+    if valid_s:
+        T_s_arr = np.array(T_s)
+        lo_s_arr = np.array(lo_s)
+        hi_s_arr = np.array(hi_s)
+        idx_crit = int(np.argmax(T_s_arr))
+        T_crit   = float(T_s_arr[idx_crit])
+        x_crit   = float((lo_s_arr[idx_crit] + hi_s_arr[idx_crit]) / 2.0)
+        ax.scatter([x_crit], [T_crit], color="#d62728", s=80, zorder=6,
+                   marker="^", label=f"Critical point  (~{T_crit:.0f} °C)")
+        ax.annotate(
+            f"$T_c$ ≈ {T_crit:.0f} °C",
+            xy=(x_crit, T_crit), xytext=(x_crit + 0.08, T_crit - 40),
+            fontsize=9, color="#d62728",
+            arrowprops=dict(arrowstyle="->", color="#d62728", lw=1.2),
+        )
+
     ax.set_xlabel(f"$x_{{\\rm {x_element.title()}}}$  (mol fraction)", fontsize=12)
     ax.set_ylabel("Temperature  (°C)", fontsize=12)
     ax.set_title(f"Phase diagram — {system_name}", fontsize=13)
