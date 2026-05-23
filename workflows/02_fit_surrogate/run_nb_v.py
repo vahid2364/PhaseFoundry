@@ -4,12 +4,13 @@ Step 2 — Fit G_m spline surrogate + spinodal/binodal
 Reads HDF5 tables from step 1, fits a CubicSpline to G_m(x_V),
 and computes spinodal + binodal boundaries.
 
-Output
-------
-<output.results_dir>/spinodal.png
-<output.results_dir>/phase_diagram.png
-<output.results_dir>/GM_all.png
-<output.results_dir>/GM_500C.png
+Output (temperature-first convention)
+--------------------------------------
+<results_dir>/phase_diagram.png          ← multi-temperature overview
+<results_dir>/GM_all.png                 ← G_m curves at all temperatures
+<results_dir>/<T>C/thermodynamics/       ← per-temperature thermo outputs
+    spinodal.png
+    GM_spline.png
 
 Run standalone
 --------------
@@ -62,20 +63,31 @@ def run(cfg: dict) -> dict:
     bn["x_binodal_low"]  = [1-h if h is not None else None for h in raw_bn["x_binodal_high"]]
     bn["x_binodal_high"] = [1-l if l is not None else None for l in raw_bn["x_binodal_low"]]
 
-    # Plots
     x_el = cfg["system"]["reference_element"].capitalize()
-    plot_spinodal(sp, x_element=x_el,
-                  save_path=results_dir / "spinodal.png", show=False)
+    sim_T = cfg["simulation"]["temperature_C"]
+
+    # Multi-temperature overview plots → results_dir root
     plot_phase_diagram(spinodal_data=sp, binodal_data=bn, x_element=x_el,
                        system_name=f"{cfg['system']['name'].upper().replace('_','-')}  {cfg['system']['phase']}",
                        save_path=results_dir / "phase_diagram.png", show=False)
     plot_free_energy_vs_composition(paths, x_element=x_el, quantity="GM",
                                     temperatures_celsius=temps_C,
                                     save_path=results_dir / "GM_all.png", show=False)
-    if 500 in temps_C:
-        plot_free_energy_vs_composition([paths[temps_C.index(500)]], x_element=x_el,
-                                        quantity="GM", temperatures_celsius=[500],
-                                        save_path=results_dir / "GM_500C.png", show=False)
+
+    # Per-temperature outputs → results_dir / {T}C / thermodynamics /
+    for T_C, path in zip(temps_C, paths):
+        thermo_dir = results_dir / f"{T_C}C" / "thermodynamics"
+        thermo_dir.mkdir(parents=True, exist_ok=True)
+        plot_free_energy_vs_composition([path], x_element=x_el, quantity="GM",
+                                        temperatures_celsius=[T_C],
+                                        save_path=thermo_dir / "GM_spline.png", show=False)
+
+    # Spinodal diagram also at simulation temperature thermodynamics folder
+    thermo_sim = results_dir / f"{sim_T}C" / "thermodynamics"
+    thermo_sim.mkdir(parents=True, exist_ok=True)
+    plot_spinodal(sp, x_element=x_el,
+                  save_path=thermo_sim / "spinodal.png", show=False)
+
     print(f"  Plots saved → {results_dir}")
     return fit
 

@@ -6,11 +6,15 @@ on a 2-D periodic domain.
 
 Output
 ------
-<output.results_dir>/<output.run_name>/
-    frame_*.png
-    free_energy_log.txt
-    free_energy_history.png
-    sim_params.txt
+Follows the temperature-first folder convention:
+
+    <results_dir>/<temperature_C>C/thermodynamics/   ← G_m + spinodal figures
+    <results_dir>/<temperature_C>C/kinetics/<run_name>/
+        frame_*.png
+        free_energy_log.txt
+        free_energy_history.png
+        gm_pfm_combined.png
+        sim_params.txt
 
 Run standalone
 --------------
@@ -20,7 +24,7 @@ Run standalone
     python workflows/03_simulate/run_nb_v.py \
         --config configs/nb_v.yaml \
         --set simulation.kappa=1e-10 simulation.n_steps=10000 \
-              output.run_name=pf_nb_v_500C_kappa1e10_test
+              output.run_name=pf_c0p4_kappa1e10_test
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ sys.path.insert(0, str(_ROOT))
 
 from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
 from calphad_pf.thermodynamics.fitting import build_gm_spline_surrogate
-from calphad_pf.phasefield import solve_cahn_hilliard_binary
+from calphad_pf.phasefield import solve_cahn_hilliard_binary, plot_gm_with_pfm
 
 
 def run(cfg: dict) -> object:
@@ -53,7 +57,12 @@ def run(cfg: dict) -> object:
     T_K = float(min(fit["temperatures_K"], key=lambda t: abs(t - T_target)))
     print(f"  Temperature: {sim['temperature_C']} °C  →  matched {T_K - 273.15:.1f} °C in data")
 
-    output_dir = results_dir / cfg["output"]["run_name"]
+    # Temperature-first folder convention:
+    #   results_dir / {T}C / kinetics / {run_name}
+    T_folder   = f"{sim['temperature_C']}C"
+    output_dir = results_dir / T_folder / "kinetics" / cfg["output"]["run_name"]
+    thermo_dir = results_dir / T_folder / "thermodynamics"
+    thermo_dir.mkdir(parents=True, exist_ok=True)
     print(f"  Output → {output_dir}")
 
     dt = sim["dt"] if sim["dt"] != "None" and sim["dt"] is not None else None
@@ -78,6 +87,10 @@ def run(cfg: dict) -> object:
             save_frames   = True,
         )
     print(f"  Elapsed: {result.elapsed_seconds:.1f} s")
+
+    # Combined G_m landscape + PFM figure → thermodynamics folder
+    plot_gm_with_pfm(result, fit, temperature_K=T_K, output_dir=thermo_dir)
+
     return result
 
 

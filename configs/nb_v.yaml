@@ -33,6 +33,9 @@ simulation:
   save_every:    5000
 
 output:
-  data_dir:     data/nb_v/fine
-  results_dir:  results/nb_v
-  run_name:     pf_nb_v_500C_kappa1e12_dt1e2    # subfolder inside results_dir
+  data_dir:      data/nb_v/fine
+  results_dir:   results/nb_v
+  # Folder convention: results_dir / {temperature_C}C / thermodynamics/
+  #                    results_dir / {temperature_C}C / kinetics / {run_name}/
+  # run_name pattern:  pf_{c0}_{kappa}_{tdb_version}
+  run_name:      pf_c0p4_kappa1e12_v2           # subfolder inside kinetics/
