@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Hf-Nb Binary System — Pipeline Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+system:
+  name:              hf_nb
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [HF, NB]
+  phase:             BCC_A2
+  reference_element: NB
+
+thermo:
+  composition_ranges:
+    HF: [0.001, 0.999]
+  n_points:          200
+  temperatures_C:    [25, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950, 1000, 1025, 1050, 1075, 1100, 1150, 1200, 1250, 1300]
+
+simulation:
+  temperature_C: 500
+  N:             256
+  Lx:            1.0e-6
+  kappa:         1.0e-12         # same as Nb-V; |f''| similar magnitude
+  M:             5.0e-21
+  c0:            0.654          # most unstable point (min d2G/dc2=-4508 J/mol) in x_NB space → x_HF=0.346
+  noise:         0.01
+  seed:          42
+  dt:            null           # auto stable dt
+  n_steps:       100000
+  save_every:    10000
+
+output:
+  data_dir:      data/hf_nb
+  results_dir:   results/hf_nb
+  # run_name pattern: pf_c{mol%}_kappa{val}_{tdb_tag}
+  run_name:      pf_c65_kappa1e12_tdbv2

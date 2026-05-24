@@ -983,7 +983,7 @@ def plot_gm_with_pfm(
         f"Nb-V BCC",
         fontsize=11,
     )
-    ax.legend(fontsize=8, frameon=False, loc="upper right")
+    ax.legend(fontsize=8, frameon=True, loc="lower right")
     ax.grid(False)
 
     # ── right: final PFM composition field ───────────────────────────────
