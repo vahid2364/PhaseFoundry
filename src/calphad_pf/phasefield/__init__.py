@@ -42,8 +42,13 @@ Quick start — CALPHAD (Nb-V)
 from .binary import solve_cahn_hilliard_binary, plot_result, CHResult, stable_dt, write_simulation_params, plot_free_energy_history, plot_gm_with_pfm
 from .free_energy import double_well_df_dc, double_well_f, calphad_df_dc, calphad_f
 from .spectral import laplacian_operator, wavenumbers
+from .solver import solve_cahn_hilliard, SimResult
 
 __all__ = [
+    # general (new)
+    "solve_cahn_hilliard",
+    "SimResult",
+    # binary (legacy, kept for backward compatibility)
     "solve_cahn_hilliard_binary",
     "plot_result",
     "CHResult",
