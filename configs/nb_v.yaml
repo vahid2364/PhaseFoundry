@@ -25,7 +25,7 @@ simulation:
   Lx:            1.0e-6            # domain size [m]
   kappa:         1.0e-12           # gradient energy coefficient [J·m²/mol]
   M:             5.0e-21           # mobility [m⁵/(J·s)]
-  c0:            0.4               # mean initial composition (mol fraction V)
+  c0:            0.5               # mean initial composition (mol fraction V)
   noise:         0.01              # initial perturbation amplitude
   seed:          42                # random seed
   dt:            1.0e-2            # time step [s]  (None = auto stable dt)
@@ -37,5 +37,8 @@ output:
   results_dir:   results/nb_v
   # Folder convention: results_dir / {temperature_C}C / thermodynamics/
   #                    results_dir / {temperature_C}C / kinetics / {run_name}/
-  # run_name pattern:  pf_{c0}_{kappa}_{tdb_version}
-  run_name:      pf_c0p4_kappa1e12_v2           # subfolder inside kinetics/
+  # run_name pattern:  pf_c{mol%}_kappa{val}_{tdb_tag}
+  #   c50      = 50 mol% (mean initial composition x_V = 0.50)
+  #   kappa1e12 = gradient energy coefficient κ = 1×10⁻¹² J·m²/mol
+  #   tdbv2    = TDB version 2 (HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb)
+  run_name:      pf_c50_kappa1e12_tdbv2          # subfolder inside kinetics/

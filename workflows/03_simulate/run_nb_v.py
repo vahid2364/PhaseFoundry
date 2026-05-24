@@ -88,8 +88,11 @@ def run(cfg: dict) -> object:
         )
     print(f"  Elapsed: {result.elapsed_seconds:.1f} s")
 
-    # Combined G_m landscape + PFM figure → thermodynamics folder
+    # Combined G_m landscape + PFM figure → both thermodynamics and kinetics folders
+    # (thermodynamics: overview alongside spinodal/GM plots)
+    # (kinetics run folder: self-contained record of each run)
     plot_gm_with_pfm(result, fit, temperature_K=T_K, output_dir=thermo_dir)
+    plot_gm_with_pfm(result, fit, temperature_K=T_K, output_dir=output_dir)
 
     return result
 

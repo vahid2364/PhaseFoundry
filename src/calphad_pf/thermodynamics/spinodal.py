@@ -619,18 +619,27 @@ def plot_phase_diagram(
     b_lo    = binodal_data["x_binodal_low"]
     b_hi    = binodal_data["x_binodal_high"]
 
-    valid_b = [(T, lo, hi) for T, lo, hi in zip(temps_b, b_lo, b_hi)
-               if lo is not None and hi is not None]
+    valid_b = sorted(
+        [(T, lo, hi) for T, lo, hi in zip(temps_b, b_lo, b_hi)
+         if lo is not None and hi is not None],
+        key=lambda v: v[0]   # sort by temperature
+    )
     if valid_b:
         T_b, lo_b, hi_b = zip(*valid_b)
         T_b  = np.array(T_b)
         lo_b = np.array(lo_b)
         hi_b = np.array(hi_b)
 
-        ax.fill_betweenx(T_b, lo_b, hi_b, color="#1f77b4", alpha=0.08,
+        # Smooth curves through data points
+        from scipy.interpolate import make_interp_spline
+        T_fine = np.linspace(T_b.min(), T_b.max(), 400)
+        lo_b_sm = make_interp_spline(T_b, lo_b, k=min(3, len(T_b)-1))(T_fine)
+        hi_b_sm = make_interp_spline(T_b, hi_b, k=min(3, len(T_b)-1))(T_fine)
+
+        ax.fill_betweenx(T_fine, lo_b_sm, hi_b_sm, color="#1f77b4", alpha=0.08,
                          label="Two-phase region (binodal)")
-        ax.plot(lo_b, T_b, color="#1f77b4", linewidth=2.2, label="Binodal")
-        ax.plot(hi_b, T_b, color="#1f77b4", linewidth=2.2)
+        ax.plot(lo_b_sm, T_fine, color="#1f77b4", linewidth=2.2, label="Binodal")
+        ax.plot(hi_b_sm, T_fine, color="#1f77b4", linewidth=2.2)
         ax.scatter(lo_b, T_b, color="#1f77b4", s=30, zorder=5)
         ax.scatter(hi_b, T_b, color="#1f77b4", s=30, zorder=5)
 
@@ -639,27 +648,35 @@ def plot_phase_diagram(
     s_lo    = spinodal_data["x_spinodal_low"]
     s_hi    = spinodal_data["x_spinodal_high"]
 
-    valid_s = [(T, lo, hi) for T, lo, hi in zip(temps_s, s_lo, s_hi)
-               if lo is not None and hi is not None]
+    valid_s = sorted(
+        [(T, lo, hi) for T, lo, hi in zip(temps_s, s_lo, s_hi)
+         if lo is not None and hi is not None],
+        key=lambda v: v[0]   # sort by temperature
+    )
     if valid_s:
         T_s, lo_s, hi_s = zip(*valid_s)
         T_s  = np.array(T_s)
         lo_s = np.array(lo_s)
         hi_s = np.array(hi_s)
 
-        ax.fill_betweenx(T_s, lo_s, hi_s, color="#d62728", alpha=0.12,
+        # Smooth curves through data points
+        T_fine_s = np.linspace(T_s.min(), T_s.max(), 400)
+        lo_s_sm = make_interp_spline(T_s, lo_s, k=min(3, len(T_s)-1))(T_fine_s)
+        hi_s_sm = make_interp_spline(T_s, hi_s, k=min(3, len(T_s)-1))(T_fine_s)
+
+        ax.fill_betweenx(T_fine_s, lo_s_sm, hi_s_sm, color="#d62728", alpha=0.12,
                          label="Spinodal region")
-        ax.plot(lo_s, T_s, color="#d62728", linewidth=2.0,
+        ax.plot(lo_s_sm, T_fine_s, color="#d62728", linewidth=2.0,
                 linestyle="--", label="Spinodal")
-        ax.plot(hi_s, T_s, color="#d62728", linewidth=2.0, linestyle="--")
+        ax.plot(hi_s_sm, T_fine_s, color="#d62728", linewidth=2.0, linestyle="--")
         ax.scatter(lo_s, T_s, color="#d62728", s=30, zorder=5)
         ax.scatter(hi_s, T_s, color="#d62728", s=30, zorder=5)
 
     # ── critical point: apex of spinodal (highest T where spinodal exists) ──
     if valid_s:
-        T_s_arr = np.array(T_s)
-        lo_s_arr = np.array(lo_s)
-        hi_s_arr = np.array(hi_s)
+        T_s_arr  = T_s   # already np.array, sorted
+        lo_s_arr = lo_s
+        hi_s_arr = hi_s
         idx_crit = int(np.argmax(T_s_arr))
         T_crit   = float(T_s_arr[idx_crit])
         x_crit   = float((lo_s_arr[idx_crit] + hi_s_arr[idx_crit]) / 2.0)

@@ -1,0 +1,195 @@
+\section{Theory}
+\subsection{Developing Gibbs Energy Models From Universal Potentials}
+
+The stability analysis described in the following section requires a molar Gibbs energy description of the solid solution phase of interest as a function of composition and temperature. Classical CALPHAD databases are resource-intensive to develop and may not exist for all alloy systems of interest. To overcome this limitation, we employ the PhaseForge package \cite{sariturk_2025_15730911}, which automates the construction of CALPHAD-compatible Gibbs energy models from MLIPs as described in \cite{zhu2025accelerating,zhu2025machine}. This approach replaces computationally expensive density functional theory (DFT) calculations with MLIP evaluations that are several orders of magnitude faster while maintaining thermodynamic accuracy.
+
+The approach is built on the use of special quasirandom structures (SQS) \cite{zunger1990special} to represent disordered solid solutions in a periodic cell. An SQS is a periodic supercell whose short-range order parameters match those of a perfectly random alloy up to a pre-determined neighbor range, enabling the disordered state to be represented without requiring large supercells.
+
+Following the compound energy formalism (CEF) as implemented in the Alloy Theoretic Automated Toolkit (ATAT) \cite{van2002alloy}, the molar Gibbs energy of solution phase $\beta$ with site fractions $\boldsymbol{y}$ at temperature $T$ is given by
+
+\begin{equation}\label{eq:gibbs_cef}
+    G^\beta_m(\boldsymbol{y}, T) = \left(G^\beta_{\mathrm{calc,nc}}(\boldsymbol{y}, T) - \sum_i x_i\, G^{\alpha_i}_{\mathrm{calc,nc}}(T)\right) + \sum_i x_i\, G^{\alpha_i}_{\mathrm{SGTE}}(T) - T S_{\mathrm{id}}(\boldsymbol{y}),
+\end{equation}
+
+where $G^\beta_{\mathrm{calc,nc}}$ is the Gibbs energy of phase $\beta$ computed from MLIP total energies without any configurational entropy contribution, $G^{\alpha_i}_{\mathrm{calc,nc}}$ is the corresponding quantity for pre component $i$ in its reference crystal structure $\alpha_i$, $G^{\alpha_i}_{\mathrm{SGTE}}$ is the unary Gibbs energy of component $i$ taken from the Scientific Group Thermodata Europe (SGTE) database \cite{dinsdale1991sgte}, $x_i$ is the mole fraction component $i$, and $S_{\mathrm{id}}(\boldsymbol{y})$ is the ideal configurational entropy. For a single-sublattice solution phase, the ideal configurational entropy reduces to
+
+\begin{equation}\label{eq:conf_entropy}
+    S_{\mathrm{id}}(\boldsymbol{y}) = -R\sum_i x_i\ln x_i,
+\end{equation}
+
+where $R$ is the ideal gas constant.
+
+For each SQS supercell, the quantity $G^\beta_{\mathrm{calc,nc}}$ at \SI{0}{\kelvin} is taken directly from the MLIP-relaxed potential energy per atom. Structural relaxations are performed through the MaterialsFramework calculator interface \cite{sariturk_2025_15731044} with a force convergence criterion of $f_{\mathrm{max}} < \SI{0.001}{\electronvolt/\angstrom}$. For the BCC\_A2 phase in the \ch{Hf-Nb-Ti-V} system, the compositional dependence of the mixing energy is captured sufficiently by static formation energies, and thermal contributions are accounted for through the SGTE unary data.
+
+Once formation energies have been computed for SQS supercells spanning the composition space of each phase, the composition-dependent mixing contribution embedded in $G^\beta_{\mathrm{calc,nc}}$ is parameterized using a Redlich-Kister polynomial expansion. For a binary \ch{A-B} subsystem, the excess Gibbs energy is expressed as
+
+\begin{equation}\label{eq:rk}
+    G^\beta_{m,\mathrm{xs}} = x_A x_B \sum_{\nu=0}^{k} L^{(\nu)}_{A,B}\,(x_A - x_B)^\nu,
+\end{equation}
+
+where $L^{(\nu)}_{A,B}$ are the $\nu$-th order binary interaction parameters determined by least-squares fitting to the MLIP-computed formation energies. Temperature-independent interaction parameters are assumed throughout. Higher-order ternary and quaternary interactions are incorporated analogously and are extracted by fitting to SQS energies at compositions spanning the multicomponent space.
+
+The fitted interaction parameters are assembled into a thermodynamic database (TDB) file compatible with PyCalphad \cite{otis2017pycalphad}. The resulting TDB for the BCC\_A2 phase in the \ch{Hf-Nb-Ti-V} system serves as the thermodynamic input for the stability analysis described below.
+
+\subsection{Determining Stability From the Gibbs Energy Hessian}
+
+Gibbs first introduced the concept of a thermodynamic stability limit, or spinodal, by considering composition fluctuations leading to continuous changes in fluid phases \cite{gibbs1878equilibrium}. He determined that the limit of stability for such a phase relative to these fluctuations occurs where the derivatives of the chemical potential of each component with respect to the density of its corresponding component are equal to zero. That is, a system stable to all composition fluctuations experiences positive changes in all of its chemical potentials when the content of the corresponding component is increased. As Cahn explains in \cite{cahn1961spinodal}, for binary system $A-B$ where $B$ is the dependent component, this limit of stability simplifies to the well-known expression
+
+\begin{equation}\label{second_der_G}
+    \frac{d^2G^\alpha_m}{dx^2_A}=0,
+\end{equation}
+
+\noindent where $G^\alpha_m$ is the molar Gibbs energy for phase $\alpha$ and $x_A$ is the composition of component $A$. 
+
+Following Gibbs and Cahn, the pioneering work of de Fontaine rigorously derived the conditions for stability for solid phases in multicomponent systems by including coherency stress contributions to the free energy in both continuum \cite{de1967computer} and microscopic \cite{de1972analysis} contexts. In recent works, Kadirvel \etal provide an elegant condensed proof of these conditions using the continuum formulation \cite{kadirvel2022exploration}, and Morral and Chen apply de Fontaine's findings to comprehensibly extend Gibbs' work to the solid phase, multicomponent system context. We summarize their combined insight below.
+
+Consider solid solution phase $\alpha$, an $n$-component phase with composition $\boldsymbol{x}$ for which we define the $n$-th component as the dependent composition variable. Let $\boldsymbol{\Delta}$ be a local arbitrary composition fluctuation in phase $\alpha$ defined for all independent composition variables. To maintain mass balance, a local composition fluctuation of $-\boldsymbol{\Delta}$ must also occur for an equivalent amount of the system. The molar Gibbs energy change of the portion of phase $\alpha$ affected by this composition fluctuation is given by
+
+\begin{equation}\label{eq:energy_change}
+\Delta G^\alpha_m = \frac{1}{2}G^\alpha_m(\boldsymbol{x}+\boldsymbol{\Delta}) + \frac{1}{2}G^\alpha_m(\boldsymbol{x}-\boldsymbol{\Delta}) -G^\alpha_m(\boldsymbol{x}).
+\end{equation}
+
+\noindent Using a second order Taylor series expanded around $\boldsymbol{x}$, we can approximate $G^\alpha_m(\boldsymbol{x}+\boldsymbol{\Delta})$ as 
+
+\begin{equation}\label{eq:Taylor_1}
+    G^\alpha_m(\boldsymbol{x}+\boldsymbol{\Delta})\approx G^\alpha_m(\boldsymbol{x}) + \sum_{i=1}^{n-1}\frac{\partial G^\alpha_m}{\partial x_i}\Delta_i+\frac{1}{2}\sum_{i=1}^{n-1}\sum_{j=1}^{n-1}\frac{\partial^2G^\alpha_m}{\partial x_i\partial x_j}\Delta_i\Delta_j
+\end{equation}
+
+\noindent and $G^\alpha_m(\boldsymbol{x}-\boldsymbol{\Delta})$ as
+
+\begin{equation} \label{eq:Taylor_2}
+    G^\alpha_m(\boldsymbol{x}-\boldsymbol{\Delta})\approx G^\alpha_m(\boldsymbol{x}) - \sum_{i=1}^{n-1}\frac{\partial G^\alpha_m}{\partial x_i}\Delta_i+\frac{1}{2}\sum_{i=1}^{n-1}\sum_{j=1}^{n-1}\frac{\partial^2G^\alpha_m}{\partial x_i\partial x_j}\Delta_i\Delta_j
+\end{equation}
+
+\noindent where all derivatives are evaluated at $\boldsymbol{x}$.
+
+Substituting \Cref{eq:Taylor_1,eq:Taylor_2} into \Cref{eq:energy_change} gives
+
+\begin{equation} \label{eq:Hessian}
+\Delta G^\alpha_m = \sum_{i=1}^{n-1}\sum_{j=1}^{n-1}\frac{\partial^2G^\alpha_m}{\partial x_i\partial x_j}\Delta_i\Delta_j=\boldsymbol{\Delta}^TH\boldsymbol{\Delta}
+\end{equation}
+
+\noindent where $H$ is the Hessian of $G^\alpha_m$ with respect to the independent composition variables. Assuming that all entries of the Hessian are continuous throughout the composition domain, we can claim that $H$ is a symmetric matrix with real eigenvalues $\lambda_1,\hdots,\lambda_{n-1}$ and a corresponding set of eigenvectors $\boldsymbol{v}_1,\hdots,\boldsymbol{v}_{n-1}$ which form an orthonormal basis in the space defined by the independent composition variables. Thus, $\boldsymbol{\Delta}$ can be written as a linear combination of this basis:
+
+\begin{equation} \label{eq:projection}
+    \boldsymbol{\Delta} = \sum_{i=1}^{n-1} (\boldsymbol{\Delta}^T\boldsymbol{v}_i)\boldsymbol{v}_i.
+\end{equation}
+
+\noindent Substituting \Cref{eq:projection} into \Cref{eq:Hessian} and leveraging the relationship between eigenvalues and eigenvectors ($H\boldsymbol{v}_i=\lambda_i\boldsymbol{v}_i$) gives
+
+\begin{equation}\label{eq:final_delta_G}
+\begin{split}
+    \Delta G^\alpha_m &= \left(\sum_{i=1}^{n-1}(\boldsymbol{\Delta}^T\boldsymbol{v}_i)\boldsymbol{v}_i\right)^TH\left(\sum_{i=1}^{n-1}(\boldsymbol{\Delta}^T\boldsymbol{v}_i)\boldsymbol{v}_i\right)\\&=\left(\sum_{i=1}^{n-1}(\boldsymbol{\Delta}^T\boldsymbol{v}_i)\boldsymbol{v}_i\right)^T\left(\sum_{i=1}^{n-1}(\boldsymbol{\Delta}^T\boldsymbol{v}_i)\lambda_i\boldsymbol{v}_i\right)=\sum_{i=1}^{n-1}\lambda_i(\boldsymbol{\Delta}^T\boldsymbol{v}_i)^2.
+    \end{split}
+\end{equation}
+
+\noindent Thus, as \Cref{eq:final_delta_G} illustrates, such a composition fluctuation can only lower the Gibbs energy if at least one of the eigenvalues is negative, and a zero-valued eigenvalue represents the limit of stability, or the spinodal. If only one eigenvalue, say $\lambda_1$, is negative, the system is conditionally unstable to composition fluctuations in the direction of $\boldsymbol{v}_1$, or equivalently, with large values for the projection $\boldsymbol{\Delta}^T\boldsymbol{v}_1$. More negative eigenvalues lead to more directions for $\boldsymbol{\Delta}$ to be unstable, and $n-1$ negative eigenvalues imply that the solid solution is unstable to any $\boldsymbol{\Delta}$.
+
+As Morral and Chen \cite{morral2021stability} and Kadirvel \etal \cite{kadirvel2022exploration} both report, these eigenvalues and eigenvectors are not gauge invariant. That is, $\lambda_1,\hdots,\lambda_{n-1}$ and $\boldsymbol{v}_1,\hdots,\boldsymbol{v}_{n-1}$ depend on the choice of the dependent component. This is due to a combination of the coordinate axes being geometrically non-orthogonal and the change in orientation of these axes with the variation of the dependent component. 
+
+To address this issue, Kadirvel \etal \cite{kadirvel2022exploration} followed the approach of Singh \etal \cite{singh2015atomic} which involves a change of basis operation transforming $H$ from Gibbs simplex space to Cartesian space, performing the eigenanalysis in Cartesian space, and lastly transforming the resulting eigenvectors back to Gibbs space (the eigenvalues calculated in Cartesian space remain invariant under this final transformation). Singh \etal \cite{singh2015atomic} provide an iterative procedure for constructing such an $N$-dimensional linear transformation, and Kadirvel \etal \cite{kadirvel2022exploration} explicitly provide this matrix for systems with ten components or fewer. In this work, we adopt this approach in order to calculate and visually display the distribution of gauge-invariant eigenvalues. 
+
+Lastly, for arbitrarily-complex phases modeled with internal degrees of freedom (or equivalently, for any phase with a Gibbs energy function that is multivalued in composition space), calculating the Gibbs energy Hessian requires differentiating the outputs of single-phase energy minimization calculations. These equilibrium calculations prescribe the composition of the phase (not the system) and determine the local minimum solution (which may be metastable) under this composition constraint. For phase $\alpha$ in ternary system A-B-C, it is well known that the first derivative of $G^\alpha_m$ with respect to $x_A$ can be written as a simple linear combination of chemical potentials
+
+\begin{equation}\label{eq:first_derivative}
+\frac{\partial G^\alpha_m}{\partial x_A}=\mu_A-\mu_C
+\end{equation}
+
+\noindent where $C$ is the dependent component. Thus, second order derivatives can be expressed as 
+
+\begin{equation}\label{eq:second_derivatives}
+    \frac{\partial^2G^\alpha_m}{\partial x_B\partial x_A} = \frac{\partial \mu_A}{\partial x_B} - \frac{\partial \mu_C}{\partial x_B},
+\end{equation}
+
+\noindent but calculation of \Cref{eq:second_derivatives} is less trivial. In this work, we employ the recently formalized Jansson derivative method \cite{kunselman2024analytically}, an adjoint-like technique for calculating analytic derivatives of thermodynamic properties at equilibrium with respect to CALPHAD model equilibrium calculations, to efficiently calculate the derivatives of the chemical potentials in \Cref{eq:second_derivatives} rather than relying on numerical approximations. All Gibbs energy Hessians are computed using PyCalphad \cite{otis2017pycalphad} (development version commit a8de09f).
+
+Using the procedure described above, we can employ Jansson derivatives to calculate the chemical Hessian and corresponding chemical spinodal from a CALPHAD Gibbs energy description of a solution phase. However, in many solid solutions, composition fluctuations can lead to significant elastic energy contributions due to coherency strains. These coherency strains penalize composition fluctuations and when their elastic energy contributions are added to the chemical Gibbs energy, the spinodal region shrinks. \textcolor{red}{Siya: We have to clarify that we assume the coherence is "biaxial" and the system is "infinite isotropic".}As Cahn shows in \cite{cahn1961spinodal}, for an infinite binary isotropic solid with an arbitrary composition fluctuation \textcolor{red}{Siya: I think the equation given by Cahn works only for infinitesimal coherent composition fluctuations instead of arbitrary or finite-amplitude composition fluctuations. He dropped the higher order terms in equation(2) and wrote "for small (c-c0)" above equation(7) in his paper.} , when coherency strains are considered the limit of stability given in \Cref{second_der_G} becomes
+
+\begin{equation}
+    \frac{d^2G^\alpha_m}{dx^2_A}+\frac{2\eta_A^2EV_m}{1-\nu}=0
+\end{equation}
+
+\noindent where $E$ is the modulus of elasticity, $V_m$ is the molar volume, $\nu$ is the Poisson ratio, and $\eta_A$ is the linear strain per unit difference in component $A$:
+
+\begin{equation}
+\eta_A=\frac{1}{a}\frac{\partial a}{\partial x_A}
+\end{equation}
+
+\noindent where $a$ is the lattice parameter. Extending to the multicomponent context \cite{de1973analysis}, entries of the coherent Hessian $H^{coh}$ are given by
+
+\begin{equation}
+    H^{coh}_{ab}=\frac{\partial^2G^\alpha_m}{\partial x_B\partial x_A}+\frac{2\eta_A\eta_BEV_m}{1-\nu}
+\end{equation}
+
+\noindent where $\frac{\partial^2G^\alpha_m}{\partial x_B\partial x_A}$ is the chemical contribution as calculated in \Cref{eq:second_derivatives}.
+
+In this work, we employ the bond-based lattice parameter prediction model \textcolor{red}{Siya: why don't we use the lattice parameters from the relaxed SQS directly? Courtney: because we wanted an analytic model for the lattice parameter that we could easily differentiate to calculate eta.} developed by Tandoc \etal \cite{tandoc2025bond} to calculate $\boldsymbol{\eta}$ and $V_m$. Under this model, the average lattice parameter $\bar{a}$ for a solid solution BCC phase is given by
+
+\begin{equation}\label{lattice_param}
+    \bar{a}=\frac{2\bar{d}_{111}}{\sqrt{3}}
+\end{equation}
+
+\noindent where $\bar{d}_{111}$ is the average bond length along the $<111>$ close-packed direction. The average bond length is calculated through
+
+\begin{equation}
+    \bar{d}_{111}=\sum_i\sum_jx_ix_jd^{ij}_{111}
+\end{equation}
+
+\noindent where $d^{ij}_{111}$ is the first nearest neighbor (FNN) bond length for an $i-j$ pair along the $<111>$ close-packed direction, following the framework of Tandoc \etal \cite{tandoc2025bond}. Same-species bond lengths $d^{ii}_{111}$ are extracted from MLIP-relaxed pure BCC cells via $d^{ii}_{111} = a_i^{\text{BCC}}\sqrt{3}/2$, while cross-species lengths $d^{ij}_{111}$ ($i \neq j$) are obtained from MLIP-relaxed B2 (\ch{CsCl}-type) binary ordered cells via $d^{ij}_{111} = a_{ij}^{\text{B2}}\sqrt{3}/2$. All relaxations for bond length extraction are performed using the \texttt{BondLatticeParameter} tool within MaterialsFramework \cite{sariturk_2025_15731044} with the GRACE-2L-SMAX-OMAT-large universal MLIP. Using this model for BCC structures, the molar volume is then given by
+
+\begin{equation}
+V_m=\frac{\bar{a}^3N_A}{2}
+\end{equation}
+
+\noindent where $N_A$ is Avogadro's number. To calculate derivatives of the lattice parameter for $\eta$, a dependent component must be assigned which must remain consistent throughout the calculation of the coherent Hessian. Let $k$ be the index of the dependent component. Then
+
+\begin{equation}
+    x_k=1-\sum_{i\neq k}x_i,
+\end{equation}
+
+\noindent and
+
+\begin{equation}\label{bond_length_dep}
+\bar{d}_{111}= \sum_{i\neq k}\sum_{j\neq k}x_ix_jd^{ij}_{111} + \sum_{i\neq k} x_i(1-\sum_{j\neq k}x_j)d^{ik}_{111} + \sum_{i\neq k}(1-\sum_{j\neq k}x_j)x_id^{ki}_{111} + (1-\sum_{j\neq k}x_j)^2d^{kk}_{111}.
+\end{equation}
+
+\noindent Differentiating \Cref{bond_length_dep} with respect to independent composition variable $x_1$ gives
+
+\begin{small}
+\begin{equation}\label{bond_length_der_dep}
+\begin{split}
+\frac{\partial \bar{d}_{111}}{\partial x_1}&=\sum_{i\neq k}(x_id^{i1}_{111}+x_id^{1i}_{111})-\sum_{i\neq 1,k}(x_id^{ik}_{111}+x_id^{ki}_{111})+(1-2x_1-\sum_{i\neq 1,k}x_i)d^{1k}_{111}\\ & + (1-2x_1-\sum_{i\neq 1,k}x_i)d^{k1}_{111} - 2(1-\sum_{i\neq k} x_i)d^{kk}_{111}\\&
+=2\left(\sum_{i\neq k}x_id^{i1}_{111} - \sum_{i\neq 1,k} x_id^{ik}_{111} + (x_k-x_1)d^{1k}_{111}-x_kd^{kk}_{111}\right).
+\end{split}
+\end{equation}
+\end{small}
+
+\noindent Differentiating \Cref{lattice_param} and plugging in the result from \Cref{bond_length_der_dep}, we have
+
+\begin{equation}
+\frac{\partial \bar{a}}{\partial x_1}=\frac{4}{\sqrt{3}}\left(\sum_{i\neq k}x_id^{i1}_{111} - \sum_{i\neq 1,k} x_id^{ik}_{111} + (x_k-x_1)d^{1k}_{111}-x_kd^{kk}_{111}\right).
+\end{equation}
+
+Lastly, the elastic constants $C_{11}$, $C_{12}$, and $C_{44}$ were computed for each composition of interest using the \texttt{CubicElasticConstantsAnalyzer} within the MaterialsFramework package \cite{sariturk_2025_15731044}. A $4\times4\times4$ BCC SQS supercell was first relaxed using the GRACE-2L-SMAX-OMAT-large universal MLIP with unconstrained cell shape to a force convergence of $f_{\mathrm{max}} < \SI{0.01}{\electronvolt/\angstrom}$. Three finite strain modes were then applied to the relaxed cell: a uniform volumetric distortion to extract the bulk modulus $B$, an orthorhombic distortion to isolate $C'=\left(C_{11}-C_{12}\right)/2$, and a monoclinic shear to determine $C_{44}$. Polycrystalline-averaged elastic properties were then obtained via the Voigt-Reuss-Hill (VRH) scheme, yielding the macroscopically isotropic Young's modulus $E$ and Poisson's ratio $\nu$. The biaxial modulus $M = E/\left(1-\nu\right)$ appearing in the coherent Heissian above was derived directly from these VRH averages. \textcolor{red}{Siya: Are the Young's moduli and Poisson's ratio assumed isotropic? The Cahn's model requires the isotropy. How does materialsframework deal with that? For bcc structure the isotropy is described as $A=\frac{2C_{44}}{C_{11}-C_{12}}$ and is isotropic when $A=1$. For Nb, given by "Elastic Constants of Niobium from 4.2 to 300K", K. Carroll, J. Appl. Phys., 1965., at 300K, the $C_{11}$ is $24.56\times 10^{11} dyn/cm^2$, the $C_{12}$ is $13.87\times 10^{11} dyn/cm^2$, and the $C_{44}$ is $2.930\times 10^{11} dyn/cm^2$, $A = 0.548$. The Young's moduli and Poisson ratio calculated based on the experimental data are:
+} 
+
+\begin{table}[htbp]
+\centering
+\color{red}
+\caption{\textcolor{red}{Direction-dependent Young's modulus and Poisson's ratio of single-crystal Nb at 300 K, calculated from the experimental elastic constants
+$C_{11}=245.6$ GPa, $C_{12}=138.7$ GPa, and $C_{44}=29.30$ GPa.}}
+\label{tab:nb_directional_elasticity}
+\begin{tabular}{cccc}
+\hline
+Loading direction & Transverse direction & $E$ (GPa) & $\nu$ \\
+\hline
+$[100]$ & $[010]$ & 145.5 & 0.361 \\
+$[110]$ & $[1\bar{1}0]$ & 93.2 & 0.591 \\
+$[110]$ & $[001]$ & 93.2 & 0.231 \\
+$[111]$ & $[1\bar{1}0]$ & 83.2 & 0.420 \\
+\hline
+\end{tabular}
+\end{table}
+\textcolor{red}{How we decide the $E$ and $\nu$ in Equation 12?}
+
+\subsection{Verifying Microstructure Instability with Phase Field Modeling} 

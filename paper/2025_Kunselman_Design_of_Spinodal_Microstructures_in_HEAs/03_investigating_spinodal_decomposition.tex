@@ -1,0 +1,46 @@
+\section{Investigating Spinodal Decomposition in the Hf-Nb-Ti-V System}
+
+In this section, we employ our stability map framework to investigate spinodal decomposition in the BCC phase of the \ch{Hf-Nb-Ti-V} system. In a recent experimental study, single-phase BCC was observed for \ch{Hf_{0.10}Nb_{0.40}Ti_{0.40}V_{0.10}}, and spinodal decomposition was reported for an alloy at the equiatomic composition \cite{an2021spinodal}. \textcolor{red}{Siya: Do we consider the HCP phase? HCP is the stable phase for Hf and Ti under room temperature. Courtney: So far, we have only been investigating the stability of BCC structures. We could make a note that we recognize that pure Hf and Ti are HCP at room temp, but for this demonstration, we are just looking at the BCC phase in isolation.} High lattice strains around \SI{5}{\percent} were also reported for one of the phases resulting from spinodal decomposition, indicating that accounting for coherent strain is extremely important when modeling spinodal decomposition in this system. 
+
+*Note on how the CALPHAD model was generated, if necessary*
+
+\begin{figure*}[!ht]
+        \captionsetup[subfigure]{labelformat=empty}
+        \centering
+        \subfloat[(a)]{\includegraphics[width=.38\linewidth]{figs/chemical_600_diff_sizes.pdf}}\hspace{.3 in}
+         \subfloat[(b)]{\includegraphics[width=.38\linewidth]{figs/coherent_600_diff_sizes.pdf}}\\
+         \subfloat[(c)]{\includegraphics[width=.38\linewidth]{figs/chemical_800_diff_sizes.pdf}}\hspace{.3 in}
+         \subfloat[(d)]{\includegraphics[width=.38\linewidth]{figs/coherent_800_diff_sizes.pdf}}\\
+         \subfloat[(e)]{\includegraphics[width=.38\linewidth]{figs/chemical_1000_diff_sizes.pdf}}\hspace{.3 in}
+         \subfloat[(f)]{\includegraphics[width=.38\linewidth]{figs/coherent_1000_diff_sizes.pdf}}\\
+         \subfloat[]
+         {\includegraphics[width=.3\linewidth]{figs/legend.png}}
+         
+         \caption{Affine projection stability maps over composition space displaying the number of negative eigenvalues for the chemical and coherent Hessian of the BCC phase in the \ch{Hf-Nb-Ti-V} system at (a-b) \SI{600}{\kelvin}, (c-d) \SI{800}{\kelvin}, and (e-f) \SI{1000}{\kelvin}.}
+\label{fig:stability maps}
+\end{figure*}
+
+Through the procedure outlined in the previous section, we calculated eigenvalues for the chemical and coherent Gibbs energy Hessians at various temperatures with a sampling density in composition space of \SI{5}{\atpercent}. \Cref{fig:stability maps} displays affine projections of these results at \qtylist{600;800;1000}{\kelvin}. Any missing values represent convergence failures, which are most common when the composition of at least one component is dilute. A limitation of affine projections is that multiple compositions can map to the same position. To ensure that marker differences are visible, smaller markers are plotted on top of larger markers (e.g.\ a smaller green circle with a blue ring around it indicates that compositions mapped to that position exhibit both zero and one negative eigenvalue). At \SI{600}{\kelvin}, spinodal shrinkage due to the addition of coherent strain contributions is most pronounced at compositions high in Hf or V. The region of two negative eigenvalues from the chemical Hessian also vanishes when coherency is taken into account. At \SI{800}{\kelvin}, the chemical Hessian predicts spinodal decomposition at almost all compositions except for those rich in Ti and Nb whereas the coherent Hessian predicts BCC solid solutions rich in Hf and V to be more stable to composition fluctuations. Lastly, at \SI{1000}{\kelvin}, the previous pattern continues along with eigenvalues of the coherent Hessian all remaining positive for BCC alloys rich in Ti and V. 
+
+The consistent pattern of coherent strain contributions significantly suppressing the spinodal in regions rich in Hf and low in Ti and Nb could be explained by examining the components of the first eigenvector of the chemical Hessian. \Cref{fig:eigenvector} displays the components of this vector for a BCC alloy with composition \ch{Hf_{0.6}Nb_{0.1}Ti_{0.1}V_{0.2}} as a function of temperature from \qtyrange{600}{1000}{\kelvin}. Note that throughout this temperature range, first eigenvalues of the chemical Hessian are negative while all eigenvalues of the coherent Hessian are positive. Thus, the components of the eigenvector displayed in \Cref{fig:eigenvector} represents the direction of greatest composition instability for a BCC solid solution when coherent strain contributions are not considered. We see that such an initial composition fluctuation would result in regions rich in Hf and low in V and vice versa. However, Hf and V have the largest atomic radius mismatch of all four components, and such a composition fluctuation could cause large coherency strains. Consequently, when an elastic contribution describing coherent strain resulting from composition fluctuations is added to the Gibbs energy at this composition, the local curvature of the Gibbs energy is adjusted and the alloy becomes stable to the previously unstable composition fluctuation.
+
+\begin{figure*}[!ht]
+\centering
+\includegraphics[width=\linewidth]{figs/eigenvector.pdf}
+\caption{Components of the first gauge-invariant eigenvector of the chemical Hessian as a function of temperature for BCC alloy with composition \ch{Hf_{0.6}Nb_{0.1}Ti_{0.1}V_{0.2}}.}
+\label{fig:eigenvector}
+\end{figure*}
+
+\begin{figure*}[!ht]
+        \captionsetup[subfigure]{labelformat=empty}
+        \centering
+        \subfloat[(a)]{\includegraphics[width=.47\linewidth]{figs/eigenvalues_Hf1.pdf}}\hspace{.3 in}
+         \subfloat[(b)]{\includegraphics[width=.47\linewidth]{figs/eigenvalues_Hf25.pdf}}\\
+         \subfloat[(c)]{\includegraphics[width=.47\linewidth]{figs/eigenvalues_Hf4.pdf}}
+         
+         
+         \caption{Gauge-invariant first eigenvalue as a function of temperature for the chemical and coherent Hessian of the BCC phase at compositions (a) \ch{Hf_{0.10}Nb_{0.40}Ti_{0.40}V_{0.10}}, (b) \ch{Hf_{0.25}Nb_{0.25}Ti_{0.25}V_{0.25}}, and (c) \ch{Hf_{0.6}Nb_{0.1}Ti_{0.1}V_{0.2}}.}
+\label{fig:eigenvalues}
+\end{figure*}
+
+Eigenvalue investigations can also provide more insight. In \Cref{fig:eigenvalues}, we have the first eigenvalue for the chemical and coherent Hessian plotted as a function of temperature at compositions (a) \ch{Hf_{0.10}Nb_{0.40}Ti_{0.40}V_{0.10}}, (b) \ch{Hf_{0.25}Nb_{0.25}Ti_{0.25}V_{0.25}}, and (c) \ch{Hf_{0.6}Nb_{0.1}Ti_{0.1}V_{0.2}}. For the composition rich in Ti and Nb, coherent strain contributions have little effect on the first eigenvalue, and the spinodal temperatures are almost equivalent. As the composition of Hf increases, coherent strain has a greater effect on the spinodal temperature, leading to more stable solid solutions in Hf rich areas of composition space.
