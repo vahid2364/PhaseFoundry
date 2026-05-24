@@ -32,6 +32,7 @@ from .spinodal import (
     binodal_boundary_binary, plot_phase_diagram, recommend_pfm_params,
 )
 from .fitting import fit_delta_mu, save_fits, load_fits, eval_delta_mu, build_spline_surrogate, build_gm_spline_surrogate
+from .interpolant import build_interpolant, GmInterpolant
 
 
 def generate_table(
