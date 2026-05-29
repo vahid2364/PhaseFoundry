@@ -1,17 +1,15 @@
 """
-Ternary Nb50Hf5V45  |  BCC_A2  |  600 °C  |  TDB: HfNbTiV_BCC_PhaseForge_v2_Tdep
+Ternary Nb50Hf5V45  |  BCC_A2  |  500 °C  |  TDB: HfNbTiV_BCC_PhaseForge_v2_Tdep
 =============================================================================
 Cahn-Hilliard phase-field simulation via Eyre convex-splitting (spectral).
 
-Thermodynamics (600 °C, Nb50Hf5V45, BCC_A2):
-  H_NB = -5547 J/mol  (Nb-only spinodal)
-  H_HF = +87720 J/mol (Hf stable — spectator)
-  tau_Nb ~ 26 s  |  lambda* ~ 119 nm
+Thermodynamics (500 °C, Nb50Hf5V45, BCC_A2):
+  Stronger spinodal than 600 °C — deeper inside the miscibility gap.
   Equilibrium tie-line:
-    BCC_1 (Nb+Hf-rich)  Nb~90%  Hf~9%  V~1%
-    BCC_2 (V-rich)      Nb~1%   Hf~0.1% V~99%
+    BCC_1 (Nb+Hf-rich)  Nb~91%  Hf~9%  V~0.3%
+    BCC_2 (V-rich)      Nb~0.6% Hf~0.04% V~99%
 
-Output: results/HfNbTiV_BCC_PhaseForge_v2_Tdep/NbHfV/600C/
+Output: results/HfNbTiV_BCC_PhaseForge_v2_Tdep/NbHfV/500C/
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 
 from calphad_pf.thermodynamics.storage import load_table
@@ -35,9 +33,9 @@ TDB_STEM    = "HfNbTiV_BCC_PhaseForge_v2_Tdep"
 SYSTEM      = "NbHfV"
 ELEMENTS    = ["NB", "HF", "V"]
 REF_EL      = "V"
-T_TARGET    = 873.15        # 600 °C
-T_LABEL     = "600C"
-T_PHYS      = 5000.0        # target physical time (s)
+T_TARGET    = 773.15        # 500 °C
+T_LABEL     = "500C"
+T_PHYS      = 1000.0        # target physical time (s)
 DT_SAFETY   = 1.0
 N_SNAPSHOTS = 10
 
@@ -116,7 +114,7 @@ def save_micrograph(xnb, xhf, xv, t_s, out_path):
         ax.set_xlabel(r"$L_x$ ($\mu$m)")
         ax.set_ylabel(r"$L_y$ ($\mu$m)")
         ax.set_title(
-            f"Nb$_{{50}}$Hf$_{{5}}$V$_{{45}}$ 600$^{{\\circ}}$C — {label}\n"
+            f"Nb$_{{50}}$Hf$_{{5}}$V$_{{45}}$ 500$^{{\\circ}}$C — {label}\n"
             f"$t = {t_s:.1f}$ s")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight", dpi=200)
