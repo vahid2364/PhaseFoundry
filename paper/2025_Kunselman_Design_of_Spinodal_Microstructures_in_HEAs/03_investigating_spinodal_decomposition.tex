@@ -44,3 +44,279 @@ The consistent pattern of coherent strain contributions significantly suppressin
 \end{figure*}
 
 Eigenvalue investigations can also provide more insight. In \Cref{fig:eigenvalues}, we have the first eigenvalue for the chemical and coherent Hessian plotted as a function of temperature at compositions (a) \ch{Hf_{0.10}Nb_{0.40}Ti_{0.40}V_{0.10}}, (b) \ch{Hf_{0.25}Nb_{0.25}Ti_{0.25}V_{0.25}}, and (c) \ch{Hf_{0.6}Nb_{0.1}Ti_{0.1}V_{0.2}}. For the composition rich in Ti and Nb, coherent strain contributions have little effect on the first eigenvalue, and the spinodal temperatures are almost equivalent. As the composition of Hf increases, coherent strain has a greater effect on the spinodal temperature, leading to more stable solid solutions in Hf rich areas of composition space.
+
+\subsection{Thermodynamic Stiffness and Its Effect on Phase-Field Simulations}
+\label{sec:stiffness}
+
+The stability maps and eigenvalue analysis above identify \emph{which}
+compositions are spinodally unstable, but they also carry a practical
+consequence for phase-field simulations that is easy to overlook.
+The same Gibbs energy Hessian
+$\mathbf{H}$, whose negative eigenvalues signal spinodal instability, also
+controls the numerical stability of the time integrator.  Specifically, in a
+semi-implicit spectral Cahn-Hilliard solver the maximum allowable time step is
+bounded by the \emph{largest} Hessian eigenvalue:
+\begin{equation}
+    \Delta t \;\leq\; \frac{C_{\rm s}\,\Delta x^{2}}{M\,H_{\max}},
+    \label{eq:dt_stability}
+\end{equation}
+where $C_{\rm s}$ is a safety factor (here $C_{\rm s} = 0.3$), $\Delta x$ is
+the grid spacing, $M$ is the atomic mobility, and $H_{\max}$ is the largest
+eigenvalue of $\mathbf{H}$ at the local composition.
+An element that is thermodynamically \emph{stable} at the nominal alloy
+composition — meaning its diagonal Hessian component
+$H_{ii} = \partial^{2}G^\alpha_m/\partial x_i^{2} > 0$ — does \emph{not}
+drive decomposition, but its large positive curvature increases $H_{\max}$
+and therefore forces $\Delta t$ down.  We call such elements
+\emph{numerical stiffeners}: they are spectators to the physical
+transformation yet they throttle the simulation's time-stepping and
+dramatically reduce the physical time accessible per unit of compute time.
+
+It is important to emphasise that this is a \emph{purely numerical}
+constraint.  The thermodynamics is correct --- the system is still globally
+spinodally unstable ($\lambda_{\min} < 0$) and will phase-separate if given
+sufficient physical time.  The stiffeners simply make reaching that time
+computationally expensive.
+
+\subsubsection*{Comparison across binary, ternary, and quaternary systems}
+
+To make this concrete, we compare four BCC\textsubscript{A2} alloy
+compositions in the Hf-Nb-Ti-V system at $T = \SI{500}{\celsius}$, all
+simulated on a $256\times256$ grid with $L = \SI{1}{\micro\metre}$,
+$\kappa = \SI{1e-12}{\joule\per\metre}$, and
+$M = \SI{5e-21}{\metre\cubed\second\per\kg}$.
+\Cref{tab:hessian_comparison} summarises the Gibbs energy Hessian at each
+nominal composition, the resulting time-step limit, and how much physical
+time is accessible within 50\,000 integration steps.
+
+\begin{table}[htbp]
+    \centering
+    \caption{%
+        Gibbs energy Hessian analysis for four BCC\textsubscript{A2}
+        compositions at $T = \SI{500}{\celsius}$.
+        Diagonal elements $H_i \equiv \partial^{2}G^\alpha_m/\partial x_i^{2}$
+        are evaluated at the nominal composition; \textbf{negative values
+        (bold)} indicate that the element is locally spinodally unstable and
+        drives decomposition, while large positive values act as numerical
+        stiffeners.  $\lambda_{\min}$ is the minimum eigenvalue of the full
+        Hessian matrix (negative = globally spinodal); $H_{\max}$ is the
+        largest eigenvalue (the stiffness driver).
+        $\Delta t$ is the stability-limited time step
+        (Eq.~\ref{eq:dt_stability}); $\tau$ is the spinodal growth timescale
+        at the dominant wavenumber; $t_{50k}$ is the physical time reached
+        in 50\,000 steps; and $t_{50k}/\tau$ is the number of growth
+        timescales completed — a direct measure of how much microstructural
+        evolution has occurred.
+        Simulation parameters: $256\times256$ grid,
+        $L = \SI{1}{\micro\metre}$,
+        $M = \SI{5e-21}{\metre\cubed\second\per\kg}$.
+    }
+    \label{tab:hessian_comparison}
+    \setlength{\tabcolsep}{4pt}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{lrrrrrrrrr}
+        \toprule
+        System
+            & $H_{\rm Nb}$
+            & $H_{\rm Hf}$
+            & $H_{\rm Ti}$
+            & $\lambda_{\min}$
+            & $H_{\max}$
+            & $\Delta t$ (s)
+            & $\tau$ (s)
+            & $t_{50k}$ (s)
+            & $t_{50k}/\tau$ \\
+        & \multicolumn{5}{c}{(\si{\joule\per\mol})} & & & & \\
+        \midrule
+        Nb$_{50}$V$_{50}$
+            & \textbf{$-$9\,263}  & ---  & ---
+            & \textbf{$-$9\,263}   & 9\,263
+            & \num{1.0e-2}  & 31   & 800  & $\sim$26 \\
+        Nb$_{50}$Hf$_{10}$V$_{40}$
+            & \textbf{$-$9\,263}  & \textbf{$-$68\,756}  & ---
+            & \textbf{$-$85\,123}  & 85\,123
+            & \num{1.3e-2}  & $\sim$0   & 665  & $\gg10^{3}$ \\
+        Nb$_{50}$Hf$_{5}$Ti$_{5}$V$_{40}$
+            & \textbf{$-$9\,207}  & $+$254\,911  & $+$365\,276
+            & \textbf{$-$14\,811}  & 376\,302
+            & \num{1.32e-3} & 86   & 66   & $\sim$0.8 \\
+        Nb$_{50}$Hf$_{2.5}$Ti$_{2.5}$V$_{45}$
+            & \textbf{$-$8\,217}  & $+$410\,350  & $+$531\,846
+            & \textbf{$-$12\,228}  & 543\,681
+            & \num{1.32e-3} & 104  & 66   & $\sim$0.6 \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\Cref{fig:stiffness_microstructures} directly visualises the contrast in
+microstructural evolution between the binary, ternary, and first quaternary
+compositions.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{figs/stiffness_microstructures}
+    \caption{%
+        Composition fields from Cahn-Hilliard simulations (Jansson mode) of
+        three BCC\textsubscript{A2} alloys at $T = \SI{500}{\celsius}$
+        ($256\times256$ grid, $L = \SI{1}{\micro\metre}$,
+        $\kappa = \SI{1e-12}{\joule\per\metre}$,
+        $M = \SI{5e-21}{\metre\cubed\second\per\kg}$).
+        (a)~Binary Nb$_{50}$V$_{50}$: $x_{\rm V}$ field after
+        $t = \SI{800}{\second}$ (80\,000 steps, $\Delta t = \SI{0.01}{\second}$).
+        Well-coarsened Nb-rich (blue) and V-rich (red) spinodal domains of
+        characteristic size $\sim\SI{200}{\nano\metre}$ are visible.
+        (b)~Ternary Nb$_{50}$Hf$_{10}$V$_{40}$: $x_{\rm Nb}$ field after
+        $t = \SI{51}{\second}$ (30\,000 steps,
+        $\Delta t = \SI{1.71e-3}{\second}$).
+        Both Nb and Hf are spinodally unstable ($H_{\rm Nb},\,H_{\rm Hf} < 0$),
+        so there are no numerical stiffeners; the simulation completes
+        $\gg 10^{3}\,\tau$ of evolution and clear fine-scale decomposition is
+        observed ($x_{\rm Nb}$ spans $[0.36,\,0.69]$).
+        (c)~Quaternary Nb$_{50}$Hf$_{5}$Ti$_{5}$V$_{40}$: $x_{\rm Nb}$ field
+        after $t = \SI{40}{\second}$ (30\,000 steps,
+        $\Delta t = \SI{1.32e-3}{\second}$).
+        Although globally spinodally unstable
+        ($\lambda_{\min} = \SI{-14811}{\joule\per\mol}$), Hf and Ti act as
+        numerical stiffeners ($H_{\rm Hf} = +\SI{255}{\kilo\joule\per\mol}$,
+        $H_{\rm Ti} = +\SI{365}{\kilo\joule\per\mol}$), forcing a ten-fold
+        reduction in $\Delta t$ and limiting the simulation to only
+        ${\approx}0.8\,\tau$ — far short of the $\gtrsim 10^{2}\,\tau$
+        required for visible domain formation.  The composition field remains
+        essentially uniform ($x_{\rm Nb}$ spans only $[0.497,\,0.503]$).
+    }
+    \label{fig:stiffness_microstructures}
+\end{figure}
+
+\subsubsection*{Physical interpretation of the Hessian roles}
+
+Each diagonal Hessian element $H_{ii}$ characterises the local free-energy
+curvature along a single-component fluctuation direction.  A \textbf{negative}
+$H_{ii}$ means the free energy is concave with respect to fluctuations in
+$x_i$: the system lowers its free energy by separating into regions richer and
+poorer in element $i$, which is the classical spinodal driving force.  A
+\textbf{large positive} $H_{ii}$ means the free energy is steeply convex: the
+system strongly resists composition fluctuations in $x_i$, and any such
+fluctuation incurs a large free-energy penalty.
+
+In the Cahn-Hilliard PDE, both types of curvature enter on equal footing
+through the mobility-weighted Hessian $M\,\mathbf{H}$.  The unstable modes
+($H_{ii} < 0$) provide the driving force for decomposition; the stable modes
+($H_{ii} > 0$) provide thermodynamic restoring forces.  However, at the
+\emph{numerical} level, the stable modes impose a stringent constraint on
+$\Delta t$ through Eq.~\eqref{eq:dt_stability}: the solver must take small
+enough steps that the steepest uphill curvature does not cause oscillatory or
+divergent behaviour.  This is analogous to a stiff ODE where fast, stable
+modes force a small step size even if the slow, unstable mode of interest
+evolves on a much longer timescale.
+
+The critical insight from \Cref{tab:hessian_comparison} is that
+\textbf{reducing the Hf and Ti content does not relieve the stiffness}.
+Halving both additions from 5 to 2.5\,at.\% (Nb$_{50}$Hf$_{2.5}$Ti$_{2.5}$V$_{45}$)
+moves these elements further from the spinodal in the binary Hf-V and Ti-V
+sub-systems, which \emph{increases} their positive curvature
+($H_{\rm Hf}$: $+255\,000 \to +410\,000$\,\si{\joule\per\mol};
+$H_{\rm Ti}$: $+365\,000 \to +532\,000$\,\si{\joule\per\mol}).
+The stable time step is essentially unchanged at $\Delta t = \SI{1.32e-3}{\second}$,
+and the growth timescale $\tau$ actually \emph{increases} from 86 to
+\SI{104}{\second} because the global minimum eigenvalue weakens slightly
+($\lambda_{\min}$: $-14\,811 \to -12\,228$\,\si{\joule\per\mol}).
+This is counter-intuitive: one might expect that diluting Hf and Ti toward
+zero recovers the fast binary Nb-V decomposition.  However, it is the
+\emph{absolute magnitude} of the positive curvature — not the composition
+itself — that controls stiffness, and this magnitude grows as the element
+moves deeper into the stable composition regime.
+
+\subsubsection*{Implications for alloy and simulation design}
+
+This analysis reveals a general challenge in CALPHAD-coupled phase-field
+simulations of multi-component alloys.  Whether an alloy will show
+spinodal decomposition in a phase-field simulation within a tractable
+number of steps depends on \emph{two separate criteria} that must both be
+satisfied:
+\begin{enumerate}
+    \item \textbf{Thermodynamic criterion:} the global minimum Hessian
+          eigenvalue must be negative ($\lambda_{\min} < 0$), confirming
+          spinodal instability.
+    \item \textbf{Numerical accessibility criterion:} no individual element
+          should have a large positive curvature $H_{ii} \gg 0$ that would
+          suppress $\Delta t$ below the level needed to reach
+          $t \gtrsim 10^{2}\,\tau$ within a practical number of steps.
+          Equivalently, all elements at the nominal composition should
+          ideally reside \emph{within} or close to the spinodal.
+\end{enumerate}
+The stability maps of \Cref{fig:stability maps} directly address criterion~1
+by identifying spinodal compositions.  They are equally useful for
+criterion~2: compositions deep inside the spinodal region for all components
+simultaneously will minimise stiffness and maximise accessible physical time.
+
+\subsubsection*{Temperature and composition dependence of spinodal character in Nb-Hf-V}
+
+The nature of the spinodal instability changes qualitatively with both temperature and Hf content, which has direct consequences for both alloy design and simulation strategy.
+To illustrate this, we computed the diagonal Hessian elements $H_{\rm Nb}$, $H_{\rm Hf}$, and
+$H_{\rm V} \equiv H_{\rm Nb} + H_{\rm Hf} + 2H_{\rm Nb,Hf}$ together with the minimum eigenvalue $\lambda_{\min}$ for the ternary Nb$_{50}$Hf$_5$V$_{45}$ alloy across temperatures from
+\SIrange{500}{1000}{\celsius}, and compared these against the binary Nb$_{50}$V$_{50}$ system.
+\Cref{tab:spinodal_regimes} summarises the resulting spinodal regimes.
+
+\begin{table}[htbp]
+    \centering
+    \caption{%
+        Spinodal character and equilibrium two-phase compositions as a function
+        of temperature for the binary Nb$_{50}$V$_{50}$ and ternary
+        Nb$_{50}$Hf$_5$V$_{45}$ BCC\textsubscript{A2} alloys.  Signs of the
+        diagonal Hessian elements indicate whether each element is individually
+        unstable ($H_{ii} < 0$, driving force) or stable ($H_{ii} > 0$,
+        spectator/stiffener).  $H_{\rm V}$ is derived from the reduced Hessian
+        via $H_{\rm V} = H_{\rm Nb} + H_{\rm Hf} + 2H_{\rm Nb,Hf}$.
+    }
+    \label{tab:spinodal_regimes}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabularx}{\textwidth}{llXXX}
+        \toprule
+        Regime & System & Diagonal instabilities & Physical character & Equilibrium BCC phases$^{a}$ \\
+        \midrule
+        $T < \SI{750}{\celsius}$
+            & Binary Nb$_{50}$V$_{50}$
+            & $H_{\rm Nb} = H_{\rm V} < 0$
+            & Symmetric Nb$\leftrightarrow$V demixing; both components drive decomposition equally
+            & BCC$_1$: Nb$_{99}$V$_{1}$\newline BCC$_2$: Nb$_{1}$V$_{99}$ \\
+        $T > \SI{700}{\celsius}$
+            & Ternary Nb$_{50}$Hf$_5$V$_{45}$
+            & None ($H_{\rm Nb},\,H_{\rm Hf},\,H_{\rm V} > 0$)
+            & No diagonal instability; only weak off-diagonal Nb-Hf coupling drives marginal spinodal ($\lambda_{\min} \lesssim 0$); no significant decomposition
+            & Single-phase BCC: Nb$_{50}$Hf$_{5}$V$_{45}$ \\
+        \SIrange{600}{700}{\celsius}
+            & Ternary Nb$_{50}$Hf$_5$V$_{45}$
+            & $H_{\rm Nb} < 0$ only
+            & Asymmetric spinodal: Nb segregates against a stable V$+$Hf matrix; Hf acts as inert spectator
+            & BCC$_1$: Nb$_{90}$Hf$_{9}$V$_{1}$\newline BCC$_2$: Nb$_{2}$Hf$_{0.1}$V$_{98}$ \\
+        $T < \SI{500}{\celsius}$
+            & Ternary Nb$_{50}$Hf$_5$V$_{45}$
+            & $H_{\rm Nb} < 0$,\; $H_{\rm V} < 0$
+            & Recovers binary-like Nb-V demixing; Hf remains stable ($H_{\rm Hf} > 0$) but imposes numerical stiffness
+            & BCC$_1$: Nb$_{91}$Hf$_{9}$V$_{0.3}$\newline BCC$_2$: Nb$_{0.6}$Hf$_{0.04}$V$_{99}$ \\
+        \bottomrule
+        \multicolumn{5}{l}{\footnotesize $^{a}$~Equilibrium tie-line endpoints computed with pycalphad
+            (\texttt{BCC\_A2} miscibility gap) using the HfNbTiV PhaseForge v3 TDB.
+            Subscripts are at.\%; representative temperatures: \SI{500}{\celsius} for
+            $T<\SI{750}{\celsius}$ rows, \SI{700}{\celsius} for the
+            \SIrange{600}{700}{\celsius} row.}
+    \end{tabularx}
+\end{table}
+
+The key contrast between the binary and ternary is that adding even 5\,at.\% Hf shifts the
+spinodal from a symmetric two-component instability to an asymmetric one-component
+instability (Nb only) across most of the accessible temperature range.
+At \SI{700}{\celsius}, the ternary driving force ($|\lambda_{\min}| = \SI{13272}{\joule\per\mol}$) is approximately six times weaker than at \SI{500}{\celsius} ($|\lambda_{\min}| = \SI{25166}{\joule\per\mol}$), making \SI{700}{\celsius} the most numerically tractable temperature at which a physically meaningful Nb-driven spinodal decomposition still occurs in this system.
+
+When stiff spectator elements cannot be avoided — for example, when
+experimental alloy constraints fix the composition — practical mitigation
+strategies include:
+(i)~employing fully implicit or exponential-time-differencing (ETD)
+integrators, which are not bound by Eq.~\eqref{eq:dt_stability} and can take
+large steps even in the presence of stiff stable modes;
+(ii)~operator-splitting, which handles the stiff stable modes analytically or
+implicitly while integrating the unstable spinodal modes explicitly; or
+(iii)~rescaling time by recognising that the physical timescale of interest is
+$\tau$, so reporting microstructural evolution in units of $t/\tau$ rather
+than absolute seconds makes meaningful comparisons across alloy systems
+regardless of stiffness.
