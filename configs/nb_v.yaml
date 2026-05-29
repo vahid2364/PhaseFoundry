@@ -8,7 +8,7 @@
 
 system:
   name:              nb_v
-  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v3.tdb
   elements:          [NB, V]
   phase:             BCC_A2
   reference_element: V
@@ -29,16 +29,21 @@ simulation:
   noise:         0.01              # initial perturbation amplitude
   seed:          42                # random seed
   dt:            1.0e-2            # time step [s]  (None = auto stable dt)
+  # Derivative method for chemical potentials and Hessian:
+  #   "fd"      — finite differences on G_m interpolant (default, no extra data needed)
+  #   "jansson" — direct interpolation of CALPHAD MU and dMU (requires /MU, /dMU in HDF5)
+  #   "hybrid"  — Jansson for μᵢ (accurate), FD for Hᵢⱼ (simpler)
+  derivative_method: fd
   n_steps:       30000
   save_every:    5000
 
 output:
-  data_dir:      data/nb_v/fine
-  results_dir:   results/nb_v
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v3/NbV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v3/NbV
   # Folder convention: results_dir / {temperature_C}C / thermodynamics/
   #                    results_dir / {temperature_C}C / kinetics / {run_name}/
   # run_name pattern:  pf_c{mol%}_kappa{val}_{tdb_tag}
   #   c50      = 50 mol% (mean initial composition x_V = 0.50)
   #   kappa1e12 = gradient energy coefficient κ = 1×10⁻¹² J·m²/mol
-  #   tdbv2    = TDB version 2 (HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb)
-  run_name:      pf_c50_kappa1e12_tdbv2          # subfolder inside kinetics/
+  #   tdbv3    = TDB version 3 (HfNbTiV_BCC_PhaseForge_v3.tdb)
+  run_name:      pf_c50_kappa1e12_tdbv3          # subfolder inside kinetics/

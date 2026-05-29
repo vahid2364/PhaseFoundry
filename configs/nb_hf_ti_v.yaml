@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-Ti-V Quaternary System — Pipeline Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_ti_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, TI, V]       # V is reference; NB, HF, TI are independent
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.01, 0.99]
+    HF: [0.01, 0.99]
+    TI: [0.01, 0.99]
+  n_points:          10                    # coarse grid for testing (10³ → ~220 valid simplex pts)
+  temperatures_C:    [500]                 # single temperature for testing
+
+simulation:
+  temperature_C: 500
+  N:             256
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 1.0e-12, 1.0e-12]
+
+  M:
+    - [5.0e-21, 0.0,     0.0    ]
+    - [0.0,     5.0e-21, 0.0    ]
+    - [0.0,     0.0,     5.0e-21]
+
+  # Close to Nb-V corner: x_NB=0.50, x_HF=0.05, x_TI=0.05, x_V=0.40
+  c0:            [0.50, 0.05, 0.05]
+
+  noise:         0.01
+  seed:          42
+  dt:            null
+  # Derivative method: "fd" | "jansson" | "hybrid"
+  # "jansson" requires /MU and /dMU datasets in the HDF5 table (step 1 default).
+  derivative_method: fd
+  n_steps:       10000
+  save_every:    2500
+
+output:
+  data_dir:      data/nb_hf_ti_v
+  results_dir:   results/nb_hf_ti_v
+  run_name:      pf_c50Nb5Hf5Ti_kappa1e12_tdbv2

@@ -105,14 +105,54 @@ class SimResult:
         return float(self.compositions.max())
 
 
+# ── shared composition scan helper ───────────────────────────────────────────
+
+def _hessian_scan(
+    interpolant: "GmInterpolant",
+    c0:          "np.ndarray | None" = None,
+    c0_window:   float = 0.3,
+    n_scan:      int   = 20,
+) -> "np.ndarray":
+    """
+    Return the Hessian array (N_ind, N_ind, n_valid_pts) evaluated on a coarse
+    composition grid centred on c0 ± c0_window, clipped to simplex interior.
+    Used by both stable_dt and the A_i stabilization calculation.
+    """
+    N_ind = interpolant.N_ind
+    axes_1d = []
+    for i in range(N_ind):
+        if interpolant.grid_bounds is not None:
+            lo_grid, hi_grid = interpolant.grid_bounds[i]
+        else:
+            lo_grid, hi_grid = 0.01, 0.99
+        if c0 is not None:
+            c0_i = float(np.atleast_1d(c0)[i])
+            lo = max(lo_grid + 1e-4, c0_i - c0_window)
+            hi = min(hi_grid - 1e-4, c0_i + c0_window)
+        else:
+            lo, hi = lo_grid + 1e-4, hi_grid - 1e-4
+        axes_1d.append(np.linspace(lo, hi, n_scan))
+
+    grids = np.meshgrid(*axes_1d, indexing="ij")
+    pts   = np.stack([g.ravel() for g in grids], axis=0)   # (N_ind, n_pts)
+    c_sum = pts.sum(axis=0)
+    valid = (c_sum < 0.99) & np.all(pts > 0.001, axis=0)
+    pts   = pts[:, valid]
+    if pts.shape[1] == 0:
+        pts = np.full((N_ind, 1), 1.0 / (N_ind + 1))
+    return interpolant.d2g(pts)   # (N_ind, N_ind, n_valid_pts)
+
+
 # ── stable time-step ──────────────────────────────────────────────────────────
 
 def stable_dt(
     M_diag:       np.ndarray | float,
     dx:           float,
     interpolant:  GmInterpolant,
-    n_scan:       int   = 40,
-    safety:       float = 0.4,
+    c0:           np.ndarray | None = None,
+    c0_window:    float = 0.3,
+    n_scan:       int   = 20,
+    safety:       float = 0.3,
 ) -> float:
     """
     CFL-style stable time step for the semi-implicit CH scheme.
@@ -120,30 +160,27 @@ def stable_dt(
         dt = safety · dx² / ( M_max · |H_max| )
 
     where |H_max| is the max absolute Hessian eigenvalue over a coarse scan.
+
+    The scan is centred on ``c0`` (the mean initial composition) with a window
+    of ±``c0_window`` per axis, clipped to the interpolant grid bounds.  This
+    avoids the scan reaching simplex corners where |H| is enormous but the
+    simulation never visits.
     """
     M_diag  = np.atleast_1d(np.asarray(M_diag, dtype=float))
     M_max   = float(M_diag.max())
-    N_ind   = interpolant.N_ind
 
-    # coarse scan on the interior of the simplex
-    axis    = np.linspace(0.05, 0.95 / N_ind, n_scan)
-    grids   = np.meshgrid(*[axis] * N_ind, indexing="ij")
-    pts     = np.stack([g.ravel() for g in grids], axis=0)   # (N_ind, n_pts)
-    # keep only simplex-interior points
-    c_sum   = pts.sum(axis=0)
-    valid   = (c_sum < 0.95) & np.all(pts > 0.01, axis=0)
-    pts     = pts[:, valid]
-
-    if pts.shape[1] == 0:
-        # fallback: single midpoint
-        pts = np.full((N_ind, 1), 1.0 / (N_ind + 1))
-
-    H       = interpolant.d2g(pts)     # (N_ind, N_ind, n_pts)
-    n_pts   = pts.shape[1]
+    H_scan  = _hessian_scan(interpolant, c0, c0_window, n_scan)
+    n_pts   = H_scan.shape[2]
     eig_max = 0.0
     for k in range(n_pts):
-        eigs    = np.linalg.eigvalsh(H[:, :, k])
-        eig_max = max(eig_max, float(np.abs(eigs).max()))
+        Hk = H_scan[:, :, k]
+        if np.any(np.isnan(Hk)):
+            continue
+        try:
+            eigs    = np.linalg.eigvalsh(Hk)
+            eig_max = max(eig_max, float(np.abs(eigs).max()))
+        except np.linalg.LinAlgError:
+            continue
 
     if eig_max == 0.0:
         eig_max = 1.0   # fallback
@@ -167,6 +204,8 @@ def solve_cahn_hilliard(
     save_every:   int   = 5000,
     output_dir:   str | Path | None = None,
     save_frames:  bool  = True,
+    stabilization: float | None = None,
+    snapshot_callback = None,
 ) -> SimResult:
     """
     General Cahn-Hilliard phase-field solver.
@@ -215,9 +254,52 @@ def solve_cahn_hilliard(
     M_diag = np.diag(M)                 # (N_ind,)
 
     # ── time step ─────────────────────────────────────────────────────────────
+    dt_stable = stable_dt(M_diag, dx, interpolant, c0=c0)
     if dt is None:
-        dt = stable_dt(M_diag, dx, interpolant)
-        print(f"  auto dt = {dt:.4e} s  (stability criterion)")
+        dt = dt_stable
+        print(f"  auto dt = {dt:.4e} s  (stability criterion, scan ±0.3 around c0)")
+    else:
+        print(f"  dt_stable = {dt_stable:.4e} s  |  dt used = {dt:.4e} s")
+
+    # ── per-component stabilization A_i (Eyre convex-splitting) ─────────────
+    # Each field i gets its own stabilization constant A_i ≥ |H_ii(c0)|.
+    # This is tighter than the global scalar (which uses λ_min of the full
+    # Hessian) and gives each component exactly the damping it needs:
+    #   - Strongly unstable elements (large |H_ii|) get large A_i → heavy damping
+    #   - Weakly unstable elements get small A_i → less artificial drag
+    # Scheme per field i:
+    #   c_i_new·(1 + dt·k²·M_ii·(A_i + κ_i·k²)) = c_i_old + dt·k²·M_ii·(A_i·c_i_old - μ_i_old)
+    if stabilization is None:
+        # Scan the same composition neighbourhood used by stable_dt so that
+        # A_i = max_{c in scan} max(0, -H_ii(c)).
+        # Using only c0 is insufficient: H_ii can be significantly more
+        # negative at compositions the simulation will visit during
+        # decomposition (e.g. in NbV at 500C, H_NB reaches -19840 J/mol
+        # at x_NB~0.75 vs -7239 J/mol at x_NB=0.50).
+        try:
+            H_scan = _hessian_scan(interpolant, c0, c0_window=0.3, n_scan=10)
+            A_stab = np.array([
+                max(0.0, float(np.nanmax(-H_scan[i, i, :])))
+                for i in range(N_ind)
+            ])
+        except Exception:
+            # fallback: single-point evaluation at c0
+            c0_field = c0[:, None, None] * np.ones((N_ind, 1, 1))
+            try:
+                H = interpolant.d2g(c0_field)
+                H2d = H[:, :, 0, 0]
+                A_stab = np.array([max(0.0, -H2d[i, i]) for i in range(N_ind)])
+            except Exception:
+                A_stab = np.zeros(N_ind)
+    else:
+        # scalar broadcast or per-component array
+        A_stab = np.broadcast_to(np.atleast_1d(float(stabilization)), (N_ind,)).copy()
+
+    for i, el in enumerate(interpolant.ind_elements):
+        if A_stab[i] > 0:
+            print(f"  Stabilization A_{el} = {A_stab[i]:.4e} J/mol  (Eyre, component-specific)")
+        else:
+            print(f"  Stabilization A_{el} = 0  (convex at c0)")
 
     # ── spectral operators ────────────────────────────────────────────────────
     k2 = laplacian_operator(N, Lx)   # (N, N), real-negative
@@ -248,6 +330,12 @@ def solve_cahn_hilliard(
     F_hist     = []
     Fb_hist    = []
     Fg_hist    = []
+    # per-element: list of (c_min, c_mean, c_max) arrays
+    # elements = ind_elements + [reference_element]
+    all_elements = interpolant.ind_elements + [interpolant.reference_element]
+    cmin_hist  = {el: [] for el in all_elements}
+    cmean_hist = {el: [] for el in all_elements}
+    cmax_hist  = {el: [] for el in all_elements}
     t_phys     = 0.0
 
     def _snapshot(c_arr: np.ndarray, step: int) -> None:
@@ -267,8 +355,20 @@ def solve_cahn_hilliard(
         Fb_hist.append(Fb)
         Fg_hist.append(Fg)
 
+        # per-element composition statistics
+        c_ref_arr = 1.0 - c_arr.sum(axis=0)
+        for i, el in enumerate(interpolant.ind_elements):
+            cmin_hist[el].append(float(c_arr[i].min()))
+            cmean_hist[el].append(float(c_arr[i].mean()))
+            cmax_hist[el].append(float(c_arr[i].max()))
+        ref_el = interpolant.reference_element
+        cmin_hist[ref_el].append(float(c_ref_arr.min()))
+        cmean_hist[ref_el].append(float(c_ref_arr.mean()))
+        cmax_hist[ref_el].append(float(c_ref_arr.max()))
+
         if output_dir is not None and save_frames:
-            _save_frame(c_arr, step, output_dir, interpolant.ind_elements)
+            _save_frame(c_arr, step, output_dir, interpolant.ind_elements,
+                        reference_element=interpolant.reference_element)
 
     # ── time integration ──────────────────────────────────────────────────────
     _snapshot(c, 0)
@@ -285,13 +385,25 @@ def solve_cahn_hilliard(
         M_eff_diag = np.diag(M_eff)                          # (N_ind,)
 
         # chemical potentials from interpolant
-        mu_bulk = interpolant.mu(c)                           # (N_ind, N, N)
+        # Clamp only for interpolant evaluation to avoid NaN from out-of-bounds
+        # queries when any pixel overshoots the table boundary.  The stored
+        # composition field c is never modified, so mass is exactly conserved.
+        eps = 1e-4
+        c_clamp = np.clip(c, eps, 1.0 - eps)
+        # also enforce simplex: last component must be positive
+        c_ref_clamp = 1.0 - c_clamp.sum(axis=0)
+        scale = np.where(c_ref_clamp < eps,
+                         (1.0 - eps * (interpolant.N_ind + 1)) /
+                         np.maximum(c_clamp.sum(axis=0), 1e-10),
+                         1.0)
+        c_eval = c_clamp * scale[np.newaxis, :, :]
+        mu_bulk = interpolant.mu(c_eval)                      # (N_ind, N, N)
 
         # FFT of each field and its bulk chemical potential
         c_hat   = [fft2(c[i])        for i in range(N_ind)]
         mu_hat  = [fft2(mu_bulk[i])  for i in range(N_ind)]
 
-        # update each field
+        # update each field (stabilized semi-implicit / Eyre convex-splitting)
         for i in range(N_ind):
             # explicit cross-terms from off-diagonal mobility
             cross_bulk = sum(
@@ -303,11 +415,14 @@ def solve_cahn_hilliard(
                 for j in range(N_ind) if j != i
             )
 
-            denom = 1.0 + M_eff_diag[i] * kappa[i] * dt * k4
+            # per-component stabilization: A_i treated implicitly
+            # denom gains +dt·(-k²)·M_ii·A_i; numerator subtracts A_i·c_hat_i
+            Ai = A_stab[i]
+            denom = 1.0 + M_eff_diag[i] * dt * (-k2) * Ai + M_eff_diag[i] * kappa[i] * dt * k4
 
             numerator = (
                 c_hat[i]
-                + dt * k2 * (M_eff_diag[i] * mu_hat[i] + cross_bulk)
+                + dt * k2 * (M_eff_diag[i] * (mu_hat[i] - Ai * c_hat[i]) + cross_bulk)
                 - dt * cross_grad
             )
             c[i] = np.real(ifft2(numerator / denom))
@@ -316,15 +431,19 @@ def solve_cahn_hilliard(
 
         if step % save_every == 0 or step == n_steps:
             _snapshot(c, step)
+            if snapshot_callback is not None:
+                snapshot_callback(c, t_phys)
 
     elapsed = time.perf_counter() - t_start
 
     # ── save log ──────────────────────────────────────────────────────────────
     if output_dir is not None:
-        _save_log(output_dir, time_hist, F_hist, Fb_hist, Fg_hist, comp_hist, save_every)
-        _plot_energy(output_dir, time_hist, F_hist, Fb_hist, Fg_hist)
+        _save_log(output_dir, time_hist, F_hist, Fb_hist, Fg_hist,
+                  comp_hist, save_every, all_elements, cmin_hist, cmean_hist, cmax_hist)
+        _plot_energy(output_dir, time_hist, F_hist, Fb_hist, Fg_hist,
+                     all_elements, cmin_hist, cmean_hist, cmax_hist)
         _write_params(output_dir, N, Lx, dx, kappa, M, c0, noise, seed, dt,
-                      n_steps, save_every, elapsed, interpolant)
+                      dt_stable, n_steps, save_every, elapsed, interpolant)
 
     return SimResult(
         compositions         = c,
@@ -347,19 +466,27 @@ def solve_cahn_hilliard(
 _CMAP_FIELD = "RdBu_r"
 
 def _save_frame(
-    c:         np.ndarray,
-    step:      int,
-    out_dir:   Path,
-    elements:  list[str],
+    c:                np.ndarray,
+    step:             int,
+    out_dir:          Path,
+    elements:         list[str],
+    reference_element: str | None = None,
 ) -> None:
-    """Save a PNG frame showing all composition fields side by side."""
+    """Save a PNG frame showing all composition fields + reference element."""
     N_ind = c.shape[0]
-    fig, axes = plt.subplots(1, N_ind, figsize=(5 * N_ind, 4.5),
+    # build list of (data, label) — independent fields + reference if available
+    fields = [(c[i], elements[i]) for i in range(N_ind)]
+    if reference_element is not None:
+        c_ref = 1.0 - c.sum(axis=0)
+        fields.append((c_ref, reference_element))
+
+    n_panels = len(fields)
+    fig, axes = plt.subplots(1, n_panels, figsize=(5 * n_panels, 4.5),
                              squeeze=False)
-    for i, ax in enumerate(axes[0]):
-        im = ax.imshow(c[i], cmap=_CMAP_FIELD, vmin=0, vmax=1,
+    for ax, (data, label) in zip(axes[0], fields):
+        im = ax.imshow(data, cmap=_CMAP_FIELD, vmin=data.min(), vmax=data.max(),
                        origin="lower", interpolation="nearest")
-        ax.set_title(f"$x_{{\\rm {elements[i].capitalize()}}}$  (step {step:,})",
+        ax.set_title(f"$x_{{\\rm {label.capitalize()}}}$  (step {step:,})",
                      fontsize=11)
         ax.set_xticks([]); ax.set_yticks([])
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
@@ -369,46 +496,102 @@ def _save_frame(
 
 
 def _save_log(
-    out_dir:   Path,
-    t_hist:    list,
-    F_hist:    list,
-    Fb_hist:   list,
-    Fg_hist:   list,
-    c_hist:    list,
+    out_dir:    Path,
+    t_hist:     list,
+    F_hist:     list,
+    Fb_hist:    list,
+    Fg_hist:    list,
+    c_hist:     list,
     save_every: int,
+    elements:   list[str],
+    cmin_hist:  dict,
+    cmean_hist: dict,
+    cmax_hist:  dict,
 ) -> None:
     path = out_dir / "free_energy_log.txt"
+    # header: fixed columns + per-element triplet (min, mean, max)
+    el_cols = "  ".join(
+        f"{'x'+el+'_min':>12}  {'x'+el+'_mean':>12}  {'x'+el+'_max':>12}"
+        for el in elements
+    )
     header = (f"{'step':>10}  {'time_s':>14}  {'F_total':>16}  "
-              f"{'F_bulk':>16}  {'F_grad':>16}  {'c_min':>10}  {'c_max':>10}")
+              f"{'F_bulk':>16}  {'F_grad':>16}  {el_cols}")
     with open(path, "w") as fh:
         fh.write(header + "\n")
-        for k, (t, F, Fb, Fg, c_snap) in enumerate(
-                zip(t_hist, F_hist, Fb_hist, Fg_hist, c_hist)):
-            step = k * save_every
-            row  = (f"{step:>10d}  {t:>14.6e}  {F:>16.6e}  "
-                    f"{Fb:>16.6e}  {Fg:>16.6e}  "
-                    f"{c_snap.min():>10.5f}  {c_snap.max():>10.5f}")
+        for k, (t, F, Fb, Fg) in enumerate(zip(t_hist, F_hist, Fb_hist, Fg_hist)):
+            step    = k * save_every
+            el_vals = "  ".join(
+                f"{cmin_hist[el][k]:>12.5f}  {cmean_hist[el][k]:>12.5f}  {cmax_hist[el][k]:>12.5f}"
+                for el in elements
+            )
+            row = (f"{step:>10d}  {t:>14.6e}  {F:>16.6e}  "
+                   f"{Fb:>16.6e}  {Fg:>16.6e}  {el_vals}")
             fh.write(row + "\n")
 
 
 def _plot_energy(
-    out_dir: Path,
-    t_hist:  list,
-    F_hist:  list,
-    Fb_hist: list,
-    Fg_hist: list,
+    out_dir:    Path,
+    t_hist:     list,
+    F_hist:     list,
+    Fb_hist:    list,
+    Fg_hist:    list,
+    elements:   list[str]       | None = None,
+    cmin_hist:  dict | None = None,
+    cmean_hist: dict | None = None,
+    cmax_hist:  dict | None = None,
 ) -> None:
-    fig, ax = plt.subplots(figsize=(7, 4))
     t = np.array(t_hist)
-    ax.plot(t, F_hist,  label="$F_{\\rm total}$",    linewidth=2)
-    ax.plot(t, Fb_hist, label="$F_{\\rm bulk}$",     linestyle="--")
-    ax.plot(t, Fg_hist, label="$F_{\\rm gradient}$", linestyle=":")
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Free energy [J/mol]")
-    ax.legend()
+
+    # ── figure 1: free energy (log scale) ────────────────────────────────
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    # shift to positive for log scale: plot |F - F_min| or use absolute values
+    F_arr  = np.array(F_hist)
+    Fb_arr = np.array(Fb_hist)
+    Fg_arr = np.array(Fg_hist)
+    # use absolute values; gradient energy is always positive
+    ax.plot(t, np.abs(F_arr),  label="|$F_{\\rm total}$|",    linewidth=2, color="#1f77b4")
+    ax.plot(t, np.abs(Fb_arr), label="|$F_{\\rm bulk}$|",     linewidth=1.5, linestyle="--", color="#ff7f0e")
+    ax.plot(t, np.abs(Fg_arr), label="$F_{\\rm gradient}$",   linewidth=1.5, linestyle=":",  color="#2ca02c")
+    ax.set_yscale("log")
+    ax.set_xlabel("Time [s]", fontsize=12)
+    ax.set_ylabel("|Free energy|  [J/mol]  (log scale)", fontsize=12)
+    ax.set_title("Free energy evolution", fontsize=12)
+    ax.legend(fontsize=10, frameon=False)
     ax.grid(False)
     fig.tight_layout()
     fig.savefig(out_dir / "free_energy_history.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── figure 2: per-element composition evolution ───────────────────────
+    if elements is None or cmin_hist is None:
+        return
+    n_el   = len(elements)
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    fig, axes = plt.subplots(1, n_el, figsize=(5 * n_el, 4.5), squeeze=False)
+    for p, el in enumerate(elements):
+        ax     = axes[0, p]
+        c_lo   = np.array(cmin_hist[el])
+        c_mean = np.array(cmean_hist[el])
+        c_hi   = np.array(cmax_hist[el])
+        col    = colors[p % len(colors)]
+
+        ax.fill_between(t, c_lo, c_hi, alpha=0.15, color=col, label="min–max range")
+        ax.plot(t, c_lo,   color=col, lw=1.5, ls="--",
+                marker="s", markersize=4, markerfacecolor="white",
+                label=f"$x_{{{el.capitalize()}}}^{{\\rm min}}$")
+        ax.plot(t, c_hi,   color=col, lw=1.5, ls="-.",
+                marker="o", markersize=4, markerfacecolor="white",
+                label=f"$x_{{{el.capitalize()}}}^{{\\rm max}}$")
+        ax.plot(t, c_mean, color=col, lw=2.2, ls="-",
+                label=f"$\\langle x_{{{el.capitalize()}}} \\rangle$")
+
+        ax.set_xlabel("Time [s]", fontsize=12)
+        ax.set_ylabel(f"$x_{{{el.capitalize()}}}$  [mol fraction]", fontsize=12)
+        ax.set_title(f"{el.capitalize()} — composition evolution", fontsize=12)
+        ax.legend(fontsize=9, frameon=False)
+        ax.grid(False)
+    fig.tight_layout()
+    fig.savefig(out_dir / "composition_evolution.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -423,14 +606,40 @@ def _write_params(
     noise:       float,
     seed:        int,
     dt:          float,
+    dt_stable:   float,
     n_steps:     int,
     save_every:  int,
     elapsed:     float,
     interp:      GmInterpolant,
 ) -> None:
-    N_ind    = interp.N_ind
-    t_total  = dt * n_steps
+    N_ind   = interp.N_ind
+    t_total = dt * n_steps
 
+    # ── Hessian at mean composition c0 ───────────────────────────────────────
+    c0_col = c0.reshape(N_ind, 1)
+    H_c0   = interp.d2g(c0_col)[:, :, 0]          # (N_ind, N_ind)
+    eigs   = np.linalg.eigvalsh(H_c0)              # ascending
+    lam_min = float(eigs[0])                        # most negative
+    lam_max_abs = float(np.abs(eigs).max())
+
+    # Hessian diagonal elements (per-field self-interaction)
+    H_diag = np.array([H_c0[i, i] for i in range(N_ind)])
+
+    # ── per-field derived length scales ──────────────────────────────────────
+    # Use |λ_min| (most negative eigenvalue) as the relevant driving force
+    # for interface width and spinodal wavelengths; this is the worst case.
+    f2_eff = max(abs(lam_min), 1e-30)              # effective |d²G|
+
+    delta       = [float(np.sqrt(kappa[i] / f2_eff)) for i in range(N_ind)]
+    lambda_star = [4.0 * np.pi * np.sqrt(kappa[i] / f2_eff) for i in range(N_ind)]
+    lambda_crit = [2.0 * np.pi * np.sqrt(2.0 * kappa[i] / f2_eff) for i in range(N_ind)]
+    kappa_min   = [f2_eff * (5.0 * dx) ** 2 for _ in range(N_ind)]  # for δ = 5·dx
+
+    # ── stability ratio per field ─────────────────────────────────────────────
+    # Effective M peaks at c=0.5 for each field (degenerate mobility)
+    stab = [float(M[i, i] * 0.25 * lam_max_abs * dt / dx**2) for i in range(N_ind)]
+
+    # ── format ────────────────────────────────────────────────────────────────
     lines = [
         "=" * 60,
         "  Cahn-Hilliard Simulation Parameters (general solver)",
@@ -441,6 +650,7 @@ def _write_params(
         f"  Reference element           = {interp.reference_element}",
         f"  Temperature        T        = {interp.temperature_K:.2f} K  "
         f"({interp.temperature_K - 273.15:.1f} °C)",
+        f"  Derivative method           = {interp.derivative_method}",
         "",
         "  ── Domain ──────────────────────────────────────────",
         f"  Grid points        N        = {N}",
@@ -450,22 +660,69 @@ def _write_params(
         "  ── Physical parameters ─────────────────────────────",
     ]
     for i in range(N_ind):
-        lines.append(f"  κ_{interp.ind_elements[i]:4s}             kappa[{i}] = {kappa[i]:.3e} J·m²/mol")
+        lines.append(f"  κ_{interp.ind_elements[i]:<4}            kappa[{i}] = {kappa[i]:.3e} J·m²/mol")
     lines.append(f"  Mobility matrix    M  =")
     for i in range(N_ind):
         row_str = "  " + "  ".join(f"{M[i,j]:.3e}" for j in range(N_ind))
         lines.append(row_str)
     lines.append(f"  Mean composition   c0       = {c0.tolist()}")
+
+    # grid bounds
+    if interp.grid_bounds is not None:
+        lines += ["", "  ── Interpolant grid bounds ─────────────────────────"]
+        for i, (lo, hi) in enumerate(interp.grid_bounds):
+            lines.append(f"  x_{interp.ind_elements[i]:<4}  grid range         = [{lo:.4f}, {hi:.4f}]")
+
+    # Hessian summary at c0
+    lines += [
+        "",
+        "  ── Hessian at c0 (J/mol) ───────────────────────────",
+        f"  Eigenvalues        λ        = {[f'{e:.1f}' for e in eigs]}",
+        f"  |λ|_max (driving)  |λ|_max  = {lam_max_abs:.3e} J/mol",
+        f"  λ_min (spinodal)   λ_min    = {lam_min:.3e} J/mol  "
+        f"({'UNSTABLE' if lam_min < 0 else 'stable'})",
+    ]
+    for i in range(N_ind):
+        lines.append(f"  H_{interp.ind_elements[i]}{interp.ind_elements[i]}  (diagonal)         "
+                     f"= {H_diag[i]:.3e} J/mol")
+
+    # per-field derived length scales
+    lines += ["", "  ── Derived length scales (per field, using |λ_min|) ──"]
+    for i in range(N_ind):
+        el = interp.ind_elements[i]
+        warn_d = "  ⚠  δ < dx — UNRESOLVED!" if delta[i] < dx else ""
+        warn_l = "  ⚠  λ* < dx — UNRESOLVED!" if lambda_star[i] < dx else ""
+        warn_k = (f"\n    ⚠  Suggested κ_{el} for δ=5·dx: κ_min ≈ {kappa_min[i]:.3e} J·m²/mol"
+                  if delta[i] < dx else "")
+        lines += [
+            f"  [{el}]",
+            f"    Interface width    δ_{el:<4}  = {delta[i]:.3e} m  ({delta[i]/dx:.2f} × dx){warn_d}",
+            f"    Most unstable λ*   λ*_{el:<4} = {lambda_star[i]:.3e} m  ({lambda_star[i]/dx:.1f} × dx){warn_l}",
+            f"    Critical λ_c       λ_c_{el:<4}= {lambda_crit[i]:.3e} m  ({lambda_crit[i]/dx:.1f} × dx)",
+            f"    Domain / λ*                 = {Lx / lambda_star[i]:.1f}",
+        ]
+        if warn_k:
+            lines.append(warn_k)
+
+    # time integration
     lines += [
         "",
         "  ── Time integration ────────────────────────────────",
-        f"  Time step          dt       = {dt:.4e} s",
-        f"  Steps              n_steps  = {n_steps}",
-        f"  Save interval      save_every= {save_every}",
-        f"  Total phys. time   t_total  = {t_total:.4e} s",
-        f"  Wall time          elapsed  = {elapsed:.1f} s",
+        f"  Stable dt (safety=0.4) dt_stable= {dt_stable:.4e} s",
+        f"  Time step used       dt       = {dt:.4e} s",
+        f"  Steps                n_steps  = {n_steps}",
+        f"  Save interval        save_every= {save_every}  (every {save_every * dt:.4e} s)",
+        f"  Total physical time  t_total  = {t_total:.4e} s",
+    ]
+    for i in range(N_ind):
+        el = interp.ind_elements[i]
+        warn_s = "  ⚠  > 0.5 — may be unstable!" if stab[i] > 0.5 else ""
+        lines.append(f"  Stability ratio [{el}]  M·|λ|·dt/dx² = {stab[i]:.4f}{warn_s}")
+    lines += [
+        f"  Wall time            elapsed  = {elapsed:.1f} s",
         "=" * 60,
     ]
+
     (out_dir / "sim_params.txt").write_text("\n".join(lines) + "\n")
 
 

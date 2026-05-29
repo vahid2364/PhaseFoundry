@@ -24,6 +24,8 @@ simulation:
   noise:         0.01
   seed:          42
   dt:            null           # auto stable dt
+  # Derivative method: "fd" | "jansson" | "hybrid"
+  derivative_method: fd
   n_steps:       15000
   save_every:    2500
 

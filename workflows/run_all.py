@@ -48,6 +48,7 @@ STEP_LABELS = {
     3: "Phase-field simulation",
     4: "Post-processing & figures",
 }
+VALIDATE_SCRIPT = _ROOT / "workflows" / "05_validate" / "run.py"
 
 
 def _load_step(path: Path):
@@ -71,6 +72,8 @@ def main():
                         metavar="N", help="Run only step N")
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                         help="Override config values, e.g. --set simulation.kappa=1e-10")
+    parser.add_argument("--validate", action="store_true",
+                        help="Run step 5 (validate) after the main pipeline")
     args = parser.parse_args()
 
     # Load and resolve config
@@ -84,7 +87,7 @@ def main():
     print("  Integrated CALPHAD / Phase-Field Pipeline")
     print(f"  Config  : {args.config}")
     print(f"  System  : {cfg['system']['name'].upper()}")
-    print(f"  Steps   : {steps}")
+    print(f"  Steps   : {steps}" + ("  + validate" if args.validate else ""))
     print("=" * 60)
     print(summary(cfg))
 
@@ -93,6 +96,13 @@ def main():
         print(f"  Step {s}: {STEP_LABELS[s]}")
         print(f"{'─' * 60}")
         mod = _load_step(STEP_SCRIPTS[s])
+        mod.run(cfg)
+
+    if args.validate:
+        print(f"\n{'─' * 60}")
+        print(f"  Step 5: Validate thermodynamic tables & derivative methods")
+        print(f"{'─' * 60}")
+        mod = _load_step(VALIDATE_SCRIPT)
         mod.run(cfg)
 
     print("\n" + "=" * 60)
