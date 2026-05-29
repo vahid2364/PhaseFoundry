@@ -1,15 +1,15 @@
 """
-Ternary Nb50Hf5V45  |  BCC_A2  |  500 °C  |  TDB: HfNbTiV_BCC_PhaseForge_v2_Tdep
-=============================================================================
+Binary Nb50V50  |  BCC_A2  |  600 °C  |  TDB: HfNbTiV_BCC_PhaseForge_v2_Tdep
+=========================================================================
 Cahn-Hilliard phase-field simulation via Eyre convex-splitting (spectral).
 
-Thermodynamics (500 °C, Nb50Hf5V45, BCC_A2):
-  Stronger spinodal than 600 °C — deeper inside the miscibility gap.
+Thermodynamics (600 °C, x_NB = 0.50, BCC_A2 miscibility gap):
+  Spinodal decomposition still active at 600 °C (below ~750 °C transition).
   Equilibrium tie-line:
-    BCC_1 (Nb+Hf-rich)  Nb~91%  Hf~9%  V~0.3%
-    BCC_2 (V-rich)      Nb~0.6% Hf~0.04% V~99%
+    BCC_1 (Nb-rich)  x_NB ~ 0.99 | x_V ~ 0.01
+    BCC_2 (V-rich)   x_NB ~ 0.01 | x_V ~ 0.99
 
-Output: results/HfNbTiV_BCC_PhaseForge_v2_Tdep/NbHfV/500C/
+Output: results/HfNbTiV_BCC_PhaseForge_v2_Tdep/NbV/600C/
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-_ROOT = Path(__file__).resolve().parents[1]
+_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 
 from calphad_pf.thermodynamics.storage import load_table
@@ -30,20 +30,20 @@ from calphad_pf.phasefield.solver import solve_cahn_hilliard, stable_dt
 
 # ── parameters ────────────────────────────────────────────────────────────────
 TDB_STEM    = "HfNbTiV_BCC_PhaseForge_v2_Tdep"
-SYSTEM      = "NbHfV"
-ELEMENTS    = ["NB", "HF", "V"]
+SYSTEM      = "NbV"
+ELEMENTS    = ["NB", "V"]
 REF_EL      = "V"
-T_TARGET    = 773.15        # 500 °C
-T_LABEL     = "500C"
-T_PHYS      = 1000.0        # target physical time (s)
+T_TARGET    = 873.15        # 600 °C
+T_LABEL     = "600C"
+T_PHYS      = 1500.0        # target physical time (s)
 DT_SAFETY   = 1.0
 N_SNAPSHOTS = 10
 
-M_diag = [5.0e-21, 5.0e-23]   # Nb, Hf  [mol·m²/(J·s)]  — Hf ~100x slower
-KAPPA  = [1.0e-12, 7.0e-12]   # Nb, Hf  [J/m]
+M_diag = [5.0e-21]          # Nb mobility  [mol·m²/(J·s)]
+KAPPA  = [1.0e-12]          # Nb gradient energy coefficient  [J/m]
 N      = 256
-Lx     = 1.0e-6
-C0     = [0.50, 0.05]          # x_NB=0.50, x_HF=0.05, x_V=0.45
+Lx     = 1.0e-6             # domain side length  [m]
+C0     = [0.50]             # x_NB = 0.50
 
 OUT_DIR = _ROOT / "results" / TDB_STEM / SYSTEM / T_LABEL
 if OUT_DIR.exists():
@@ -52,7 +52,7 @@ if OUT_DIR.exists():
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── load thermodynamic table ──────────────────────────────────────────────────
-table_dir = _ROOT / "data" / "HfNbTiV_BCC_PhaseForge_v2_Tdep" / "NbHfV"
+table_dir = _ROOT / "data" / "HfNbTiV_BCC_PhaseForge_v2_Tdep" / "NbV"
 tables    = sorted(table_dir.glob("*.h5"))
 best = min(tables, key=lambda p: abs(
     float(load_table(p)["metadata"]["temperature"]) - T_TARGET))
@@ -65,10 +65,17 @@ interp = build_interpolant(
     temperature_K=T_K, derivative_method="jansson")
 
 # ── print key thermodynamic quantities ───────────────────────────────────────
-c0_field = np.array(C0)[:, np.newaxis, np.newaxis] * np.ones((len(C0), 1, 1))
-H = interp.d2g(c0_field)[:, :, 0, 0]
-for i, el in enumerate(ELEMENTS[:-1]):
-    print(f"H_{el} = {float(H[i,i]):.0f} J/mol")
+c0_field = np.array([[[C0[0]]]])
+H        = interp.d2g(c0_field)[:, :, 0, 0]
+H_NB     = float(H[0, 0])
+A_NB     = max(0.0, -H_NB)
+sigma_max = M_diag[0] * H_NB**2 / (4 * KAPPA[0])
+tau       = 1.0 / abs(sigma_max)
+lam_star  = 2 * np.pi * np.sqrt(2 * KAPPA[0] / abs(H_NB))
+print(f"H_NB     = {H_NB:.0f} J/mol")
+print(f"A_NB     = {A_NB:.0f} J/mol  (Eyre stabilizer, H_eff = {H_NB + A_NB:.0f} J/mol)")
+print(f"tau      = {tau:.1f} s  |  t_phys/tau = {T_PHYS/tau:.1f}")
+print(f"lambda*  = {lam_star*1e9:.1f} nm  ({lam_star/(Lx/N):.1f} grid pts)")
 
 # ── time-step ────────────────────────────────────────────────────────────────
 dx = Lx / N
@@ -86,7 +93,7 @@ SIM = dict(
     noise      = 0.01,
     seed       = 42,
     kappa      = KAPPA,
-    M          = [[M_diag[0], 0.0], [0.0, M_diag[1]]],
+    M          = [[M_diag[0]]],
     dt         = dt,
     n_steps    = N_STEPS,
     save_every = SAVE_EVERY,
@@ -99,10 +106,9 @@ matplotlib.rcParams.update({
     "font.size": 8,
 })
 
-def save_micrograph(xnb, xhf, xv, t_s, out_path):
-    fig, axes = plt.subplots(1, 3, figsize=(11, 3.5))
+def save_micrograph(xnb, xv, t_s, out_path):
+    fig, axes = plt.subplots(1, 2, figsize=(8, 3.5))
     panels = [(xnb, r"$x_{\rm Nb}$", "RdBu_r"),
-              (xhf, r"$x_{\rm Hf}$", "RdBu_r"),
               (xv,  r"$x_{\rm V}$",  "RdBu_r")]
     for ax, (field, label, cmap) in zip(axes, panels):
         vmid  = field.mean()
@@ -114,8 +120,8 @@ def save_micrograph(xnb, xhf, xv, t_s, out_path):
         ax.set_xlabel(r"$L_x$ ($\mu$m)")
         ax.set_ylabel(r"$L_y$ ($\mu$m)")
         ax.set_title(
-            f"Nb$_{{50}}$Hf$_{{5}}$V$_{{45}}$ 500$^{{\\circ}}$C — {label}\n"
-            f"$t = {t_s:.1f}$ s")
+            f"Nb$_{{50}}$V$_{{50}}$ 600$^{{\\circ}}$C — {label}\n"
+            f"$t = {t_s:.1f}$ s  ($t/\\tau = {t_s/tau:.1f}$)")
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight", dpi=200)
     plt.close(fig)
@@ -127,10 +133,9 @@ snap_dir.mkdir(parents=True, exist_ok=True)
 
 def _save_snapshot(c_arr, t_s):
     snb = c_arr[0]
-    shf = c_arr[1]
-    sv  = 1.0 - snb - shf
+    sv  = 1.0 - snb
     out = snap_dir / f"snapshot_{_save_snapshot.counter:03d}_t{t_s:.1f}s.pdf"
-    save_micrograph(snb, shf, sv, t_s, out)
+    save_micrograph(snb, sv, t_s, out)
     _save_snapshot.counter += 1
 _save_snapshot.counter = 0
 
@@ -142,22 +147,23 @@ res = solve_cahn_hilliard(
 elapsed = time.time() - t0
 
 x_nb = res.compositions[0]
-x_hf = res.compositions[1]
-x_v  = 1.0 - x_nb - x_hf
+x_v  = 1.0 - x_nb
 t_phys_actual = N_STEPS * dt
 
 print(f"\nDone in {elapsed:.0f} s wall time  ({elapsed/60:.1f} min)")
 print(f"x_NB: [{x_nb.min():.4f}, {x_nb.mean():.4f}, {x_nb.max():.4f}]")
-print(f"x_HF: [{x_hf.min():.4f}, {x_hf.mean():.4f}, {x_hf.max():.4f}]")
 print(f"x_V:  [{x_v.min():.4f},  {x_v.mean():.4f},  {x_v.max():.4f}]")
+print(f"Eq. target: BCC_1 x_NB~0.99 | BCC_2 x_NB~0.01")
+print(f"Decomposition progress: {(x_nb.max()-x_nb.min())/(0.99-0.01)*100:.1f}%")
 
 # ── save outputs ──────────────────────────────────────────────────────────────
 np.savez_compressed(
     OUT_DIR / "final_field.npz",
-    x_nb=x_nb, x_hf=x_hf, x_v=x_v,
+    x_nb=x_nb, x_v=x_v,
     t_phys=t_phys_actual, t_wall=elapsed,
     dt=dt, dt_safety=DT_SAFETY, n_steps=N_STEPS,
-    c0_nb=C0[0], c0_hf=C0[1], T_K=T_K,
+    c0_nb=C0[0], T_K=T_K,
+    H_NB=H_NB, A_NB=A_NB, tau=tau, lam_star=lam_star,
 )
 print(f"Saved: {OUT_DIR / 'final_field.npz'}")
 
@@ -166,7 +172,7 @@ if hasattr(res, "compositions_history") and res.compositions_history:
     np.savez_compressed(OUT_DIR / "snapshots.npz",
                         compositions=snap,
                         times=np.array(res.time_history),
-                        elements=["NB", "HF"])
+                        elements=["NB"])
     print(f"Saved: {OUT_DIR / 'snapshots.npz'}  ({snap.shape[0]} frames)")
 
 fe_arr   = np.array(res.free_energy_history)
@@ -177,6 +183,6 @@ np.savetxt(OUT_DIR / "free_energy.csv",
            delimiter=",", header="t_phys_s,free_energy_J_mol", comments="")
 print(f"Saved: {OUT_DIR / 'free_energy.csv'}")
 
-save_micrograph(x_nb, x_hf, x_v, t_phys_actual, OUT_DIR / "micrograph_final.pdf")
+save_micrograph(x_nb, x_v, t_phys_actual, OUT_DIR / "micrograph_final.pdf")
 
 print("\nAll done.")
