@@ -44,7 +44,8 @@ N      = 256
 Lx     = 1.0e-6
 C0     = [0.50, 0.05]
 
-OUT_DIR = _ROOT / "results" / TDB_STEM / SYSTEM / T_LABEL
+RUN_NAME = "pf_cNb50Hf05_kappa1e12_tdbv3"
+OUT_DIR  = _ROOT / "results" / TDB_STEM / SYSTEM / T_LABEL / "kinetics" / RUN_NAME
 if OUT_DIR.exists():
     shutil.rmtree(OUT_DIR)
     print(f"Cleared: {OUT_DIR}")
