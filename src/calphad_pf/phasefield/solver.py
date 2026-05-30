@@ -50,7 +50,7 @@ from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.fft import fft2, ifft2
+from numpy.fft import fftn, ifftn
 from tqdm import tqdm
 
 from .spectral import laplacian_operator
@@ -212,6 +212,7 @@ def solve_cahn_hilliard(
     dt_max:         float | None = None,
     dc_tol_lo:      float = 1e-4,
     dc_tol_hi:      float = 2e-2,
+    ndim:           int   = 2,
 ) -> SimResult:
     """
     General Cahn-Hilliard phase-field solver.
@@ -266,11 +267,18 @@ def solve_cahn_hilliard(
         Field-change threshold below which dt is doubled (default: 1e-4).
     dc_tol_hi : float
         Field-change threshold above which dt is halved (default: 2e-2).
+    ndim : int
+        Spatial dimension — 2 (default, N×N grid) or 3 (N×N×N grid).
+        Existing 2-D runs are completely unaffected by this parameter.
+        In 3-D, ``_save_frame`` writes the mid-plane slice (z = N//2)
+        as a PNG so frame output still works without modification.
 
     Returns
     -------
     SimResult
     """
+    if ndim not in (2, 3):
+        raise ValueError(f"ndim must be 2 or 3, got {ndim}.")
     N_ind = interpolant.N_ind
     dx    = Lx / N
 
@@ -339,14 +347,21 @@ def solve_cahn_hilliard(
             print(f"  Stabilization A_{el} = 0  (convex at c0)")
 
     # ── spectral operators ────────────────────────────────────────────────────
-    k2 = laplacian_operator(N, Lx)   # (N, N), real-negative
-    k4 = k2 ** 2                     # (N, N), real-positive
+    grid_shape = (N,) * ndim
+    k2 = laplacian_operator(N, Lx, ndim=ndim)   # (N,N) or (N,N,N), real-negative
+    k4 = k2 ** 2                                 # real-positive
+
+    # Parseval normalization factor: 1/N^ndim
+    parseval_norm = N ** ndim
+
+    print(f"  Spatial dimension  ndim = {ndim}  "
+          f"({'N×N' if ndim == 2 else 'N×N×N'} = {N}{'×'+str(N) if ndim==3 else ''}{'×'+str(N) if ndim==3 else ''})")
 
     # ── initial condition ─────────────────────────────────────────────────────
     rng = np.random.default_rng(seed)
-    c   = np.empty((N_ind, N, N))
+    c   = np.empty((N_ind,) + grid_shape)
     for i in range(N_ind):
-        field = c0[i] + noise * (rng.random((N, N)) - 0.5)
+        field = c0[i] + noise * (rng.random(grid_shape) - 0.5)
         c[i]  = np.clip(field, 1e-6, 1.0 - 1e-6)
 
     # ── output directory ──────────────────────────────────────────────────────
@@ -383,11 +398,11 @@ def solve_cahn_hilliard(
 
         # bulk free energy
         Fb = float(np.mean(interpolant.gm(c_arr)))
-        # gradient energy: sum over components
+        # gradient energy: sum over components (Parseval, /N^ndim for unnormalized FFT)
         Fg = 0.0
         for i in range(N_ind):
-            c_hat = fft2(c_arr[i])
-            Fg   += float(kappa[i] / 2.0 * np.mean((-k2) * np.abs(c_hat)**2) / N**2)
+            c_hat = fftn(c_arr[i])
+            Fg   += float(kappa[i] / 2.0 * np.mean((-k2) * np.abs(c_hat)**2) / parseval_norm)
         F_hist.append(Fb + Fg)
         Fb_hist.append(Fb)
         Fg_hist.append(Fg)
@@ -455,8 +470,8 @@ def solve_cahn_hilliard(
         mu_bulk = interpolant.mu(c_eval)                      # (N_ind, N, N)
 
         # FFT of each field and its bulk chemical potential
-        c_hat   = [fft2(c[i])        for i in range(N_ind)]
-        mu_hat  = [fft2(mu_bulk[i])  for i in range(N_ind)]
+        c_hat   = [fftn(c[i])        for i in range(N_ind)]
+        mu_hat  = [fftn(mu_bulk[i])  for i in range(N_ind)]
 
         # update each field (stabilized semi-implicit / Eyre convex-splitting)
         c_new = np.empty_like(c)
@@ -481,7 +496,7 @@ def solve_cahn_hilliard(
                 + dt * k2 * (M_eff_diag[i] * (mu_hat[i] - Ai * c_hat[i]) + cross_bulk)
                 - dt * cross_grad
             )
-            c_new[i] = np.real(ifft2(numerator / denom))
+            c_new[i] = np.real(ifftn(numerator / denom))
 
         # ── adaptive dt adjustment ───────────────────────────────────────────
         if adaptive_dt:
@@ -527,7 +542,8 @@ def solve_cahn_hilliard(
                       dt_stable, n_steps, save_every, elapsed, interpolant,
                       adaptive_dt=adaptive_dt, dt_lo=dt_lo, dt_hi=dt_hi,
                       dc_tol_lo=dc_tol_lo, dc_tol_hi=dc_tol_hi,
-                      dt_changes=dt_change_count, steps_actual=step)
+                      dt_changes=dt_change_count, steps_actual=step,
+                      ndim=ndim)
 
     return SimResult(
         compositions         = c,
@@ -550,19 +566,31 @@ def solve_cahn_hilliard(
 _CMAP_FIELD = "RdBu_r"
 
 def _save_frame(
-    c:                np.ndarray,
-    step:             int,
-    out_dir:          Path,
-    elements:         list[str],
+    c:                 np.ndarray,
+    step:              int,
+    out_dir:           Path,
+    elements:          list[str],
     reference_element: str | None = None,
 ) -> None:
-    """Save a PNG frame showing all composition fields + reference element."""
+    """Save a PNG frame showing all composition fields + reference element.
+
+    For 3-D fields (shape N×N×N) the mid-plane slice (z = N//2) is shown.
+    """
     N_ind = c.shape[0]
+    ndim  = c.ndim - 1   # spatial dims = total dims minus element axis
+
     # build list of (data, label) — independent fields + reference if available
     fields = [(c[i], elements[i]) for i in range(N_ind)]
     if reference_element is not None:
         c_ref = 1.0 - c.sum(axis=0)
         fields.append((c_ref, reference_element))
+
+    # for 3-D take mid-plane z-slice; label the slice in the title
+    slice_label = ""
+    if ndim == 3:
+        mid = c.shape[1] // 2
+        fields = [(data[..., mid], lbl) for data, lbl in fields]
+        slice_label = f"  [z={mid}]"
 
     n_panels = len(fields)
     fig, axes = plt.subplots(1, n_panels, figsize=(5 * n_panels, 4.5),
@@ -570,8 +598,10 @@ def _save_frame(
     for ax, (data, label) in zip(axes[0], fields):
         im = ax.imshow(data, cmap=_CMAP_FIELD, vmin=data.min(), vmax=data.max(),
                        origin="lower", interpolation="nearest")
-        ax.set_title(f"$x_{{\\rm {label.capitalize()}}}$  (step {step:,})",
-                     fontsize=11)
+        ax.set_title(
+            f"$x_{{\\rm {label.capitalize()}}}${slice_label}  (step {step:,})",
+            fontsize=11,
+        )
         ax.set_xticks([]); ax.set_yticks([])
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
     fig.tight_layout()
@@ -702,6 +732,7 @@ def _write_params(
     dc_tol_hi:    float = 2e-2,
     dt_changes:   int   = 0,
     steps_actual: int   = 0,
+    ndim:         int   = 2,
 ) -> None:
     N_ind   = interp.N_ind
     t_total = dt * n_steps
@@ -735,6 +766,7 @@ def _write_params(
         "=" * 60,
         "  Cahn-Hilliard Simulation Parameters (general solver)",
         "=" * 60,
+        f"  Spatial dimension  ndim     = {ndim}",
         f"  Components         N_el     = {N_ind + 1}",
         f"  Independent fields N_ind    = {N_ind}",
         f"  Elements           ind      = {interp.ind_elements}",

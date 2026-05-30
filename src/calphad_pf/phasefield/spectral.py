@@ -45,25 +45,45 @@ def wavenumbers(N: int, L: float) -> np.ndarray:
     return (2.0 * np.pi / L) * 1j * m
 
 
-def laplacian_operator(N: int, Lx: float, Ly: float | None = None) -> np.ndarray:
+def laplacian_operator(
+    N:    int,
+    Lx:   float,
+    Ly:   float | None = None,
+    Lz:   float | None = None,
+    ndim: int  = 2,
+) -> np.ndarray:
     """
-    2-D Laplacian operator k2 = kx² + ky² in Fourier space.
+    Laplacian operator k2 = Σ kᵢ² in Fourier space (2-D or 3-D).
 
     k2 is real-negative (eigenvalue of ∇²).
 
     Parameters
     ----------
     N : int
-        Number of grid points in each direction.
-    Lx, Ly : float
-        Domain lengths. If Ly is None, a square domain (Ly = Lx) is assumed.
+        Number of grid points in each direction (isotropic grid assumed).
+    Lx, Ly, Lz : float
+        Domain lengths.  Missing values default to Lx (cubic / square domain).
+    ndim : int
+        Spatial dimension — 2 (default) or 3.
 
     Returns
     -------
-    np.ndarray  float  shape (N, N)
+    np.ndarray  float
+        shape (N, N)    for ndim=2
+        shape (N, N, N) for ndim=3
     """
-    Ly   = Ly or Lx
-    kx   = wavenumbers(N, Lx)
-    ky   = wavenumbers(N, Ly)
-    KX, KY = np.meshgrid(kx, ky)
-    return np.real(KX ** 2 + KY ** 2)   # imaginary parts cancel → real negative
+    Ly = Ly or Lx
+    Lz = Lz or Lx
+    kx = wavenumbers(N, Lx)
+    ky = wavenumbers(N, Ly)
+
+    if ndim == 2:
+        KX, KY = np.meshgrid(kx, ky, indexing="ij")
+        return np.real(KX ** 2 + KY ** 2)          # (N, N)
+
+    if ndim == 3:
+        kz = wavenumbers(N, Lz)
+        KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing="ij")
+        return np.real(KX ** 2 + KY ** 2 + KZ ** 2)  # (N, N, N)
+
+    raise ValueError(f"ndim must be 2 or 3, got {ndim}.")
