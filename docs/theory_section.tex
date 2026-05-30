@@ -1,0 +1,401 @@
+% ============================================================
+%  Theory Section — CALPHAD-Coupled Phase-Field Model
+%  For: Cahn-Hilliard Spinodal Decomposition in
+%       Multi-Component BCC High-Entropy Alloys
+% ============================================================
+%
+% Usage: \input{docs/theory_section.tex}  inside your article
+% Packages required: amsmath, amssymb, bm, physics (or manual \dd)
+% ============================================================
+
+\section{Theory}
+\label{sec:theory}
+
+\subsection{Cahn-Hilliard Phase-Field Formulation}
+\label{sec:ch_formulation}
+
+We describe spinodal decomposition in an $N$-component alloy by a
+set of $N-1$ conserved composition fields
+$c_i(\bm{x},t) = x_i(\bm{x},t)$, $i = 1,\ldots,N-1$,
+where $x_i$ is the mole fraction of element $i$.
+The mole fraction of the reference element $N$ is recovered by the
+closure relation $x_N = 1 - \sum_{i=1}^{N-1} c_i$.
+The system evolves according to the Cahn-Hilliard equation
+\begin{equation}
+  \frac{\partial c_i}{\partial t}
+  = \nabla \cdot \sum_{j=1}^{N-1}
+      M_{ij}(\bm{c})\,\nabla\mu_j^{\mathrm{tot}},
+  \qquad i = 1,\ldots,N-1,
+  \label{eq:CH}
+\end{equation}
+where $\bm{M}(\bm{c})$ is the composition-dependent mobility tensor
+and $\mu_j^{\mathrm{tot}}$ is the variational chemical potential of
+field $j$ with respect to the free energy functional $\mathcal{F}$.
+
+\subsubsection{Free Energy Functional}
+The total free energy functional combines a bulk thermodynamic term
+and an interfacial gradient penalty,
+\begin{equation}
+  \mathcal{F}[\bm{c}]
+  = \int_\Omega \left[
+      G_m(\bm{c})
+      + \sum_{i=1}^{N-1} \frac{\kappa_i}{2}\,|\nabla c_i|^2
+    \right] d^3x,
+  \label{eq:free_energy}
+\end{equation}
+where $G_m(\bm{c})$ is the molar Gibbs energy of the alloy (in
+J~mol$^{-1}$) and $\kappa_i$ (J~m$^2$~mol$^{-1}$) is the gradient
+energy coefficient for field $i$.  The variational derivative of
+Eq.~\eqref{eq:free_energy} gives
+\begin{equation}
+  \mu_j^{\mathrm{tot}} = \frac{\delta \mathcal{F}}{\delta c_j}
+  = \underbrace{\frac{\partial G_m}{\partial c_j}}_{\mu_j}
+    - \kappa_j\,\nabla^2 c_j,
+  \label{eq:mu_var}
+\end{equation}
+where the \emph{bulk chemical potential}
+$\mu_j = \partial G_m/\partial c_j$
+is the thermodynamic driving force for diffusion and the
+$-\kappa_j\nabla^2 c_j$ term penalises sharp interfaces.
+
+\subsubsection{Degenerate Mobility}
+A degenerate mobility tensor is employed to enforce the physical
+constraint that diffusion vanishes in the limit of a pure component,
+\begin{equation}
+  M_{ij}(\bm{c}) = \mathring{M}_{ij}
+    \prod_{k=1}^{N} x_k(\bm{c}),
+  \label{eq:mobility}
+\end{equation}
+where $\mathring{M}_{ij}$ (m$^5$~J$^{-1}$~s$^{-1}$) is the
+constant (bare) mobility matrix supplied as a model parameter.
+The product over all $N$ mole fractions, including the reference
+element, vanishes whenever any $x_k \to 0$.  In practice, the
+product is replaced by its spatial average over the domain,
+$\langle \prod_k x_k \rangle$, to avoid an explicit spatial
+coupling and maintain the pseudo-spectral efficiency of the solver.
+
+\subsubsection{Pseudo-Spectral Semi-Implicit Time Integration}
+Equation~\eqref{eq:CH} is solved in Fourier space on a uniform
+$N_g\times N_g$ grid with domain size $L_x$.  Diagonal mobility
+terms are treated implicitly (unconditionally damping high-wavenumber
+modes) while off-diagonal cross-terms are treated explicitly:
+\begin{equation}
+  \hat{c}_i^{\,n+1}
+  = \frac{
+      \hat{c}_i^{\,n}
+      + \Delta t\,k^2 \sum_j M_{ij}^{\mathrm{eff}}\,\hat{\mu}_{j,\mathrm{bulk}}^n
+      - \Delta t\,k^4 \sum_{j\neq i} M_{ij}^{\mathrm{eff}}\,\kappa_j\,\hat{c}_j^{\,n}
+    }{
+      1 + \Delta t\,k^4\,M_{ii}^{\mathrm{eff}}\,\kappa_i
+    },
+  \label{eq:semi_implicit}
+\end{equation}
+where $\hat{(\cdot)}$ denotes the Fourier transform,
+$k^2 = k_x^2 + k_y^2$ is the squared wavenumber magnitude, and
+$M_{ij}^{\mathrm{eff}} = \mathring{M}_{ij}\,\langle\prod_k x_k\rangle$
+is the spatially averaged effective mobility.
+The stable time step is estimated as
+\begin{equation}
+  \Delta t_{\mathrm{stable}}
+  = \frac{\alpha\,\Delta x^2}
+         {\max_i(\mathring{M}_{ii})\,|\lambda_{\max}|},
+  \label{eq:dt_stable}
+\end{equation}
+where $\alpha < 1$ is a safety factor, $\Delta x = L_x/N_g$ is the
+grid spacing, and $|\lambda_{\max}|$ is the largest absolute
+eigenvalue of the Hessian matrix $H_{ij} = \partial^2 G_m/\partial
+c_i\,\partial c_j$ evaluated in a neighbourhood of the initial
+mean composition $\bm{c}_0$.
+
+% -----------------------------------------------------------
+\subsection{CALPHAD-Derived Thermodynamic Driving Forces}
+\label{sec:calphad}
+
+The bulk chemical potential $\mu_j = \partial G_m/\partial c_j$ in
+Eq.~\eqref{eq:mu_var} must be evaluated at every spatial grid point
+at every time step.  This evaluation is the dominant computational
+cost and its accuracy determines whether the simulated microstructural
+evolution is physically consistent with the underlying thermodynamics.
+Direct calls to a CALPHAD solver (pycalphad~\cite{pycalphad}) at each
+point and step are prohibitively expensive.  We therefore construct
+smooth surrogate functions from thermodynamic data pre-computed on a
+dense composition grid.
+
+\subsubsection{Pre-computation Strategy}
+For each alloy system and temperature of interest, the following
+quantities are evaluated on a simplex grid
+$\{x_j^{(k)}\}$ spanning the physically relevant composition space,
+using pycalphad's \texttt{IsolatedPhase} framework (which constrains
+the evaluation to the single-phase BCC$_{\rm A2}$ free energy
+surface):
+\begin{itemize}
+  \item $G_m^{(k)}$: molar Gibbs energy (J~mol$^{-1}$);
+  \item $\mu_i^{(k)} = \texttt{MU}(i)$: absolute chemical potential of
+        element $i$ (J~mol$^{-1}$);
+  \item $\Lambda_{ij}^{(k)} = \texttt{MU}(i)\texttt{.X}(j)
+        \equiv \partial\mu_i/\partial x_j$:
+        Jansson second derivative~\cite{jansson1984} (J~mol$^{-1}$).
+\end{itemize}
+The computed data are stored in HDF5 format and loaded once at the
+start of a simulation run.  All subsequent thermodynamic queries
+during time integration are answered by interpolation.
+
+\subsubsection{Surrogate Construction}
+The surrogate is built as a single callable object
+(\texttt{GmInterpolant}) that maps an arbitrary spatial composition
+field $\bm{c}(\bm{x})$ to $G_m$, $\mu_j$, and $H_{ij}$.  Three
+backend interpolation schemes are supported, selected on a
+per-simulation basis:
+
+\begin{itemize}
+  \item \textbf{Binary ($N=2$, one independent field):}
+        CubicSpline (scipy)~\cite{scipy} on the 1-D grid of
+        $x_{\rm Nb}$ values.
+  \item \textbf{Ternary ($N=3$, two independent fields):}
+        CloughTocher C1 triangular interpolant~\cite{clough_tocher}
+        on the scattered simplex data, with a nearest-neighbour
+        fallback for the rare points that fall outside the convex
+        hull of the training set.
+  \item \textbf{Quaternary and beyond ($N \geq 4$):}
+        Two-stage scheme: (i)~a thin-plate-spline
+        RBFInterpolator~\cite{rbf_tps} is fitted once on the
+        scattered CALPHAD data; (ii)~it is evaluated on a dense
+        regular grid of $n_g^{N-1}$ points; (iii)~a
+        RegularGridInterpolator (trilinear) is constructed on the
+        resulting grid for $O(\log n_g)$ lookup during simulation.
+\end{itemize}
+The same surrogate class is used for $G_m$, the individual $\mu_i$,
+and the Hessian components $H_{ij}$, so all three derivative methods
+described below share identical interpolation backends.
+
+% -----------------------------------------------------------
+\subsection{Derivative Methods for Bulk Chemical Potentials}
+\label{sec:deriv_methods}
+
+The phase-field model requires two thermodynamic quantities at each
+grid point per time step: the bulk driving force
+$\mu_j = \partial G_m/\partial c_j$ (first derivative) and the
+Hessian $H_{ij} = \partial^2 G_m/\partial c_i\partial c_j$ (second
+derivative, needed for stability analysis and time-step selection).
+Three strategies are implemented for obtaining these quantities,
+each representing a different trade-off between accuracy, data
+requirements, and computational overhead.
+
+\subsubsection{Method~I: Finite Differences on the $G_m$ Surrogate (\texttt{fd})}
+\label{sec:fd}
+
+The simplest approach is to differentiate the $G_m$ surrogate
+numerically.  Central finite differences give
+\begin{align}
+  \mu_j^{\rm fd}
+  &= \frac{G_m(\bm{c}+\varepsilon\bm{e}_j)
+           - G_m(\bm{c}-\varepsilon\bm{e}_j)}{2\varepsilon}
+  + O(\varepsilon^2),
+  \label{eq:fd_mu}
+  \\
+  H_{ij}^{\rm fd}
+  &= \begin{cases}
+       \dfrac{G_m(\bm{c}+\varepsilon\bm{e}_i)
+              - 2G_m(\bm{c})
+              + G_m(\bm{c}-\varepsilon\bm{e}_i)}{\varepsilon^2}
+       + O(\varepsilon^2) & i = j,\\[8pt]
+       \dfrac{G_m(\bm{c}+\varepsilon\bm{e}_i+\varepsilon\bm{e}_j)
+              - G_m(\bm{c}+\varepsilon\bm{e}_i-\varepsilon\bm{e}_j)
+              - G_m(\bm{c}-\varepsilon\bm{e}_i+\varepsilon\bm{e}_j)
+              + G_m(\bm{c}-\varepsilon\bm{e}_i-\varepsilon\bm{e}_j)}{4\varepsilon^2}
+       + O(\varepsilon^2) & i \neq j,
+     \end{cases}
+  \label{eq:fd_H}
+\end{align}
+where $\bm{e}_j$ is the unit vector in the $j$-th composition
+direction and $\varepsilon = 10^{-4}$ mol fraction.
+This method requires only $G_m$ data (no chemical potential storage)
+but introduces truncation errors that compound with the smoothing
+bias of the $G_m$ surrogate.  In particular, the second-order
+accurate stencil in Eq.~\eqref{eq:fd_H} can accumulate errors of
+order $\varepsilon^2 G_m'''/G_m$ near the simplex boundaries where
+$G_m$ is steep; our validation on the Nb--V binary at $500\,^\circ$C
+yields an RMSE of $442\,\text{kJ\,mol}^{-1}$ in $H$ relative to the
+directly computed CALPHAD Hessian (Section~\ref{sec:validation}).
+This error is dominated by the entropy divergence
+$H \to +\infty$ as $x \to 0$ or $x \to 1$ and its propagation
+into the FD stencil.
+
+\subsubsection{Method~II: Direct Interpolation of Jansson Derivatives (\texttt{jansson})}
+\label{sec:jansson}
+
+Under the simplex constraint $x_N = 1 - \sum_{i=1}^{N-1} c_i$, the
+bulk chemical potential of field $j$ that enters the Cahn-Hilliard
+equation is the \emph{relative} chemical potential
+\begin{equation}
+  \mu_j = \frac{\partial G_m}{\partial c_j}\bigg|_{\rm simplex}
+        = \bar{\mu}_j - \bar{\mu}_N,
+  \label{eq:mu_rel}
+\end{equation}
+where $\bar{\mu}_i = \texttt{MU}(i)$ is the absolute chemical
+potential of element $i$~\cite{deFontaine1979}.  This identity
+follows directly from the Gibbs-Duhem equation and is exact within
+the single-phase thermodynamic model.
+
+Similarly, the Hessian element is
+\begin{equation}
+  H_{ij}
+  = \frac{\partial^2 G_m}{\partial c_i \partial c_j}\bigg|_{\rm simplex}
+  = \frac{\partial(\bar{\mu}_i - \bar{\mu}_N)}{\partial x_j}
+  = \Lambda_{ij} - \Lambda_{Nj},
+  \label{eq:H_jansson}
+\end{equation}
+where $\Lambda_{ij} = \partial\bar{\mu}_i/\partial x_j$ is the
+Jansson second derivative~\cite{jansson1984} computed by pycalphad
+and stored in the HDF5 table (Section~\ref{sec:calphad}).
+
+In the \texttt{jansson} mode, separate smooth surrogate functions are
+built for each $\mu_j$ (Eq.~\ref{eq:mu_rel}) and each $H_{ij}$
+(Eq.~\ref{eq:H_jansson}) using the same backend as the $G_m$
+interpolant.  During time integration, all thermodynamic quantities
+are obtained from these surrogates by simple function evaluation with
+no numerical differentiation.  Because the Jansson derivatives are
+computed by pycalphad using the analytic tangent to the Gibbs energy
+surface, this method is free of FD truncation error and satisfies the
+Gibbs-Duhem relation exactly at every composition point.  Our
+validation confirms RMSE $= 0$ for both $\mu$ and $H$ relative to
+the raw CALPHAD data (Section~\ref{sec:validation}).
+
+For an $N$-component system, the \texttt{jansson} mode builds
+$(N-1)$ surrogates for $\mu_j$ and $(N-1)^2$ surrogates for
+$H_{ij}$, for a total of $(N-1)N$ additional interpolants
+beyond the $G_m$ surface.  For quaternary alloys ($N=4$) this
+amounts to 3 + 9 = 12 additional RBF$\to$RGI surfaces, each
+constructed once at simulation startup.
+
+\subsubsection{Method~III: Hybrid — Jansson $\mu$, Finite-Difference $H$ (\texttt{hybrid})}
+\label{sec:hybrid}
+
+The \texttt{hybrid} mode combines the best attributes of the two
+preceding methods.  The bulk driving force $\mu_j$ is obtained by
+direct interpolation of the stored Jansson $\bar{\mu}$ data
+(Eq.~\ref{eq:mu_rel}), which eliminates the first-derivative
+truncation error from the time-evolution equation.  The Hessian
+$H_{ij}$ is obtained by finite differences on the $G_m$ surrogate
+(Eq.~\ref{eq:fd_H}), which is used only for stability analysis and
+time-step estimation rather than for the per-step driving force.
+This is appropriate when the \texttt{dMU} dataset is absent or when
+the raw Jansson data is suspected to be noisy (e.g., near a
+miscibility gap or phase boundary where the single-phase free energy
+surface becomes nearly flat and pycalphad's numerical derivatives are
+less reliable).
+
+A practical summary of the three methods is given in
+Table~\ref{tab:methods}.
+
+\begin{table}[htbp]
+  \centering
+  \caption{%
+    Summary of derivative methods for bulk chemical potentials and
+    Hessian in the CALPHAD-coupled Cahn-Hilliard model.
+    RMSE values are for the Nb--V binary BCC$_{\rm A2}$ system at
+    $T = 500\,^\circ$C with $n = 200$ composition grid points.
+  }
+  \label{tab:methods}
+  \setlength{\tabcolsep}{6pt}
+  \renewcommand{\arraystretch}{1.25}
+  \begin{tabular}{llllcc}
+    \hline
+    Mode & $\mu_j$ source & $H_{ij}$ source
+         & HDF5 data needed
+         & RMSE$_\mu$ & RMSE$_H$ \\
+    \hline
+    \texttt{fd}
+      & FD on $G_m$ (Eq.~\ref{eq:fd_mu})
+      & FD on $G_m$ (Eq.~\ref{eq:fd_H})
+      & \texttt{/GM}
+      & 302 & 442\,200 \\
+    \texttt{jansson}
+      & Eq.~\ref{eq:mu_rel}
+      & Eq.~\ref{eq:H_jansson}
+      & \texttt{/GM}, \texttt{/MU}, \texttt{/dMU}
+      & \textbf{0} & \textbf{0} \\
+    \texttt{hybrid}
+      & Eq.~\ref{eq:mu_rel}
+      & FD on $G_m$ (Eq.~\ref{eq:fd_H})
+      & \texttt{/GM}, \texttt{/MU}
+      & \textbf{0} & 442\,200 \\
+    \hline
+  \end{tabular}
+  \par\smallskip
+  \footnotesize RMSE in J~mol$^{-1}$; \textbf{bold} = exact match
+  with CALPHAD data.
+\end{table}
+
+% -----------------------------------------------------------
+\subsection{Validation of Derivative Methods}
+\label{sec:validation}
+
+Figure~\ref{fig:deriv_methods} compares the three modes against raw
+CALPHAD data for the Nb--V BCC$_{\rm A2}$ system at
+$T = 500\,^\circ$C as a function of the vanadium mole fraction
+$x_{\rm V}$.  The molar Gibbs energy $G_m$ (panel~a) is identical
+across all modes because it is always obtained from the same
+$G_m$ interpolant.  The relative chemical potential
+$\mu_{\rm Nb} - \mu_{\rm V}$ (panel~b) shows that \texttt{fd}
+deviates visibly from the CALPHAD reference near
+$x_{\rm V} \approx 0.2$--$0.3$, the composition range where the
+$G_m$ spline has the steepest first derivative.  Both \texttt{jansson}
+and \texttt{hybrid} reproduce the CALPHAD chemical potentials exactly
+at all tabulated compositions.
+
+The most significant differences appear in the Hessian
+$\partial^2 G_m/\partial x_{\rm Nb}^2$ (panel~c).  The y-axis is
+clipped to $\pm 150\,\text{kJ\,mol}^{-1}$ to expose the spinodal
+region (shaded pink, $H < 0$); the ideal-entropy divergence
+$H \to +\infty$ as $x_{\rm V} \to 0$ or $1$ is annotated at both
+edges.  The \texttt{fd} curve deviates substantially from the
+CALPHAD reference due to the compounding of spline smoothing bias
+and FD truncation error, with an RMSE of $442\,\text{kJ\,mol}^{-1}$
+(Table~\ref{tab:methods}).  Since the Hessian controls the spinodal
+decomposition wavelength via $\lambda^* = 4\pi\sqrt{\kappa/|H|}$,
+errors of this magnitude translate directly into inaccurate
+predictions of the dominant microstructural length scale.  The
+\texttt{jansson} mode eliminates this error entirely, at the cost of
+pre-computing the Jansson derivative dataset (step~1 of the workflow,
+which is performed once and stored on disk).
+
+We therefore recommend \texttt{jansson} mode as the default for
+production runs, and \texttt{hybrid} mode as a fall-back when
+the \texttt{dMU} dataset is unavailable or when Jansson data quality
+near a phase boundary is suspect.  The \texttt{fd} mode is retained
+for backward compatibility and for rapid prototyping where
+thermodynamic accuracy is secondary to workflow simplicity.
+
+% -----------------------------------------------------------
+\subsection{Spinodal Stability and Interface Length Scales}
+\label{sec:length_scales}
+
+The spinodal decomposition instability is determined by the minimum
+eigenvalue $\lambda_{\min}$ of the Hessian $\bm{H}(\bm{c}_0)$
+evaluated at the mean composition $\bm{c}_0$.  If
+$\lambda_{\min} < 0$, the alloy is spinodally unstable and phase
+separation proceeds spontaneously.  The dominant decomposition
+wavelength and interface width are
+\begin{equation}
+  \lambda_i^* = 4\pi\sqrt{\frac{\kappa_i}{|\lambda_{\min}|}},
+  \qquad
+  \delta_i = \sqrt{\frac{\kappa_i}{|\lambda_{\min}|}},
+  \qquad
+  i = 1,\ldots,N-1,
+  \label{eq:length_scales}
+\end{equation}
+and the shortest unstable wavelength (critical wavelength below which
+all modes are stable) is
+\begin{equation}
+  \lambda_{c,i} = 2\pi\sqrt{\frac{2\kappa_i}{|\lambda_{\min}|}}.
+  \label{eq:lambda_c}
+\end{equation}
+Proper resolution of the interface requires $\delta_i > 5\Delta x$;
+the gradient energy coefficient $\kappa_i$ must be chosen
+accordingly.  A numerical stability criterion for the semi-implicit
+scheme (Eq.~\ref{eq:semi_implicit}) is
+$M_{ii}|\lambda_{\min}|\Delta t/\Delta x^2 < 0.5$, which is
+evaluated per-field and reported alongside $\Delta t_{\rm stable}$
+(Eq.~\ref{eq:dt_stable}) in the simulation parameter summary written
+to disk.

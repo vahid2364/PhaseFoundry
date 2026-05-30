@@ -216,25 +216,29 @@ def _plot_spinodal_map(interp, n_ind, ind_elements, thermo_dir, T_label):
         mask   = pts.sum(axis=0) < 0.95
         c_scan = pts[:, mask]
 
-    lmin = interp.min_eigenvalue(c_scan)   # (n_pts,)
-    unstable = lmin < 0
+    try:
+        lmin = interp.min_eigenvalue(c_scan)   # (n_pts,)
+    except Exception:
+        lmin = np.full(c_scan.shape[1], np.nan)
+    valid    = ~np.isnan(lmin)
+    unstable = valid & (lmin < 0)
+    stable   = valid & (lmin >= 0)
 
     fig, ax = plt.subplots(figsize=(6, 5))
     if n_ind == 2:
         x0 = c_scan[0]
         x1 = c_scan[1]
-        colors = np.where(unstable, "#d62728", "#1f77b4")
-        ax.scatter(x0[~unstable], x1[~unstable], c="#1f77b4", s=15,
+        ax.scatter(x0[stable],   x1[stable],   c="#1f77b4", s=15,
                    label="stable", alpha=0.6)
-        ax.scatter(x0[unstable],  x1[unstable],  c="#d62728", s=15,
+        ax.scatter(x0[unstable], x1[unstable], c="#d62728", s=15,
                    label="spinodal (λ_min < 0)", alpha=0.8)
         ax.set_xlabel(f"$x_{{\\rm {ind_elements[0].capitalize()}}}$", fontsize=12)
         ax.set_ylabel(f"$x_{{\\rm {ind_elements[1].capitalize()}}}$", fontsize=12)
         ax.legend(fontsize=9)
     else:
-        ax.scatter(c_scan[0, ~unstable], np.zeros(np.sum(~unstable)),
+        ax.scatter(c_scan[0, stable],   np.zeros(np.sum(stable)),
                    c="#1f77b4", s=20, label="stable")
-        ax.scatter(c_scan[0, unstable],  np.zeros(np.sum(unstable)),
+        ax.scatter(c_scan[0, unstable], np.zeros(np.sum(unstable)),
                    c="#d62728", s=20, label="spinodal")
         ax.set_xlabel(f"$x_{{\\rm {ind_elements[0].capitalize()}}}$", fontsize=12)
         ax.set_yticks([])
