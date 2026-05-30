@@ -4,7 +4,7 @@ Step 5 — Validation  (optional)
 Validates the thermodynamic tables and derivative methods for the
 configured alloy system. Produces paper-quality figures saved under:
 
-    <output.results_dir>/validate/
+    <output.results_dir>/<temperature_C>C/thermodynamics/
         thermo_properties.pdf       — G_m, mu_i, H_ii vs composition
         derivative_comparison.pdf   — FD / Jansson / hybrid vs raw CALPHAD data
 
@@ -367,7 +367,8 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
 # ── main entry point ──────────────────────────────────────────────────────────
 
 def run(cfg: dict) -> None:
-    out_dir = Path(cfg["output"]["results_dir"]) / "validate"
+    T_label = f"{cfg['simulation']['temperature_C']}C"
+    out_dir = Path(cfg["output"]["results_dir"]) / T_label / "thermodynamics"
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"  Output → {out_dir}")
 
