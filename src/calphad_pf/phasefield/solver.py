@@ -191,21 +191,27 @@ def stable_dt(
 # ── main solver ───────────────────────────────────────────────────────────────
 
 def solve_cahn_hilliard(
-    interpolant:  GmInterpolant,
-    M:            float | Sequence | np.ndarray,
-    kappa:        float | Sequence | np.ndarray,
-    c0:           float | Sequence | np.ndarray,
-    N:            int   = 256,
-    Lx:           float = 1.0e-6,
-    noise:        float = 0.01,
-    seed:         int   = 42,
-    dt:           float | None = None,
-    n_steps:      int   = 30000,
-    save_every:   int   = 5000,
-    output_dir:   str | Path | None = None,
-    save_frames:  bool  = True,
-    stabilization: float | None = None,
+    interpolant:    GmInterpolant,
+    M:              float | Sequence | np.ndarray,
+    kappa:          float | Sequence | np.ndarray,
+    c0:             float | Sequence | np.ndarray,
+    N:              int   = 256,
+    Lx:             float = 1.0e-6,
+    noise:          float = 0.01,
+    seed:           int   = 42,
+    dt:             float | None = None,
+    n_steps:        int   = 30000,
+    save_every:     int   = 5000,
+    output_dir:     str | Path | None = None,
+    save_frames:    bool  = True,
+    stabilization:  float | None = None,
     snapshot_callback = None,
+    # ── adaptive time-stepping (optional) ─────────────────────────────────────
+    adaptive_dt:    bool  = False,
+    dt_min:         float | None = None,
+    dt_max:         float | None = None,
+    dc_tol_lo:      float = 1e-4,
+    dc_tol_hi:      float = 2e-2,
 ) -> SimResult:
     """
     General Cahn-Hilliard phase-field solver.
@@ -239,6 +245,27 @@ def solve_cahn_hilliard(
         Directory for PNG frames and log files.  Created if needed.
     save_frames : bool
         Whether to write PNG frames.
+    adaptive_dt : bool
+        Enable adaptive time-stepping (default: False).  When True the step
+        size is adjusted after every step based on the maximum field change
+        ``dc_max = max |c_new - c_old|``:
+
+          * dc_max < dc_tol_lo  →  dt *= 2   (dynamics are slow, take bigger steps)
+          * dc_max > dc_tol_hi  →  dt /= 2   (dynamics are fast, take smaller steps)
+          * otherwise           →  dt unchanged
+
+        The step size is clamped to [dt_min, dt_max].  Because the total
+        simulation time t_total = n_steps × dt₀ is held fixed, ``n_steps``
+        is recomputed dynamically as the simulation advances so that the
+        same physical end-time is always reached.
+    dt_min : float or None
+        Lower bound for adaptive dt.  Defaults to dt₀ / 100.
+    dt_max : float or None
+        Upper bound for adaptive dt.  Defaults to dt₀ × 20.
+    dc_tol_lo : float
+        Field-change threshold below which dt is doubled (default: 1e-4).
+    dc_tol_hi : float
+        Field-change threshold above which dt is halved (default: 2e-2).
 
     Returns
     -------
@@ -260,6 +287,16 @@ def solve_cahn_hilliard(
         print(f"  auto dt = {dt:.4e} s  (stability criterion, scan ±0.3 around c0)")
     else:
         print(f"  dt_stable = {dt_stable:.4e} s  |  dt used = {dt:.4e} s")
+
+    # ── adaptive time-stepping bounds ─────────────────────────────────────────
+    dt_lo = dt_min if dt_min is not None else dt / 100.0
+    dt_hi = dt_max if dt_max is not None else dt * 20.0
+    if adaptive_dt:
+        print(f"  Adaptive dt ENABLED  "
+              f"dc_tol = [{dc_tol_lo:.1e}, {dc_tol_hi:.1e}]  "
+              f"dt bounds = [{dt_lo:.3e}, {dt_hi:.3e}] s")
+    # track total physical end-time so adaptive mode still reaches t_final
+    t_final = dt * n_steps
 
     # ── per-component stabilization A_i (Eyre convex-splitting) ─────────────
     # Each field i gets its own stabilization constant A_i ≥ |H_ii(c0)|.
@@ -374,7 +411,25 @@ def solve_cahn_hilliard(
     _snapshot(c, 0)
     t_start = time.perf_counter()
 
-    for step in tqdm(range(1, n_steps + 1), desc="C-H (general)", unit="step"):
+    step = 0
+    dt_change_count = 0   # number of adaptive dt adjustments (for logging)
+    snap_interval   = t_final / max(1, n_steps // save_every)  # adaptive snap cadence
+    next_snap_t     = snap_interval
+    pbar = tqdm(total=n_steps, desc="C-H (general)", unit="step")
+
+    while True:
+        # ── check termination ────────────────────────────────────────────────
+        if adaptive_dt:
+            if t_phys >= t_final:
+                break
+            # shrink last step so we land exactly on t_final
+            dt = min(dt, t_final - t_phys)
+        else:
+            if step >= n_steps:
+                break
+
+        step += 1
+
         # degenerate mobility scalar: product of ALL compositions
         c_ref = 1.0 - c.sum(axis=0)                          # (N, N)
         deg   = np.prod(c, axis=0) * np.clip(c_ref, 1e-8, 1) # (N, N)
@@ -404,6 +459,7 @@ def solve_cahn_hilliard(
         mu_hat  = [fft2(mu_bulk[i])  for i in range(N_ind)]
 
         # update each field (stabilized semi-implicit / Eyre convex-splitting)
+        c_new = np.empty_like(c)
         for i in range(N_ind):
             # explicit cross-terms from off-diagonal mobility
             cross_bulk = sum(
@@ -425,14 +481,39 @@ def solve_cahn_hilliard(
                 + dt * k2 * (M_eff_diag[i] * (mu_hat[i] - Ai * c_hat[i]) + cross_bulk)
                 - dt * cross_grad
             )
-            c[i] = np.real(ifft2(numerator / denom))
+            c_new[i] = np.real(ifft2(numerator / denom))
 
+        # ── adaptive dt adjustment ───────────────────────────────────────────
+        if adaptive_dt:
+            dc_max = float(np.max(np.abs(c_new - c)))
+            if dc_max < dc_tol_lo and dt < dt_hi:
+                dt = min(dt * 2.0, dt_hi)
+                dt_change_count += 1
+            elif dc_max > dc_tol_hi and dt > dt_lo:
+                dt = max(dt / 2.0, dt_lo)
+                dt_change_count += 1
+
+        c       = c_new
         t_phys += dt
+        pbar.update(1)
 
-        if step % save_every == 0 or step == n_steps:
+        # snapshot trigger
+        if adaptive_dt:
+            should_snap = (t_phys >= next_snap_t) or (t_phys >= t_final)
+            if should_snap:
+                next_snap_t += snap_interval
+        else:
+            should_snap = (step % save_every == 0) or (step == n_steps)
+
+        if should_snap:
             _snapshot(c, step)
             if snapshot_callback is not None:
                 snapshot_callback(c, t_phys)
+
+    pbar.close()
+    if adaptive_dt:
+        print(f"  Adaptive dt: {dt_change_count} adjustment(s), "
+              f"final dt = {dt:.4e} s, total steps = {step}")
 
     elapsed = time.perf_counter() - t_start
 
@@ -443,7 +524,10 @@ def solve_cahn_hilliard(
         _plot_energy(output_dir, time_hist, F_hist, Fb_hist, Fg_hist,
                      all_elements, cmin_hist, cmean_hist, cmax_hist)
         _write_params(output_dir, N, Lx, dx, kappa, M, c0, noise, seed, dt,
-                      dt_stable, n_steps, save_every, elapsed, interpolant)
+                      dt_stable, n_steps, save_every, elapsed, interpolant,
+                      adaptive_dt=adaptive_dt, dt_lo=dt_lo, dt_hi=dt_hi,
+                      dc_tol_lo=dc_tol_lo, dc_tol_hi=dc_tol_hi,
+                      dt_changes=dt_change_count, steps_actual=step)
 
     return SimResult(
         compositions         = c,
@@ -596,21 +680,28 @@ def _plot_energy(
 
 
 def _write_params(
-    out_dir:     Path,
-    N:           int,
-    Lx:          float,
-    dx:          float,
-    kappa:       np.ndarray,
-    M:           np.ndarray,
-    c0:          np.ndarray,
-    noise:       float,
-    seed:        int,
-    dt:          float,
-    dt_stable:   float,
-    n_steps:     int,
-    save_every:  int,
-    elapsed:     float,
-    interp:      GmInterpolant,
+    out_dir:      Path,
+    N:            int,
+    Lx:           float,
+    dx:           float,
+    kappa:        np.ndarray,
+    M:            np.ndarray,
+    c0:           np.ndarray,
+    noise:        float,
+    seed:         int,
+    dt:           float,
+    dt_stable:    float,
+    n_steps:      int,
+    save_every:   int,
+    elapsed:      float,
+    interp:       GmInterpolant,
+    adaptive_dt:  bool  = False,
+    dt_lo:        float | None = None,
+    dt_hi:        float | None = None,
+    dc_tol_lo:    float = 1e-4,
+    dc_tol_hi:    float = 2e-2,
+    dt_changes:   int   = 0,
+    steps_actual: int   = 0,
 ) -> None:
     N_ind   = interp.N_ind
     t_total = dt * n_steps
@@ -710,10 +801,21 @@ def _write_params(
         "  ── Time integration ────────────────────────────────",
         f"  Stable dt (safety=0.4) dt_stable= {dt_stable:.4e} s",
         f"  Time step used       dt       = {dt:.4e} s",
-        f"  Steps                n_steps  = {n_steps}",
+        f"  Steps                n_steps  = {n_steps}  "
+        f"({'actual: ' + str(steps_actual) if adaptive_dt else 'fixed'})",
         f"  Save interval        save_every= {save_every}  (every {save_every * dt:.4e} s)",
         f"  Total physical time  t_total  = {t_total:.4e} s",
     ]
+    if adaptive_dt:
+        lines += [
+            "",
+            "  ── Adaptive time-stepping ──────────────────────────",
+            f"  Enabled              adaptive  = True",
+            f"  dt bounds            [dt_lo, dt_hi] = [{dt_lo:.3e}, {dt_hi:.3e}] s",
+            f"  Field-change tols    [lo, hi]  = [{dc_tol_lo:.1e}, {dc_tol_hi:.1e}]",
+            f"  Number of dt changes           = {dt_changes}",
+            f"  Actual steps taken             = {steps_actual}",
+        ]
     for i in range(N_ind):
         el = interp.ind_elements[i]
         warn_s = "  ⚠  > 0.5 — may be unstable!" if stab[i] > 0.5 else ""
