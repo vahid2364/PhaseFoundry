@@ -79,11 +79,14 @@ def run(cfg: dict) -> SimResult:
           f"{T_K - 273.15:.1f} °C in data")
 
     # build interpolant
+    deriv_method = sim.get("derivative_method", "fd")
+    print(f"  Derivative method: {deriv_method!r}")
     interp = build_interpolant(
         paths,
         elements          = elements,
         reference_element = ref_el,
         temperature_K     = T_K,
+        derivative_method = deriv_method,
     )
 
     # output directories
