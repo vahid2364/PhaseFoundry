@@ -40,7 +40,7 @@ DT_SAFETY   = 1.0
 N_SNAPSHOTS = 10
 
 M_diag = [5.0e-21, 5.0e-23]   # Nb, Hf  [mol·m²/(J·s)]  — Hf ~100x slower
-KAPPA  = [1.0e-12, 7.0e-12]   # Nb, Hf  [J/m]
+KAPPA  = [1.0e-12, 7.0e-12]   # Nb, Hf  [J·m²/mol]
 N      = 256
 Lx     = 1.0e-6
 C0     = [0.50, 0.05]          # x_NB=0.50, x_HF=0.05, x_V=0.45

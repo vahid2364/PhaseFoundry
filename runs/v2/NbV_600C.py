@@ -40,7 +40,7 @@ DT_SAFETY   = 1.0
 N_SNAPSHOTS = 10
 
 M_diag = [5.0e-21]          # Nb mobility  [mol·m²/(J·s)]
-KAPPA  = [1.0e-12]          # Nb gradient energy coefficient  [J/m]
+KAPPA  = [1.0e-12]          # Nb gradient energy coefficient  [J·m²/mol]
 N      = 256
 Lx     = 1.0e-6             # domain side length  [m]
 C0     = [0.50]             # x_NB = 0.50
