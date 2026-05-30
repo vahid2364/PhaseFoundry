@@ -5,8 +5,9 @@ Reads simulation outputs from step 3 and produces figures.
 
 Output
 ------
-<output.results_dir>/<output.run_name>/
+<output.results_dir>/<temperature_C>C/kinetics/<output.run_name>/
     free_energy_history.png   (re-generated)
+<output.results_dir>/<temperature_C>C/thermodynamics/
     d2G_vs_T.png
 
 Run standalone
@@ -29,12 +30,11 @@ from calphad_pf.config import load_config, apply_overrides, resolve_paths, summa
 from calphad_pf.phasefield import plot_free_energy_history
 
 
-def plot_d2G_vs_T(cfg: dict) -> None:
+def plot_d2G_vs_T(cfg: dict, thermo_dir: Path) -> None:
     """Plot ∂²G/∂x²_V vs temperature at x_V = 0.3."""
-    data_dir    = Path(cfg["output"]["data_dir"])
-    results_dir = Path(cfg["output"]["results_dir"])
-    paths       = sorted(data_dir.glob("nb_v_bcc_*C.h5"))
-    temps_C     = cfg["thermo"]["temperatures_C"]
+    data_dir = Path(cfg["output"]["data_dir"])
+    paths    = sorted(data_dir.glob("nb_v_bcc_*C.h5"))
+    temps_C  = cfg["thermo"]["temperatures_C"]
     if not paths:
         print("  Skipping d²G/dT plot — no HDF5 tables found.")
         return
@@ -54,15 +54,18 @@ def plot_d2G_vs_T(cfg: dict) -> None:
     ax.set_title(r"Spinodal criterion at $x_{\rm V} = 0.3$", fontsize=12)
     ax.grid(True, alpha=0.2)
     plt.tight_layout()
-    p = results_dir / "d2G_vs_T.png"
+    thermo_dir.mkdir(parents=True, exist_ok=True)
+    p = thermo_dir / "d2G_vs_T.png"
     plt.savefig(p, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"  Saved → {p}")
 
 
 def run(cfg: dict) -> None:
+    T_label     = f"{cfg['simulation']['temperature_C']}C"
     results_dir = Path(cfg["output"]["results_dir"])
-    run_dir     = results_dir / cfg["output"]["run_name"]
+    run_dir     = results_dir / T_label / "kinetics" / cfg["output"]["run_name"]
+    thermo_dir  = results_dir / T_label / "thermodynamics"
 
     if not run_dir.exists():
         raise FileNotFoundError(f"Run directory not found: {run_dir}\nRun step 3 first.")
@@ -84,7 +87,7 @@ def run(cfg: dict) -> None:
         plot_free_energy_history(_R(), output_dir=run_dir)
         print(f"  Free energy history → {run_dir / 'free_energy_history.png'}")
 
-    plot_d2G_vs_T(cfg)
+    plot_d2G_vs_T(cfg, thermo_dir)
 
 
 if __name__ == "__main__":
