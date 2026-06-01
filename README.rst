@@ -31,7 +31,16 @@ Project structure
     calphad-pf/
     ├── src/calphad_pf/          installable Python package
     │   ├── thermodynamics/      generate, fit, spinodal, storage, grid, plot
-    │   └── phasefield/          binary C-H solver, free energy models, FFT ops
+    │   └── phasefield/          C-H solver, free energy models, FFT ops,
+    │                            visualize (2D slices + PyVista 3D renders)
+    │
+    ├── runs/
+    │   ├── v2/                  run scripts — TDB PhaseForge v2
+    │   └── v3/                  run scripts — TDB PhaseForge v3
+    │       ├── NbV_500C.py           2D binary, 500 °C
+    │       ├── NbHfV_500C.py         2D ternary, 500 °C
+    │       ├── run_3d_nbv_500C.py    3D binary, 500 °C
+    │       └── run_3d_nbhfv_500C.py  3D ternary, 500 °C
     │
     ├── workflows/               end-to-end pipeline scripts
     │   ├── run_all.py           ← single entry point for the full pipeline
@@ -55,6 +64,8 @@ Requirements
 - Python ≥ 3.10
 - `pycalphad <https://pycalphad.org>`_ ≥ 0.11
 - numpy, scipy, matplotlib, h5py, scikit-learn, tqdm
+- **3D visualization** (optional): ``pip install pyvista``
+- **GPU acceleration** (optional): ``pip install cupy-cuda12x`` (adjust suffix for your CUDA version)
 
 Recommended: install inside a conda environment.
 
@@ -168,6 +179,93 @@ Adding a new alloy system
     cp configs/nb_v.yaml configs/my_alloy.yaml
     # Edit configs/my_alloy.yaml — change db_path, elements, phase, etc.
     python workflows/run_all.py --config configs/my_alloy.yaml
+
+
+3D phase-field simulations
+--------------------------
+
+The ``runs/v3/`` scripts run fully 3D Cahn-Hilliard simulations on an N³ grid
+using the same CALPHAD-coupled solver as the 2D runs.  Adaptive time-stepping
+is enabled by default.  PyVista 3D renders are saved automatically alongside
+the standard 2D mid-plane slice figures.
+
+Binary system — Nb\ :sub:`50`\ V\ :sub:`50` at 500 °C
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+    # Smoke test  (N=32, fast)
+    python runs/v3/run_3d_nbv_500C.py --N 32 --t 50
+
+    # Default  (N=64, 200 s physical time)
+    python runs/v3/run_3d_nbv_500C.py
+
+    # Production quality  (N=128, long run)
+    python runs/v3/run_3d_nbv_500C.py --N 128 --t 1000
+
+    # Full options
+    python runs/v3/run_3d_nbv_500C.py --N 128 --t 1000 --snapshots 10 --safety 0.5 --adaptive --gpu
+
+Ternary system — Nb\ :sub:`50`\ Hf\ :sub:`5`\ V\ :sub:`45` at 500 °C
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: bash
+
+    python runs/v3/run_3d_nbhfv_500C.py --N 128 --t 1000 --snapshots 10 --safety 0.5 --adaptive --gpu
+
+CLI flags
+~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 65
+
+   * - Flag
+     - Default
+     - Description
+   * - ``--N``
+     - 64
+     - Grid points per side (64 → 64³ = 262k points; 128 → 128³ = 2M points)
+   * - ``--t``
+     - 200.0
+     - Physical end time in seconds
+   * - ``--snapshots``
+     - 5
+     - Number of composition snapshots saved during the run
+   * - ``--safety``
+     - 1.0
+     - dt safety factor relative to the stability criterion (< 1.0 = more conservative)
+   * - ``--adaptive`` / ``--no-adaptive``
+     - on
+     - Adaptive time-stepping: doubles dt when dynamics are slow, halves when fast
+   * - ``--gpu``
+     - off
+     - Use CuPy GPU-accelerated FFT (requires ``pip install cupy-cuda12x``)
+
+Outputs (per run)
+~~~~~~~~~~~~~~~~~
+
+.. code-block:: text
+
+    results/<TDB>/<SYSTEM>/500C/kinetics/<RUN_NAME>/
+        slices_xNb_t0s.png            2D XY/XZ/YZ mid-plane slices — initial
+        slices_xNb_t<T>s.png          2D XY/XZ/YZ mid-plane slices — final
+        pyvista_slices_xNb_t<T>s.png  PyVista orthogonal slice mesh (3D)
+        pyvista_surface_xNb_t<T>s.png PyVista smooth-shaded outer surface (3D)
+        pyvista_iso_xNb_t<T>s.png     PyVista isosurface at mean composition
+        free_energy_3d.png            Free energy vs physical time
+        final_field_3d.npz            Compressed NumPy archive of the final field
+
+Verification checks (binary run)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The binary run reports three quantitative checks at the end:
+
+.. code-block:: text
+
+    Mass conservation   [PASS]  max |mean(c) − mean₀| < 1e-10
+    Energy monotonicity [PASS]  violations = 0
+    Phase separation    [PASS]  composition range widens by > 0.05
 
 
 Expected outputs
