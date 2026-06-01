@@ -1,12 +1,17 @@
 """
-Nb-V Integrated Pipeline
-========================
-Runs all 4 workflow steps end-to-end, driven by a YAML config file.
+Integrated Phase-Field Pipeline
+================================
+Runs all workflow steps end-to-end for any alloy system, driven entirely
+by a YAML config file.  No code changes are needed to switch systems —
+only the config file changes.
 
 Usage
 -----
-    # Full pipeline with default config
+    # Full pipeline — binary Nb-V
     python workflows/run_all.py --config configs/nb_v.yaml
+
+    # Full pipeline — ternary Nb-Hf-V
+    python workflows/run_all.py --config configs/nb_hf_v.yaml
 
     # Resume from step 2
     python workflows/run_all.py --config configs/nb_v.yaml --from 2
@@ -19,8 +24,10 @@ Usage
         --set simulation.kappa=1e-10 simulation.n_steps=10000 \
               output.run_name=pf_nb_v_500C_kappa1e10_test
 
-    # Use a different config file entirely (new alloy system)
-    python workflows/run_all.py --config configs/hfnbtiv.yaml
+    # New alloy system — just create a new config file
+    cp configs/nb_v.yaml configs/ti_v.yaml
+    # edit configs/ti_v.yaml, then:
+    python workflows/run_all.py --config configs/ti_v.yaml
 """
 
 from __future__ import annotations
@@ -37,10 +44,10 @@ sys.path.insert(0, str(_ROOT))
 from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
 
 STEP_SCRIPTS = {
-    1: _ROOT / "workflows" / "01_generate_thermo_data" / "run_nb_v.py",
-    2: _ROOT / "workflows" / "02_fit_surrogate"        / "run_nb_v.py",
-    3: _ROOT / "workflows" / "03_simulate"             / "run_nb_v.py",
-    4: _ROOT / "workflows" / "04_postprocess"          / "run_nb_v.py",
+    1: _ROOT / "workflows" / "01_generate_thermo_data" / "run.py",
+    2: _ROOT / "workflows" / "02_fit_surrogate"        / "run.py",
+    3: _ROOT / "workflows" / "03_simulate"             / "run.py",
+    4: _ROOT / "workflows" / "04_postprocess"          / "run.py",
 }
 STEP_LABELS = {
     1: "Generate thermodynamic tables",
