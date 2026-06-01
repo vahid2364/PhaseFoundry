@@ -105,7 +105,7 @@ def check_phase_separation(c_history: list, threshold: float = 0.05) -> bool:
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def run(N: int = 64, t_phys: float = 200.0, n_snapshots: int = 5,
-        dt_safety: float = 1.0) -> None:
+        dt_safety: float = 1.0, use_gpu: bool = False) -> None:
 
     out_dir = _ROOT / "results" / TDB_STEM / SYSTEM / "500C" / "kinetics" / "pf_3d_c50_kappa1e12_tdbv3"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -156,6 +156,7 @@ def run(N: int = 64, t_phys: float = 200.0, n_snapshots: int = 5,
         save_frames = False,
         ndim        = 3,
         adaptive_dt = True,
+        use_gpu     = use_gpu,
     )
     elapsed = time.time() - t0
     print(f"\nWall time : {elapsed:.1f} s  ({elapsed/60:.1f} min)")
@@ -239,7 +240,9 @@ if __name__ == "__main__":
                         help="Number of snapshots (default: 5)")
     parser.add_argument("--safety", type=float, default=1.0,
                         help="dt safety factor (default: 1.0)")
+    parser.add_argument("--gpu", action="store_true", default=False,
+                        help="Use CuPy GPU-accelerated FFT (requires: pip install cupy-cuda12x)")
     args = parser.parse_args()
 
     run(N=args.N, t_phys=args.t, n_snapshots=args.snapshots,
-        dt_safety=args.safety)
+        dt_safety=args.safety, use_gpu=args.gpu)
