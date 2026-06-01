@@ -630,6 +630,12 @@ def plot_phase_diagram(
         lo_b = np.array(lo_b)
         hi_b = np.array(hi_b)
 
+        # Remove duplicate temperatures before spline fitting
+        _, unique_idx = np.unique(T_b, return_index=True)
+        T_b  = T_b[unique_idx]
+        lo_b = lo_b[unique_idx]
+        hi_b = hi_b[unique_idx]
+
         # Smooth curves through data points
         from scipy.interpolate import make_interp_spline
         T_fine = np.linspace(T_b.min(), T_b.max(), 400)
@@ -658,6 +664,12 @@ def plot_phase_diagram(
         T_s  = np.array(T_s)
         lo_s = np.array(lo_s)
         hi_s = np.array(hi_s)
+
+        # Remove duplicate temperatures before spline fitting
+        _, unique_idx = np.unique(T_s, return_index=True)
+        T_s  = T_s[unique_idx]
+        lo_s = lo_s[unique_idx]
+        hi_s = hi_s[unique_idx]
 
         # Smooth curves through data points
         T_fine_s = np.linspace(T_s.min(), T_s.max(), 400)
