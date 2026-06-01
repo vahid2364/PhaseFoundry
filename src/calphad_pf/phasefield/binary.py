@@ -870,16 +870,22 @@ def plot_free_energy_history(
 
     # ── right: min/max composition vs time ────────────────────────────────
     ax2 = axes[1]
-    c_min = [c.min() for c in result.composition_history]
-    c_max = [c.max() for c in result.composition_history]
-    ax2.plot(t, c_min, color="#d62728", lw=1.8, marker="s", markersize=5,
-             markerfacecolor="white", markeredgewidth=1.5, label="$x_V^{min}$  (Nb-rich)")
-    ax2.plot(t, c_max, color="#1f77b4", lw=1.8, marker="o", markersize=5,
-             markerfacecolor="white", markeredgewidth=1.5, label="$x_V^{max}$  (V-rich)")
-    ax2.set_xlabel("Time  (s)", fontsize=12)
-    ax2.set_ylabel("$x_V$  (mol fraction V)", fontsize=12)
-    ax2.set_title("Phase composition evolution", fontsize=12)
-    ax2.legend(fontsize=11, frameon=False)
+    if result.composition_history:
+        c_min = [c.min() for c in result.composition_history]
+        c_max = [c.max() for c in result.composition_history]
+        ax2.plot(t, c_min, color="#d62728", lw=1.8, marker="s", markersize=5,
+                 markerfacecolor="white", markeredgewidth=1.5, label="$x_V^{min}$  (Nb-rich)")
+        ax2.plot(t, c_max, color="#1f77b4", lw=1.8, marker="o", markersize=5,
+                 markerfacecolor="white", markeredgewidth=1.5, label="$x_V^{max}$  (V-rich)")
+        ax2.set_xlabel("Time  (s)", fontsize=12)
+        ax2.set_ylabel("$x_V$  (mol fraction V)", fontsize=12)
+        ax2.set_title("Phase composition evolution", fontsize=12)
+        ax2.legend(fontsize=11, frameon=False)
+    else:
+        ax2.text(0.5, 0.5, "Composition history\nnot available",
+                 ha="center", va="center", transform=ax2.transAxes,
+                 fontsize=12, color="gray")
+        ax2.set_title("Phase composition evolution", fontsize=12)
     ax2.grid(False)
 
     plt.tight_layout()
