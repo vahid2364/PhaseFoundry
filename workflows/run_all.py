@@ -48,14 +48,15 @@ STEP_SCRIPTS = {
     2: _ROOT / "workflows" / "02_fit_surrogate"        / "run.py",
     3: _ROOT / "workflows" / "03_simulate"             / "run.py",
     4: _ROOT / "workflows" / "04_postprocess"          / "run.py",
+    5: _ROOT / "workflows" / "05_validate"             / "run.py",
 }
 STEP_LABELS = {
     1: "Generate thermodynamic tables",
     2: "Fit G_m spline surrogate",
     3: "Phase-field simulation",
     4: "Post-processing & figures",
+    5: "Validate thermodynamic tables & derivative methods",
 }
-VALIDATE_SCRIPT = _ROOT / "workflows" / "05_validate" / "run.py"
 
 
 def _load_step(path: Path):
@@ -74,13 +75,11 @@ def main():
     parser.add_argument("--config", default="configs/nb_v.yaml",
                         help="Path to YAML config file  (default: configs/nb_v.yaml)")
     parser.add_argument("--from", dest="from_step", type=int, default=1,
-                        metavar="N", help="Start from step N  (1–4)")
+                        metavar="N", help="Start from step N  (1–5)")
     parser.add_argument("--only", dest="only_step", type=int, default=None,
-                        metavar="N", help="Run only step N")
+                        metavar="N", help="Run only step N  (1–5)")
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                         help="Override config values, e.g. --set simulation.kappa=1e-10")
-    parser.add_argument("--validate", action="store_true",
-                        help="Run step 5 (validate) after the main pipeline")
     args = parser.parse_args()
 
     # Load and resolve config
@@ -88,13 +87,13 @@ def main():
     cfg = apply_overrides(cfg, args.set or [])
     cfg = resolve_paths(cfg, _ROOT)
 
-    steps = [args.only_step] if args.only_step else list(range(args.from_step, 5))
+    steps = [args.only_step] if args.only_step else list(range(args.from_step, 6))
 
     print("=" * 60)
     print("  Integrated CALPHAD / Phase-Field Pipeline")
     print(f"  Config  : {args.config}")
     print(f"  System  : {cfg['system']['name'].upper()}")
-    print(f"  Steps   : {steps}" + ("  + validate" if args.validate else ""))
+    print(f"  Steps   : {steps}")
     print("=" * 60)
     print(summary(cfg))
 
@@ -103,13 +102,6 @@ def main():
         print(f"  Step {s}: {STEP_LABELS[s]}")
         print(f"{'─' * 60}")
         mod = _load_step(STEP_SCRIPTS[s])
-        mod.run(cfg)
-
-    if args.validate:
-        print(f"\n{'─' * 60}")
-        print(f"  Step 5: Validate thermodynamic tables & derivative methods")
-        print(f"{'─' * 60}")
-        mod = _load_step(VALIDATE_SCRIPT)
         mod.run(cfg)
 
     print("\n" + "=" * 60)
