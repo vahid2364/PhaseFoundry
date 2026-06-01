@@ -50,7 +50,28 @@ from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.fft import fftn, ifftn
+from numpy.fft import fftn as _np_fftn, ifftn as _np_ifftn
+
+# Optional GPU backend via CuPy.  Falls back to NumPy transparently.
+try:
+    import cupy as _cp
+    from cupy.fft import fftn as _cp_fftn, ifftn as _cp_ifftn
+    _CUPY_AVAILABLE = True
+except ImportError:
+    _cp = None
+    _CUPY_AVAILABLE = False
+
+
+def _get_fft_backend(use_gpu: bool):
+    """Return (xp, fftn, ifftn) for the requested backend."""
+    if use_gpu:
+        if not _CUPY_AVAILABLE:
+            raise RuntimeError(
+                "use_gpu=True requires CuPy.  Install with:\n"
+                "  pip install cupy-cuda12x   # adjust for your CUDA version"
+            )
+        return _cp, _cp_fftn, _cp_ifftn
+    return np, _np_fftn, _np_ifftn
 from tqdm import tqdm
 
 from .spectral import laplacian_operator
@@ -213,6 +234,7 @@ def solve_cahn_hilliard(
     dc_tol_lo:      float = 1e-4,
     dc_tol_hi:      float = 2e-2,
     ndim:           int   = 2,
+    use_gpu:        bool  = False,
 ) -> SimResult:
     """
     General Cahn-Hilliard phase-field solver.
@@ -272,6 +294,11 @@ def solve_cahn_hilliard(
         Existing 2-D runs are completely unaffected by this parameter.
         In 3-D, ``_save_frame`` writes the mid-plane slice (z = N//2)
         as a PNG so frame output still works without modification.
+    use_gpu : bool
+        Use CuPy GPU-accelerated FFT instead of NumPy (default: False).
+        Requires CuPy to be installed (``pip install cupy-cuda12x``).
+        Falls back gracefully to CPU if CuPy is unavailable and this flag
+        is False; raises RuntimeError if True and CuPy is not found.
 
     Returns
     -------
@@ -279,6 +306,14 @@ def solve_cahn_hilliard(
     """
     if ndim not in (2, 3):
         raise ValueError(f"ndim must be 2 or 3, got {ndim}.")
+
+    # ── FFT backend (CPU: NumPy  |  GPU: CuPy) ────────────────────────────────
+    xp, _fftn, _ifftn = _get_fft_backend(use_gpu)
+    if use_gpu:
+        print(f"  FFT backend: CuPy (GPU)  device = {_cp.cuda.Device().id}")
+    else:
+        print(f"  FFT backend: NumPy (CPU)")
+
     N_ind = interpolant.N_ind
     dx    = Lx / N
 
@@ -364,6 +399,10 @@ def solve_cahn_hilliard(
         field = c0[i] + noise * (rng.random(grid_shape) - 0.5)
         c[i]  = np.clip(field, 1e-6, 1.0 - 1e-6)
 
+    # Transfer composition field to GPU if requested
+    if use_gpu:
+        c = xp.asarray(c)
+
     # ── output directory ──────────────────────────────────────────────────────
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -401,8 +440,8 @@ def solve_cahn_hilliard(
         # gradient energy: sum over components (Parseval, /N^ndim for unnormalized FFT)
         Fg = 0.0
         for i in range(N_ind):
-            c_hat = fftn(c_arr[i])
-            Fg   += float(kappa[i] / 2.0 * np.mean((-k2) * np.abs(c_hat)**2) / parseval_norm)
+            c_hat = _fftn(c_arr[i])
+            Fg   += float(xp.mean((-k2) * xp.abs(c_hat)**2) * kappa[i] / 2.0 / parseval_norm)
         F_hist.append(Fb + Fg)
         Fb_hist.append(Fb)
         Fg_hist.append(Fg)
@@ -470,11 +509,11 @@ def solve_cahn_hilliard(
         mu_bulk = interpolant.mu(c_eval)                      # (N_ind, N, N)
 
         # FFT of each field and its bulk chemical potential
-        c_hat   = [fftn(c[i])        for i in range(N_ind)]
-        mu_hat  = [fftn(mu_bulk[i])  for i in range(N_ind)]
+        c_hat   = [_fftn(c[i])        for i in range(N_ind)]
+        mu_hat  = [_fftn(mu_bulk[i])  for i in range(N_ind)]
 
         # update each field (stabilized semi-implicit / Eyre convex-splitting)
-        c_new = np.empty_like(c)
+        c_new = xp.empty_like(c)
         for i in range(N_ind):
             # explicit cross-terms from off-diagonal mobility
             cross_bulk = sum(
@@ -496,11 +535,11 @@ def solve_cahn_hilliard(
                 + dt * k2 * (M_eff_diag[i] * (mu_hat[i] - Ai * c_hat[i]) + cross_bulk)
                 - dt * cross_grad
             )
-            c_new[i] = np.real(ifftn(numerator / denom))
+            c_new[i] = xp.real(_ifftn(numerator / denom))
 
         # ── adaptive dt adjustment ───────────────────────────────────────────
         if adaptive_dt:
-            dc_max = float(np.max(np.abs(c_new - c)))
+            dc_max = float(xp.max(xp.abs(c_new - c)))
             if dc_max < dc_tol_lo and dt < dt_hi:
                 dt = min(dt * 2.0, dt_hi)
                 dt_change_count += 1
@@ -544,6 +583,11 @@ def solve_cahn_hilliard(
                       dc_tol_lo=dc_tol_lo, dc_tol_hi=dc_tol_hi,
                       dt_changes=dt_change_count, steps_actual=step,
                       ndim=ndim)
+
+    # Transfer results back to CPU NumPy arrays if GPU was used
+    if use_gpu:
+        c         = xp.asnumpy(c)
+        comp_hist = [xp.asnumpy(s) for s in comp_hist]
 
     return SimResult(
         compositions         = c,

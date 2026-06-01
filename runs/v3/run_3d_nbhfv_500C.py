@@ -155,9 +155,10 @@ def run(N: int = 64, t_phys: float = 200.0, n_snapshots: int = 5,
         dt          = dt,
         n_steps     = n_steps,
         save_every  = save_every,
-        output_dir  = None,
-        save_frames = False,
-        ndim        = 3,
+        output_dir   = None,
+        save_frames  = False,
+        ndim         = 3,
+        adaptive_dt  = True,
     )
     elapsed = time.time() - t0
     print(f"\nWall time : {elapsed:.1f} s  ({elapsed/60:.1f} min)")
