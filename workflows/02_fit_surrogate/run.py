@@ -36,17 +36,36 @@ from calphad_pf.thermodynamics.interpolant import build_interpolant
 
 
 def _glob_tables(cfg: dict) -> list[Path]:
+    """
+    Return one HDF5 table per unique temperature, sorted by temperature.
+
+    The data directory may contain files from multiple naming conventions
+    (e.g. nb_v_bcc_500C.h5 and nb_v_bcc_a2_500C.h5).  When duplicates
+    exist for the same temperature, the most recently modified file is kept
+    and a warning is printed.
+    """
     data_dir = Path(cfg["output"]["data_dir"])
     name     = cfg["system"]["name"]
-    paths    = sorted(
-        data_dir.glob(f"{name}_*C.h5"),
-        key=lambda p: float(load_table(p)["metadata"]["temperature"]),
-    )
-    if not paths:
+    all_paths = sorted(data_dir.glob(f"{name}_*C.h5"))
+    if not all_paths:
         raise FileNotFoundError(
             f"No HDF5 tables matching '{name}_*C.h5' in {data_dir}. "
             "Run step 1 first.")
-    return paths
+
+    # Deduplicate by temperature — keep most recently modified file per T
+    by_temp: dict[float, Path] = {}
+    for p in all_paths:
+        T = float(load_table(p)["metadata"]["temperature"])
+        if T not in by_temp or p.stat().st_mtime > by_temp[T].stat().st_mtime:
+            by_temp[T] = p
+
+    n_dropped = len(all_paths) - len(by_temp)
+    if n_dropped:
+        print(f"  Warning: {n_dropped} duplicate table(s) found and skipped "
+              f"(kept most recently modified file per temperature).")
+
+    return sorted(by_temp.values(),
+                  key=lambda p: float(load_table(p)["metadata"]["temperature"]))
 
 
 def run(cfg: dict) -> None:
