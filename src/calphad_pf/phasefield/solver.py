@@ -76,6 +76,11 @@ from tqdm import tqdm
 
 from .spectral import laplacian_operator
 from ..thermodynamics.interpolant import GmInterpolant
+from ..elasticity import (
+    solve_elasticity,
+    build_isotropic_stiffness,
+    compute_mu_el_from_result,
+)
 
 
 # ── result container ──────────────────────────────────────────────────────────
@@ -235,6 +240,18 @@ def solve_cahn_hilliard(
     dc_tol_hi:      float = 2e-2,
     ndim:           int   = 2,
     use_gpu:        bool  = False,
+    # ── elastic coupling (optional) ────────────────────────────────────────
+    elastic_enabled:       bool  = False,
+    elastic_G_matrix:       float | None = None,
+    elastic_delta:          float = 1.0,
+    elastic_nu:             float = 0.3,
+    elastic_eps_T:          float = 0.0,
+    elastic_sigma_applied:  np.ndarray | None = None,
+    elastic_solve_every:    int   = 1,
+    elastic_tol:            float = 1e-8,
+    elastic_max_iter:       int   = 500,
+    elastic_scheme:         str   = "cubic",
+    elastic_N_V:            float = 1.0,
 ) -> SimResult:
     """
     General Cahn-Hilliard phase-field solver.
@@ -299,6 +316,43 @@ def solve_cahn_hilliard(
         Requires CuPy to be installed (``pip install cupy-cuda12x``).
         Falls back gracefully to CPU if CuPy is unavailable and this flag
         is False; raises RuntimeError if True and CuPy is not found.
+    elastic_enabled : bool
+        Couple an elastic contribution mu_el (Gururajan & Abinandanan, 2007,
+        Eq. 36) into the chemical potential: mu_total = mu_ch + mu_el.
+        Default False — when False, none of the other ``elastic_*``
+        parameters are read, ``solve_elasticity`` is never called, and the
+        timestep loop is byte-for-byte identical to the no-elasticity path
+        (zero overhead, zero behavior change for existing configs).
+        Currently requires N_ind == 1 and ndim == 2 (binary-system limit
+        matching the paper; multicomponent generalization is future work).
+    elastic_G_matrix : float or None
+        Matrix shear modulus G^m [Pa].  Required if elastic_enabled=True.
+    elastic_delta : float
+        Inhomogeneity ratio delta = G^precipitate / G^matrix (default 1.0,
+        elastically homogeneous).
+    elastic_nu : float
+        Poisson's ratio (same for both phases; default 0.3).
+    elastic_eps_T : float
+        Dilatational eigenstrain magnitude eps^T (eigenstrain = eps_T * I).
+        Default 0.0 (no misfit — mu_el will be identically zero, see
+        test_elastic_potential.test_trivial_case_zero_mismatch).
+    elastic_sigma_applied : ndarray (2,2) or None
+        Applied far-field stress.  Default None (zero, stress-free BC).
+    elastic_solve_every : int
+        Re-solve mechanical equilibrium every this many CH steps (default 1
+        = every step).  Elastic relaxation is much faster than diffusion,
+        so values > 1 trade some accuracy for speed by reusing mu_el across
+        several CH steps (quasi-static approximation).
+    elastic_tol : float
+        Convergence tolerance for the inner elastic solve (default 1e-8).
+    elastic_max_iter : int
+        Max iterations for the inner elastic solve (default 500).
+    elastic_scheme : str
+        Composition-interpolation scheme name (default "cubic", matches
+        the paper). See calphad_pf.elasticity.interpolation.get_scheme().
+    elastic_N_V : float
+        Molar-volume-like normalization for mu_el, matching the convention
+        used for mu_ch (default 1.0).
 
     Returns
     -------
@@ -316,6 +370,31 @@ def solve_cahn_hilliard(
 
     N_ind = interpolant.N_ind
     dx    = Lx / N
+
+    # ── elastic coupling setup (no-op unless elastic_enabled=True) ───────────
+    if elastic_enabled:
+        if N_ind != 1:
+            raise NotImplementedError(
+                "elastic_enabled=True currently requires a binary system "
+                f"(N_ind == 1); got N_ind={N_ind}. Multicomponent eigenstrain/"
+                "modulus mixing is not yet implemented."
+            )
+        if ndim != 2:
+            raise NotImplementedError(
+                "elastic_enabled=True currently only supports ndim=2 "
+                f"(2-D elasticity solver); got ndim={ndim}."
+            )
+        if elastic_G_matrix is None:
+            raise ValueError("elastic_G_matrix must be set when elastic_enabled=True.")
+        _C_mat = build_isotropic_stiffness(elastic_G_matrix, elastic_nu)
+        _C_ppt = build_isotropic_stiffness(elastic_delta * elastic_G_matrix, elastic_nu)
+        _eigenstrain = elastic_eps_T * np.eye(3)
+        print(f"  Elastic coupling ENABLED:  G^m = {elastic_G_matrix:.3e} Pa  "
+              f"delta = {elastic_delta}  nu = {elastic_nu}  eps_T = {elastic_eps_T}  "
+              f"solve_every = {elastic_solve_every}")
+    else:
+        _C_mat = _C_ppt = _eigenstrain = None
+    _mu_el_cache = None   # reused across elastic_solve_every steps
 
     # ── normalise M, kappa, c0 ────────────────────────────────────────────────
     M     = _to_matrix(M,     N_ind)    # (N_ind, N_ind)
@@ -437,7 +516,20 @@ def solve_cahn_hilliard(
 
         # bulk free energy
         Fb = float(np.mean(interpolant.gm(c_arr)))
-        # gradient energy: sum over components (Parseval, /N^ndim for unnormalized FFT)
+        # Gradient energy — Parseval derivation (verified against analytic sinusoid):
+        #
+        #   F_grad = κ/2 · mean_x(|∇c|²)
+        #
+        # numpy DFT convention:  ĉ(k) = Σ_x c(x) e^{-2πi k·x/N}
+        # Parseval:               Σ_x |c|²  = (1/N^d) Σ_k |ĉ|²
+        # Gradient in k-space:   ∇ → i·(2πk/Lx), so |∇c|² ↔ (-k2)|ĉ|²
+        # Combining:
+        #   mean_x(|∇c|²) = (1/N^d) Σ_x |∇c|²
+        #                  = (1/N^d)·(1/N^d) Σ_k (-k2)|ĉ|²
+        #                  = mean_k((-k2)|ĉ|²) / N^d
+        #
+        # Therefore:
+        #   F_grad = κ/2 · mean_k((-k2)|ĉ|²) / parseval_norm    ✓
         Fg = 0.0
         for i in range(N_ind):
             c_hat = _fftn(c_arr[i])
@@ -507,6 +599,24 @@ def solve_cahn_hilliard(
                          1.0)
         c_eval = c_clamp * scale[np.newaxis, :, :]
         mu_bulk = interpolant.mu(c_eval)                      # (N_ind, N, N)
+
+        # ── elastic chemical potential (no-op unless elastic_enabled) ─────────
+        # mu_el is computed from the UNCLAMPED field c (the stored, mass-
+        # conserving field), not c_eval — elasticity has no out-of-bounds
+        # interpolant-table issue, so no clamping is needed here.
+        if elastic_enabled and (step % elastic_solve_every == 0 or _mu_el_cache is None):
+            _elastic_result = solve_elasticity(
+                c[0], _C_mat, _C_ppt, _eigenstrain,
+                sigma_applied=elastic_sigma_applied, Lx=Lx,
+                tol=elastic_tol, max_iter=elastic_max_iter,
+                scheme=elastic_scheme, verbose=False,
+            )
+            _mu_el_cache = compute_mu_el_from_result(
+                c[0], _elastic_result, _C_mat, _C_ppt, _eigenstrain,
+                N_V=elastic_N_V, scheme=elastic_scheme,
+            )
+        if elastic_enabled:
+            mu_bulk = mu_bulk + _mu_el_cache[np.newaxis, :, :]   # mu_total = mu_ch + mu_el
 
         # FFT of each field and its bulk chemical potential
         c_hat   = [_fftn(c[i])        for i in range(N_ind)]
@@ -599,7 +709,14 @@ def solve_cahn_hilliard(
         params               = dict(N=N, Lx=Lx, kappa=kappa.tolist(),
                                     M=M.tolist(), c0=c0.tolist(),
                                     noise=noise, seed=seed, dt=dt,
-                                    n_steps=n_steps, save_every=save_every),
+                                    n_steps=n_steps, save_every=save_every,
+                                    elastic_enabled=elastic_enabled,
+                                    **({"elastic_G_matrix": elastic_G_matrix,
+                                        "elastic_delta": elastic_delta,
+                                        "elastic_nu": elastic_nu,
+                                        "elastic_eps_T": elastic_eps_T,
+                                        "elastic_solve_every": elastic_solve_every}
+                                       if elastic_enabled else {})),
         elapsed_seconds      = elapsed,
         ind_elements         = interpolant.ind_elements,
     )
