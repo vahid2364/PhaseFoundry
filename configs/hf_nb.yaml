@@ -16,7 +16,8 @@ thermo:
 
 simulation:
   temperature_C: 500
-  N:             256
+  dimensions:    2                 # spatial dimensions: 2 (NxN) or 3 (NxNxN)
+  N:             256               # grid points per axis
   Lx:            1.0e-6
   kappa:         1.0e-12         # same as Nb-V; |f''| similar magnitude
   M:             5.0e-21
@@ -26,6 +27,8 @@ simulation:
   dt:            null           # auto stable dt
   # Derivative method: "fd" | "jansson" | "hybrid"
   derivative_method: fd
+  use_gpu:           false             # use CuPy GPU FFT (requires CuPy)
+  adaptive_dt:       false             # adaptive time-stepping
   n_steps:       100000
   save_every:    10000
 
@@ -33,4 +36,4 @@ output:
   data_dir:      data/hf_nb
   results_dir:   results/hf_nb
   # run_name pattern: pf_c{mol%}_kappa{val}_{tdb_tag}
-  run_name:      pf_c65_kappa1e12_tdbv2
+  run_name:      auto

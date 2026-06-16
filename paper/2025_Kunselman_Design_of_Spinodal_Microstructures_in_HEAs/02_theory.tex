@@ -769,4 +769,32 @@ addressed in \Cref{sec:results}.
     \label{fig:microstructure_methods}
 \end{figure}
 
+\Cref{fig:microstructure_methods_3d} extends this comparison to a
+three-dimensional $64\times64\times64$ domain under otherwise identical
+conditions.  The XY mid-plane slices from both methods are visually
+indistinguishable, and the absolute per-voxel difference remains confined to
+composition interfaces — the same pattern observed in 2D.  The RMSE and
+maximum discrepancy are consistent with their 2D counterparts, confirming
+that the equivalence of \texttt{fd} and \texttt{jansson} is not an artefact
+of the two-dimensional geometry.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{microstructure_methods_3d}
+    \caption{%
+        3D derivative-method comparison for Nb-V BCC\textsubscript{A2} at
+        $T = \SI{500}{\celsius}$ ($64^3$ grid, $L = \SI{1}{\micro\metre}$,
+        $t = \SI{800}{\second}$, same seed and parameters as
+        \Cref{fig:microstructure_methods}).
+        Each panel shows the $x_{\rm V}$ composition on the $z = L/2$
+        mid-plane.
+        (a)~Finite-difference mode.
+        (b)~Jansson direct mode.
+        (c)~Absolute difference $|x^{\rm fd}_{\rm V} - x^{\rm jansson}_{\rm V}|$,
+        showing that discrepancies remain confined to domain interfaces.
+        The table reports mid-plane composition statistics and simulation
+        wall times for each method.
+    }
+    \label{fig:microstructure_methods_3d}
+\end{figure}
 

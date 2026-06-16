@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-V Ternary System — Pipeline Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Run with the general workflow scripts:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_v.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_v.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_v.yaml
+
+system:
+  name:              nb_hf_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]        # V is reference; NB and HF are independent
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]                  # independent element 1
+    HF: [0.001, 0.999]                  # independent element 2
+  n_points:          20                 # 20×20 grid → ~210 valid simplex points
+  temperatures_C:    [300, 400, 500, 600, 700, 800, 900, 1000]
+
+simulation:
+  temperature_C: 500
+  dimensions:    3                 # spatial dimensions: 2 (NxN) or 3 (NxNxN)
+  N:             96                # grid points per axis
+  Lx:            1.0e-6
+
+  # Gradient energy: one κ per independent field [J·m²/mol]
+  #   kappa[0] → x_NB field
+  #   kappa[1] → x_HF field
+  # κ_Hf scaled to H ratio |H_HF|/|H_NB| ≈ 7.4 to maintain comparable
+  # interface widths (δ ~ sqrt(κ/|H|)) for both elements.
+  kappa:         [1.0e-12, 7.0e-12]
+
+  # Mobility matrix 2×2 [m⁵/(J·s)]
+  #   M[i][j] = mobility coupling field i to field j
+  #   Diagonal = self-diffusion; off-diagonal = cross-diffusion
+  # M_Hf ~100x smaller than M_Nb: Hf is larger (159 pm vs 146 pm for Nb)
+  # and diffuses significantly slower in BCC at 500°C.
+  M:
+    - [5.0e-21, 0.0    ]              # M_NbNb, M_NbHf
+    - [0.0,     5.0e-23]              # M_HfNb, M_HfHf
+
+  # Mean composition: [x_NB, x_HF]; x_V = 1 - 0.50 - 0.10 = 0.40
+  # Nb-V rich with small Hf addition — mirrors binary Nb-V c0=0.40 case
+  c0:            [0.50, 0.05]
+
+  noise:         0.01
+  seed:          42
+  dt:            null                   # auto stable dt
+  # Derivative method: "fd" | "jansson" | "hybrid"
+  # "jansson" requires /MU and /dMU datasets in the HDF5 table (step 1 default).
+  derivative_method: jansson
+  use_gpu:           false             # use CuPy GPU FFT (requires CuPy)
+  adaptive_dt:       false             # adaptive time-stepping
+  n_steps:       50000
+  save_every:    5000
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  # run_name: pf_c{Nb mol%}Nb{Hf mol%}Hf_kappa{val}_{tdb_tag}
+  run_name:      auto

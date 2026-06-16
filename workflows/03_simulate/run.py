@@ -8,10 +8,19 @@ the config file changes.
 Output (temperature-first folder convention)
 --------------------------------------------
 <results_dir>/<T>C/kinetics/<run_name>/
-    frame_XXXXXXX.png      composition fields at each saved step
+    frame_XXXXXXX.png           composition fields at each saved step (2D)
     free_energy_log.txt
     free_energy_history.png
     sim_params.txt
+    fields.npz                  raw composition snapshots + metadata
+                                  keys: x_{el} (n_snaps, N[,N[,N]] float32)
+                                        x_{el}_final (N[,N[,N]] float32)
+                                        time, free_energy (float64)
+                                        T_C, T_K, N, ndim, Lx, elements
+    slices_x{el}_*.png          2D mid-plane slices of final frame
+    pyvista_slices_x{el}_*.png  3D orthogonal slice renders  (3D only)
+    pyvista_surface_x{el}_*.png 3D smooth outer-surface render (3D only)
+    pyvista_iso_x{el}_*.png     3D isosurface render          (3D only)
 
 Run standalone
 --------------
@@ -40,6 +49,8 @@ from calphad_pf.config import load_config, apply_overrides, resolve_paths, summa
 from calphad_pf.thermodynamics.storage import load_table
 from calphad_pf.thermodynamics.interpolant import build_interpolant
 from calphad_pf.phasefield.solver import solve_cahn_hilliard, SimResult
+from calphad_pf.phasefield.visualize import save_slices_2d, save_pyvista_3d
+import numpy as np
 
 
 def _glob_tables(cfg: dict) -> list[Path]:
@@ -94,6 +105,12 @@ def run(cfg: dict) -> SimResult:
     output_dir = results_dir / T_folder / "kinetics" / cfg["output"]["run_name"]
     thermo_dir = results_dir / T_folder / "thermodynamics"
     thermo_dir.mkdir(parents=True, exist_ok=True)
+    ndim        = int(sim.get("dimensions", 2))
+    use_gpu     = bool(sim.get("use_gpu", False))
+    adaptive_dt = bool(sim.get("adaptive_dt", False))
+    grid_str    = "×".join([str(sim["N"])] * ndim)
+    print(f"  Dimensions: {ndim}D  ({grid_str} grid)")
+    print(f"  GPU FFT: {use_gpu}  |  Adaptive dt: {adaptive_dt}")
     print(f"  Output → {output_dir}")
 
     # handle dt
@@ -123,9 +140,73 @@ def run(cfg: dict) -> SimResult:
             save_every  = sim["save_every"],
             output_dir  = output_dir,
             save_frames = True,
+            ndim        = ndim,
+            use_gpu     = use_gpu,
+            adaptive_dt = adaptive_dt,
         )
 
     print(f"  Elapsed: {result.elapsed_seconds:.1f} s")
+
+    # ── post-simulation visualization ─────────────────────────────────────────
+    ind_elements = [e for e in elements if e != ref_el]
+    t_final      = result.time_history[-1] if result.time_history else 0.0
+
+    # ── save raw composition fields ───────────────────────────────────────────
+    # All snapshots saved as float32 for compactness; shape (n_steps, N, N)
+    # or (n_steps, N, N, N) for 3D.  Reload with np.load("fields.npz").
+    save_dict: dict[str, np.ndarray] = {}
+    for i, el in enumerate(ind_elements):
+        # full history: shape (n_snapshots, N[, N[, N]])
+        history = np.array(
+            [snap[i] for snap in result.compositions_history],
+            dtype=np.float32,
+        )
+        save_dict[f"x_{el.lower()}"]         = history
+        save_dict[f"x_{el.lower()}_final"]   = result.compositions[i].astype(np.float32)
+    save_dict["time"]        = np.array(result.time_history,      dtype=np.float64)
+    save_dict["free_energy"] = np.array(result.free_energy_history, dtype=np.float64)
+    save_dict["T_C"]         = np.float32(sim["temperature_C"])
+    save_dict["T_K"]         = np.float32(T_K)
+    save_dict["N"]           = np.int32(sim["N"])
+    save_dict["ndim"]        = np.int32(ndim)
+    save_dict["Lx"]          = np.float64(sim["Lx"])
+    save_dict["elements"]    = np.array(ind_elements)
+
+    npz_path = output_dir / "fields.npz"
+    np.savez_compressed(npz_path, **save_dict)
+    size_mb = npz_path.stat().st_size / 1e6
+    print(f"  Raw fields saved → fields.npz  ({size_mb:.1f} MB, "
+          f"{len(result.time_history)} snapshots)")
+
+    print(f"  Saving final-frame visualizations ...")
+    if ndim == 2:
+        for i, el in enumerate(ind_elements):
+            c_final = result.compositions[i]
+            p = save_slices_2d(
+                c_final, t_final, output_dir,
+                label=f"x_{el.lower()}",
+                title=f"{cfg['system']['name'].upper()} {sim['temperature_C']}C",
+            )
+            print(f"    Saved: {p.name}")
+    else:
+        for i, el in enumerate(ind_elements):
+            c_final = result.compositions[i]
+            paths = save_pyvista_3d(
+                c_final, t_final, output_dir,
+                label      = f"x_{el.lower()}",
+                bar_title  = f"{el.capitalize()} Composition",
+                title      = f"{cfg['system']['name'].upper()} {sim['temperature_C']}C",
+            )
+            for p in paths:
+                print(f"    Saved: {p.name}")
+            # also save mid-plane 2D slices for quick inspection
+            p = save_slices_2d(
+                c_final, t_final, output_dir,
+                label=f"x_{el.lower()}",
+                title=f"{cfg['system']['name'].upper()} {sim['temperature_C']}C",
+            )
+            print(f"    Saved: {p.name}")
+
     return result
 
 

@@ -22,7 +22,8 @@ thermo:
 
 simulation:
   temperature_C: 500
-  N:             256
+  dimensions:    2                 # spatial dimensions: 2 (NxN) or 3 (NxNxN)
+  N:             256               # grid points per axis
   Lx:            1.0e-6
 
   # Gradient energy: one κ per independent field [J·m²/mol]
@@ -51,6 +52,8 @@ simulation:
   # Derivative method: "fd" | "jansson" | "hybrid"
   # "jansson" requires /MU and /dMU datasets in the HDF5 table (step 1 default).
   derivative_method: fd
+  use_gpu:           false             # use CuPy GPU FFT (requires CuPy)
+  adaptive_dt:       false             # adaptive time-stepping
   n_steps:       30000
   save_every:    5000
 
@@ -58,4 +61,4 @@ output:
   data_dir:      data/HfNbTiV_BCC_PhaseForge_v3/NbHfV
   results_dir:   results/HfNbTiV_BCC_PhaseForge_v3/NbHfV
   # run_name: pf_c{Nb mol%}Nb{Hf mol%}Hf_kappa{val}_{tdb_tag}
-  run_name:      pf_c50Nb10Hf_kappa1e12_tdbv3
+  run_name:      auto

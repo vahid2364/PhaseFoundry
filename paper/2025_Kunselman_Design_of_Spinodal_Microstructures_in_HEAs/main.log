@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex 2026.3.22)  28 MAY 2026 21:57
+This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex 2026.3.22)  6 JUN 2026 12:19
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1516,31 +1516,31 @@ Package natbib Warning: Citation `eyre1998unconditionally' on page 10 undefined
 Package natbib Warning: Citation `shen2010numerical' on page 10 undefined on in
 put line 341.
 
-
-LaTeX Warning: Reference `eq:eyre_update' on page 1 undefined on input line 367
-.
-
 Missing character: There is no — ("2014) in font t1xr!
 Missing character: There is no — ("2014) in font t1xr!
 [10]
 Missing character: There is no — ("2014) in font t1xr!
+Missing character: There is no — ("2014) in font t1xr!
 [11]
-Missing character: There is no — ("2014) in font t1xi!
-Missing character: There is no — ("2014) in font t1xi!
 Missing character: There is no — ("2014) in font t1xr!
 Missing character: There is no — ("2014) in font t1xr!
-Missing character: There is no — ("2014) in font t1xi!
 [12]
+Missing character: There is no — ("2014) in font t1xi!
+Missing character: There is no — ("2014) in font t1xi!
+Missing character: There is no — ("2014) in font t1xr!
+Missing character: There is no — ("2014) in font t1xr!
+Missing character: There is no — ("2014) in font t1xi!
+[13]
 File: ./figs/derivative_method_comparison.pdf Graphic file (type pdf)
 <use ./figs/derivative_method_comparison.pdf>
 
 
-LaTeX Warning: Reference `sec:results' on page 1 undefined on input line 648.
+LaTeX Warning: Reference `sec:results' on page 1 undefined on input line 747.
 
-[13]
+[14]
 File: ./figs/microstructure_methods.pdf Graphic file (type pdf)
 <use ./figs/microstructure_methods.pdf>
-) (./03_investigating_spinodal_decomposition.tex [14]
+) (./03_investigating_spinodal_decomposition.tex [15]
 File: figs/chemical_600_diff_sizes.pdf Graphic file (type pdf)
 <use figs/chemical_600_diff_sizes.pdf>
 File: figs/coherent_600_diff_sizes.pdf Graphic file (type pdf)
@@ -1557,20 +1557,21 @@ File: figs/legend.png Graphic file (type bmp)
 <figs/legend.png>
 File: figs/eigenvector.pdf Graphic file (type pdf)
 <use figs/eigenvector.pdf>
+ [16]
+
+LaTeX Warning: Text page 17 contains only floats.
+
+[17]
 File: figs/eigenvalues_Hf1.pdf Graphic file (type pdf)
 <use figs/eigenvalues_Hf1.pdf>
 File: figs/eigenvalues_Hf25.pdf Graphic file (type pdf)
 <use figs/eigenvalues_Hf25.pdf>
 File: figs/eigenvalues_Hf4.pdf Graphic file (type pdf)
 <use figs/eigenvalues_Hf4.pdf>
- [15]
 
-LaTeX Warning: Text page 16 contains only floats.
-
-[16]
 Missing character: There is no — ("2014) in font t1xr!
 Missing character: There is no — ("2014) in font t1xr!
-[17]
+[18] [19]
 LaTeX Font Info:    Font shape `T1/txr/b/n' in size <8> not available
 (Font)              Font shape `T1/txr/bx/n' tried instead on input line 113.
 
@@ -1585,14 +1586,9 @@ File: figs/stiffness_microstructures.pdf Graphic file (type pdf)
 <use figs/stiffness_microstructures.pdf>
 Missing character: There is no — ("2014) in font t1xr!
 Missing character: There is no — ("2014) in font t1xr!
-[18] [19]
 Missing character: There is no — ("2014) in font t1xr!
 Missing character: There is no — ("2014) in font t1xr!
-
-LaTeX Warning: Reference `tab:spinodal_regimes' on page 1 undefined on input li
-ne 258.
-
-[20]
+[20] [21]
 
 Package tabularx Warning: X Columns too narrow (table too wide)
 (tabularx)                 on input line 303.
@@ -2250,16 +2246,22 @@ Overfull \hbox (316.71599pt too wide) in alignment at lines 303--303
 
 LaTeX Warning: Float too large for page by 1274.2917pt on input line 304.
 
+
+LaTeX Warning: Reference `fig:microstructure_methods_ternary' on page 1 undefin
+ed on input line 311.
+
+File: ./figs/microstructure_methods_ternary.pdf Graphic file (type pdf)
+<use ./figs/microstructure_methods_ternary.pdf>
 Missing character: There is no — ("2014) in font t1xr!
 Missing character: There is no — ("2014) in font t1xr!
-) (./04_conclusion_and_future_work.tex) (./05_code-availability.tex)
-(./06_acknowledgments.tex [21] [22]) (./main.bbl [23] [24]
+) (./04_conclusion_and_future_work.tex [22] [23]) (./05_code-availability.tex)
+(./06_acknowledgments.tex) (./main.bbl [24] [25] [26]
 Missing character: There is no — ("2014) in font t1xr!
-[25])
+)
 
 Package natbib Warning: There were undefined citations.
 
-[26] (./main.aux)
+[27] (./main.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
@@ -2277,16 +2279,16 @@ Package rerunfilecheck Warning: File `main.out' has changed.
 (rerunfilecheck)                or use package `bookmark'.
 
 Package rerunfilecheck Info: Checksums for `main.out':
-(rerunfilecheck)             Before: D317871D613319F8CD7CE7FE98D34A30;3439
-(rerunfilecheck)             After:  B10C37E96355BBEC2CF85C8EE9B508A0;3684.
+(rerunfilecheck)             Before: AC62A446AA35A8EE409E20DBD1C4B33A;3684
+(rerunfilecheck)             After:  B86666484DC3569E2B86835DAE7A7BA5;3684.
  ) 
 Here is how much of TeX's memory you used:
- 33199 strings out of 468168
- 679491 string characters out of 5432815
- 1060600 words of memory out of 5000000
- 61401 multiletter control sequences out of 15000+600000
+ 33212 strings out of 468168
+ 680082 string characters out of 5432815
+ 1062600 words of memory out of 5000000
+ 61414 multiletter control sequences out of 15000+600000
  683510 words of font info for 147 fonts, out of 8000000 for 9000
  1348 hyphenation exceptions out of 8191
- 99i,17n,118p,1860b,1176s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 99i,17n,118p,1860b,1152s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on main.pdf (26 pages).
+Output written on main.pdf (27 pages).

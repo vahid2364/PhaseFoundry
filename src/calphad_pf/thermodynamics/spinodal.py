@@ -696,7 +696,7 @@ def plot_phase_diagram(
                    marker="^", label=f"Critical point  (~{T_crit:.0f} °C)")
         ax.annotate(
             f"$T_c$ ≈ {T_crit:.0f} °C",
-            xy=(x_crit, T_crit), xytext=(x_crit + 0.08, T_crit - 40),
+            xy=(x_crit, T_crit), xytext=(x_crit + 0.08, T_crit + 100),
             fontsize=9, color="#d62728",
             arrowprops=dict(arrowstyle="->", color="#d62728", lw=1.2),
         )
@@ -705,7 +705,10 @@ def plot_phase_diagram(
     ax.set_ylabel("Temperature  (°C)", fontsize=12)
     ax.set_title(f"Phase diagram — {system_name}", fontsize=13)
     ax.set_xlim(0, 1)
-    ax.legend(fontsize=10, loc="upper right")
+    all_temps = list(temps_b) + list(temps_s)
+    if all_temps:
+        ax.set_ylim(bottom=None, top=max(all_temps) + 200)
+    ax.legend(fontsize=10, loc="lower center")
     ax.grid(False)
     plt.tight_layout()
 
