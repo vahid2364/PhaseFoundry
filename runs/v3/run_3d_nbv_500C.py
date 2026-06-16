@@ -105,7 +105,8 @@ def check_phase_separation(c_history: list, threshold: float = 0.05) -> bool:
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def run(N: int = 64, t_phys: float = 200.0, n_snapshots: int = 5,
-        dt_safety: float = 1.0, use_gpu: bool = False) -> None:
+        dt_safety: float = 1.0, use_gpu: bool = False,
+        adaptive_dt: bool = True) -> None:
 
     out_dir = _ROOT / "results" / TDB_STEM / SYSTEM / "500C" / "kinetics" / "pf_3d_c50_kappa1e12_tdbv3"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -155,7 +156,7 @@ def run(N: int = 64, t_phys: float = 200.0, n_snapshots: int = 5,
         output_dir  = None,
         save_frames = False,
         ndim        = 3,
-        adaptive_dt = True,
+        adaptive_dt = adaptive_dt,
         use_gpu     = use_gpu,
     )
     elapsed = time.time() - t0
@@ -242,7 +243,10 @@ if __name__ == "__main__":
                         help="dt safety factor (default: 1.0)")
     parser.add_argument("--gpu", action="store_true", default=False,
                         help="Use CuPy GPU-accelerated FFT (requires: pip install cupy-cuda12x)")
+    parser.add_argument("--adaptive", action=argparse.BooleanOptionalAction,
+                        default=True,
+                        help="Enable/disable adaptive time-stepping (default: enabled)")
     args = parser.parse_args()
 
     run(N=args.N, t_phys=args.t, n_snapshots=args.snapshots,
-        dt_safety=args.safety, use_gpu=args.gpu)
+        dt_safety=args.safety, use_gpu=args.gpu, adaptive_dt=args.adaptive)

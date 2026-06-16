@@ -19,7 +19,8 @@ thermo:
 
 simulation:
   temperature_C: 500
-  N:             256
+  dimensions:    2                 # spatial dimensions: 2 (NxN) or 3 (NxNxN)
+  N:             256               # grid points per axis
   Lx:            1.0e-6
 
   kappa:         [1.0e-12, 1.0e-12, 1.0e-12]
@@ -38,10 +39,12 @@ simulation:
   # Derivative method: "fd" | "jansson" | "hybrid"
   # "jansson" requires /MU and /dMU datasets in the HDF5 table (step 1 default).
   derivative_method: fd
+  use_gpu:           false             # use CuPy GPU FFT (requires CuPy)
+  adaptive_dt:       false             # adaptive time-stepping
   n_steps:       10000
   save_every:    2500
 
 output:
   data_dir:      data/nb_hf_ti_v
   results_dir:   results/nb_hf_ti_v
-  run_name:      pf_c50Nb5Hf5Ti_kappa1e12_tdbv2
+  run_name:      auto

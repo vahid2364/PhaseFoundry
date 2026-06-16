@@ -17,15 +17,16 @@ thermo:
   composition_ranges:
     NB: [0.001, 0.999]
   n_points:          200           # composition grid points per temperature
-  temperatures_C:    [25, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950, 1000, 1025, 1050, 1075, 1100]
+  temperatures_C:    [25, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950, 1000, 1100, 1200, 1300, 1325, 1350]
 
 simulation:
   temperature_C: 500
-  N:             256               # grid points (NxN domain)
+  dimensions:    3                 # spatial dimensions: 2 (NxN) or 3 (NxNxN)
+  N:             96                # grid points per axis
   Lx:            1.0e-6            # domain size [m]
   kappa:         1.0e-12           # gradient energy coefficient [J·m²/mol]
   M:             5.0e-21           # mobility [m⁵/(J·s)]
-  c0:            0.5               # mean initial composition (mol fraction V)
+  c0:            0.6               # mean initial composition (mol fraction V)
   noise:         0.01              # initial perturbation amplitude
   seed:          42                # random seed
   dt:            1.0e-2            # time step [s]  (None = auto stable dt)
@@ -33,9 +34,11 @@ simulation:
   #   "fd"      — finite differences on G_m interpolant (default, no extra data needed)
   #   "jansson" — direct interpolation of CALPHAD MU and dMU (requires /MU, /dMU in HDF5)
   #   "hybrid"  — Jansson for μᵢ (accurate), FD for Hᵢⱼ (simpler)
-  derivative_method: fd
-  n_steps:       30000
-  save_every:    5000
+  derivative_method: jansson
+  use_gpu:           false             # use CuPy GPU FFT (requires CuPy)
+  adaptive_dt:       false             # adaptive time-stepping
+  n_steps:       5000
+  save_every:    1000
 
 output:
   data_dir:      data/HfNbTiV_BCC_PhaseForge_v3/NbV
@@ -46,4 +49,4 @@ output:
   #   c50      = 50 mol% (mean initial composition x_V = 0.50)
   #   kappa1e12 = gradient energy coefficient κ = 1×10⁻¹² J·m²/mol
   #   tdbv3    = TDB version 3 (HfNbTiV_BCC_PhaseForge_v3.tdb)
-  run_name:      pf_c50_kappa1e12_tdbv3          # subfolder inside kinetics/
+  run_name:      auto

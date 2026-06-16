@@ -308,6 +308,45 @@ spinodal from a symmetric two-component instability to an asymmetric one-compone
 instability (Nb only) across most of the accessible temperature range.
 At \SI{700}{\celsius}, the ternary driving force ($|\lambda_{\min}| = \SI{13272}{\joule\per\mol}$) is approximately six times weaker than at \SI{500}{\celsius} ($|\lambda_{\min}| = \SI{25166}{\joule\per\mol}$), making \SI{700}{\celsius} the most numerically tractable temperature at which a physically meaningful Nb-driven spinodal decomposition still occurs in this system.
 
+\Cref{fig:microstructure_methods_ternary} confirms this behaviour directly.
+Cahn-Hilliard simulations of Nb$_{50}$Hf$_5$V$_{45}$ were run at
+\SI{500}{\celsius} and \SI{700}{\celsius} under identical conditions
+($256\times256$ grid, $L = \SI{1}{\micro\metre}$,
+$\kappa = \SI{1e-12}{\joule\metre\squared\per\mol}$,
+$M_{\rm Nb} = \SI{5e-21}{\metre\tothe{5}\per\joule\per\second}$).
+At \SI{500}{\celsius}, where both $H_{\rm Nb}$ and $H_{\rm V}$ are negative,
+clear Nb-rich and V-rich spinodal domains nucleate and coarsen in both
+composition fields.  The Hf field closely tracks the Nb field, consistent with
+Hf partitioning passively into the Nb-rich phase rather than driving an
+independent instability.  At \SI{700}{\celsius}, where only $H_{\rm Nb} < 0$,
+the decomposition is weaker and the microstructure is less developed within
+the same number of steps, reflecting the reduced driving force and the
+asymmetric one-component character of the spinodal at this temperature.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\textwidth]{microstructure_methods_ternary}
+    \caption{%
+        Composition fields from Cahn-Hilliard simulations of the ternary
+        Nb$_{50}$Hf$_5$V$_{45}$ BCC\textsubscript{A2} alloy at
+        \SI{500}{\celsius} (top row) and \SI{700}{\celsius} (bottom row)
+        ($256\times256$ grid, $L = \SI{1}{\micro\metre}$,
+        $\kappa = \SI{1e-12}{\joule\metre\squared\per\mol}$,
+        $M_{\rm Nb} = \SI{5e-21}{\metre\tothe{5}\per\joule\per\second}$,
+        Jansson derivative mode).
+        Columns show the $x_{\rm Nb}$, $x_{\rm Hf}$, and $x_{\rm V}$
+        composition fields at the final saved snapshot.
+        At \SI{500}{\celsius}, both Nb and V are individually unstable
+        ($H_{\rm Nb},\,H_{\rm V} < 0$) and clear spinodal domains are
+        visible; Hf partitions passively into the Nb-rich phase.
+        At \SI{700}{\celsius}, only Nb is unstable ($H_{\rm Nb} < 0$),
+        yielding a weaker, asymmetric decomposition consistent with the
+        reduced driving force ($|\lambda_{\min}|$ six times smaller than at
+        \SI{500}{\celsius}).
+    }
+    \label{fig:microstructure_methods_ternary}
+\end{figure}
+
 When stiff spectator elements cannot be avoided — for example, when
 experimental alloy constraints fix the composition — practical mitigation
 strategies include:
