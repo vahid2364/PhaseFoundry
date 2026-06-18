@@ -153,6 +153,7 @@ def solve_elasticity(
     max_iter   : int   = 2000,
     verbose    : bool  = False,
     scheme     : InterpolationScheme | str = "cubic",
+    u_init     : Optional[np.ndarray] = None,
 ) -> dict:
     """
     Solve mechanical equilibrium for a 2D periodic two-phase microstructure.
@@ -183,6 +184,12 @@ def solve_elasticity(
         fields (see calphad_pf.elasticity.interpolation).  Default "cubic"
         matches the paper (Eqs. 47-48).  Pass a string to look up by name,
         or an InterpolationScheme instance directly.
+    u_init : ndarray (N, N, 2) or None
+        Warm-start displacement field from the previous solve (e.g.
+        result["displacement"] from the last CH step).  When supplied the
+        iteration starts from u_init instead of zero, which cuts the number
+        of iterations needed for small composition changes between steps.
+        Default None → cold start from zero.
 
     Returns
     -------
@@ -257,13 +264,30 @@ def solve_elasticity(
         return np.array([T[0, 0], T[1, 1], T[0, 1]])
 
     # ── initialise ──────────────────────────────────────────────────────────
-    # Start from zero displacement; E from applied stress
-    eps  = np.zeros((N, N, 2, 2), dtype=np.float64)
-    u    = np.zeros((N, N, 2),    dtype=np.float64)
     residual_history: list[float] = []
 
-    # Initial macroscopic strain from applied stress (Eq. 25)
-    E = _voigt_to_tensor(S_eff_V @ _tensor_to_voigt(sigma_applied))
+    if u_init is not None:
+        # Warm start: derive initial strain from the supplied displacement field.
+        u_fluct_init = u_init  # treat supplied field as the fluctuation part
+        u_hat_init   = np.fft.fftn(u_fluct_init, axes=(0, 1))
+        eps_fluct_hat_init = 0.5j * (
+            np.einsum("xyj,xyi->xyij", k, u_hat_init) +
+            np.einsum("xyi,xyj->xyij", k, u_hat_init)
+        )
+        eps_fluct_init = np.real(np.fft.ifftn(eps_fluct_hat_init, axes=(0, 1)))
+        # Compute E from <σ> = σ^A with the warm-start strain
+        eps_el_init = eps_fluct_init - h[..., None, None] * es2[None, None]
+        sigma_init  = np.einsum("xyijkl,xykl->xyij", C2, eps_el_init)
+        tau_init    = sigma_init - np.einsum("ijkl,xykl->xyij", C_eff2, eps_fluct_init)
+        tau_mean_init = tau_init.mean(axis=(0, 1))
+        E   = _voigt_to_tensor(S_eff_V @ _tensor_to_voigt(sigma_applied - tau_mean_init))
+        eps = eps_fluct_init + E[None, None]
+        u   = u_fluct_init
+    else:
+        eps = np.zeros((N, N, 2, 2), dtype=np.float64)
+        u   = np.zeros((N, N, 2),    dtype=np.float64)
+        # Initial macroscopic strain from applied stress (Eq. 25)
+        E = _voigt_to_tensor(S_eff_V @ _tensor_to_voigt(sigma_applied))
 
     for iteration in range(max_iter):
         eps_old = eps.copy()

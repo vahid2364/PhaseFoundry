@@ -57,6 +57,19 @@ simulation:
   n_steps:       30000
   save_every:    5000
 
+  # Elastic coupling (Gururajan & Abinandanan 2007) — off by default.
+  # Uncomment and fill in material parameters to enable.
+  # elastic:
+  #   enabled:      true
+  #   G_matrix:     40.0e9      # matrix shear modulus [Pa]
+  #   delta:        0.5         # G_ppt / G_matrix  (< 1 = soft, > 1 = stiff)
+  #   nu:           0.3         # Poisson's ratio (both phases, isotropic)
+  #   eps_T:        0.01        # dilatational eigenstrain  ε*
+  #   solve_every:  1           # re-solve every N CH steps (1 = every step)
+  #   warm_start:   true        # use previous displacement as initial guess
+  #   tol:          1.0e-8      # inner-loop convergence tolerance
+  #   max_iter:     500         # inner-loop max iterations
+
 output:
   data_dir:      data/HfNbTiV_BCC_PhaseForge_v3/NbHfV
   results_dir:   results/HfNbTiV_BCC_PhaseForge_v3/NbHfV
