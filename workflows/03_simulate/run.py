@@ -124,6 +124,22 @@ def run(cfg: dict) -> SimResult:
     kappa_cfg = sim["kappa"]
     c0_cfg    = sim["c0"]
 
+    # elastic coupling (optional; off by default if not in config)
+    el_cfg = sim.get("elastic", {})
+    elastic_kwargs = {}
+    if el_cfg.get("enabled", False):
+        elastic_kwargs = dict(
+            elastic_enabled      = True,
+            elastic_G_matrix     = float(el_cfg["G_matrix"]),
+            elastic_delta        = float(el_cfg.get("delta",       1.0)),
+            elastic_nu           = float(el_cfg.get("nu",          0.3)),
+            elastic_eps_T        = float(el_cfg.get("eps_T",       0.0)),
+            elastic_solve_every  = int  (el_cfg.get("solve_every", 1)),
+            elastic_warm_start   = bool (el_cfg.get("warm_start",  True)),
+            elastic_tol          = float(el_cfg.get("tol",         1e-8)),
+            elastic_max_iter     = int  (el_cfg.get("max_iter",    500)),
+        )
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         result = solve_cahn_hilliard(
@@ -143,6 +159,7 @@ def run(cfg: dict) -> SimResult:
             ndim        = ndim,
             use_gpu     = use_gpu,
             adaptive_dt = adaptive_dt,
+            **elastic_kwargs,
         )
 
     print(f"  Elapsed: {result.elapsed_seconds:.1f} s")

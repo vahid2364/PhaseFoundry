@@ -248,6 +248,7 @@ def solve_cahn_hilliard(
     elastic_eps_T:          float = 0.0,
     elastic_sigma_applied:  np.ndarray | None = None,
     elastic_solve_every:    int   = 1,
+    elastic_warm_start:     bool  = True,
     elastic_tol:            float = 1e-8,
     elastic_max_iter:       int   = 500,
     elastic_scheme:         str   = "cubic",
@@ -343,6 +344,11 @@ def solve_cahn_hilliard(
         = every step).  Elastic relaxation is much faster than diffusion,
         so values > 1 trade some accuracy for speed by reusing mu_el across
         several CH steps (quasi-static approximation).
+    elastic_warm_start : bool
+        If True (default), pass the displacement field from the previous
+        elastic solve as the initial guess for the next one.  This cuts
+        iteration count significantly for small composition changes between
+        CH steps.  Set False for a cold start from zero each time.
     elastic_tol : float
         Convergence tolerance for the inner elastic solve (default 1e-8).
     elastic_max_iter : int
@@ -394,7 +400,8 @@ def solve_cahn_hilliard(
               f"solve_every = {elastic_solve_every}")
     else:
         _C_mat = _C_ppt = _eigenstrain = None
-    _mu_el_cache = None   # reused across elastic_solve_every steps
+    _mu_el_cache      = None   # reused across elastic_solve_every steps
+    _elastic_u_prev   = None   # warm-start displacement from last solve
 
     # ── normalise M, kappa, c0 ────────────────────────────────────────────────
     M     = _to_matrix(M,     N_ind)    # (N_ind, N_ind)
@@ -610,7 +617,9 @@ def solve_cahn_hilliard(
                 sigma_applied=elastic_sigma_applied, Lx=Lx,
                 tol=elastic_tol, max_iter=elastic_max_iter,
                 scheme=elastic_scheme, verbose=False,
+                u_init=(_elastic_u_prev if elastic_warm_start else None),
             )
+            _elastic_u_prev = _elastic_result["displacement"]
             _mu_el_cache = compute_mu_el_from_result(
                 c[0], _elastic_result, _C_mat, _C_ppt, _eigenstrain,
                 N_V=elastic_N_V, scheme=elastic_scheme,
@@ -715,7 +724,8 @@ def solve_cahn_hilliard(
                                         "elastic_delta": elastic_delta,
                                         "elastic_nu": elastic_nu,
                                         "elastic_eps_T": elastic_eps_T,
-                                        "elastic_solve_every": elastic_solve_every}
+                                        "elastic_solve_every": elastic_solve_every,
+                                        "elastic_warm_start": elastic_warm_start}
                                        if elastic_enabled else {})),
         elapsed_seconds      = elapsed,
         ind_elements         = interpolant.ind_elements,
