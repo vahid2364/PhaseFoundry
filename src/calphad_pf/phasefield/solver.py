@@ -44,6 +44,7 @@ absolute Hessian eigenvalue over a coarse composition scan.
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
