@@ -258,6 +258,10 @@ def solve_cahn_hilliard(
     use_gpu:        bool  = False,
     # ── elastic coupling (optional) ────────────────────────────────────────
     elastic_enabled:       bool  = False,
+    # pre-built stiffness tensors (from run.py; override G_matrix/delta/nu)
+    elastic_C_mat:          np.ndarray | None = None,
+    elastic_C_ppt:          np.ndarray | None = None,
+    # isotropic fallback (used only when elastic_C_mat/C_ppt are None)
     elastic_G_matrix:       float | None = None,
     elastic_delta:          float = 1.0,
     elastic_nu:             float = 0.3,
@@ -407,14 +411,22 @@ def solve_cahn_hilliard(
                 "elastic_enabled=True currently only supports ndim=2 "
                 f"(2-D elasticity solver); got ndim={ndim}."
             )
-        if elastic_G_matrix is None:
-            raise ValueError("elastic_G_matrix must be set when elastic_enabled=True.")
-        _C_mat = build_isotropic_stiffness(elastic_G_matrix, elastic_nu)
-        _C_ppt = build_isotropic_stiffness(elastic_delta * elastic_G_matrix, elastic_nu)
+        if elastic_C_mat is not None and elastic_C_ppt is not None:
+            # pre-built tensors supplied by caller (cubic_csv or custom)
+            _C_mat = elastic_C_mat
+            _C_ppt = elastic_C_ppt
+        elif elastic_G_matrix is not None:
+            # isotropic fallback
+            _C_mat = build_isotropic_stiffness(elastic_G_matrix, elastic_nu)
+            _C_ppt = build_isotropic_stiffness(elastic_delta * elastic_G_matrix, elastic_nu)
+        else:
+            raise ValueError(
+                "elastic_enabled=True requires either elastic_C_mat/elastic_C_ppt "
+                "(pre-built tensors) or elastic_G_matrix (isotropic fallback)."
+            )
         _eigenstrain = elastic_eps_T * np.eye(3)
-        print(f"  Elastic coupling ENABLED:  G^m = {elastic_G_matrix:.3e} Pa  "
-              f"delta = {elastic_delta}  nu = {elastic_nu}  eps_T = {elastic_eps_T}  "
-              f"solve_every = {elastic_solve_every}")
+        print(f"  Elastic coupling ENABLED:  eps_T = {elastic_eps_T:.5f}  "
+              f"solve_every = {elastic_solve_every}  N_V = {elastic_N_V:.4e}")
     else:
         _C_mat = _C_ppt = _eigenstrain = None
     _mu_el_cache      = None   # reused across elastic_solve_every steps
