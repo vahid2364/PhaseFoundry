@@ -62,13 +62,23 @@ simulation:
   # elastic:
   #   enabled:      true
   #   G_matrix:     40.0e9      # matrix shear modulus [Pa]
-  #   delta:        0.5         # G_ppt / G_matrix  (< 1 = soft, > 1 = stiff)
+  #   delta:        1.0         # G_ppt / G_matrix  (1.0 = homogeneous stiffness)
   #   nu:           0.3         # Poisson's ratio (both phases, isotropic)
-  #   eps_T:        0.01        # dilatational eigenstrain  ε*
-  #   solve_every:  1           # re-solve every N CH steps (1 = every step)
+  #
+  #   # Eigenstrain model — choose one:
+  #   #   "uniform": constant eps_T (precipitate/matrix misfit)
+  #   #   "vegard":  linear in composition via Vegard's law (spinodal default)
+  #   eigenstrain_model: vegard
+  #   a_matrix:     3.3008      # lattice param of c=0 phase [Å]  (e.g. Nb BCC)
+  #   a_ppt:        3.0274      # lattice param of c=1 phase [Å]  (e.g. V  BCC)
+  #   # -- or, for uniform model: --
+  #   # eigenstrain_model: uniform
+  #   # eps_T:      0.01        # dilatational eigenstrain  ε*
+  #
+  #   solve_every:  5           # re-solve every N CH steps (1 = every step)
   #   warm_start:   true        # use previous displacement as initial guess
-  #   tol:          1.0e-8      # inner-loop convergence tolerance
-  #   max_iter:     500         # inner-loop max iterations
+  #   tol:          1.0e-6      # inner-loop convergence tolerance
+  #   max_iter:     300         # inner-loop max iterations
 
 output:
   data_dir:      data/HfNbTiV_BCC_PhaseForge_v3/NbHfV

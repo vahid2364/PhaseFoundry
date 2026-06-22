@@ -59,25 +59,35 @@ def save_slices_2d(
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    N = c_3d.shape[0]
-    xy, xz, yz = _mid_slices(c_3d)
+    c_3d = np.asarray(c_3d)
+    N    = c_3d.shape[0]
     vmin, vmax = float(c_3d.min()), float(c_3d.max())
 
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-    plane_titles = [
-        "XY plane  (z = N/2)",
-        "XZ plane  (y = N/2)",
-        "YZ plane  (x = N/2)",
-    ]
-    for ax, data, ptitle in zip(axes, [xy, xz, yz], plane_titles):
-        im = ax.imshow(data, origin="lower", cmap=cmap,
+    if c_3d.ndim == 2:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 4.5))
+        im = ax.imshow(c_3d.T, origin="lower", cmap=cmap,
                        vmin=vmin, vmax=vmax, interpolation="nearest")
-        ax.set_title(f"{ptitle}\n{label},  t = {t_s:.1f} s", fontsize=9)
+        ax.set_title(f"{label},  t = {t_s:.1f} s", fontsize=9)
         ax.set_xticks([]); ax.set_yticks([])
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    sup = f"{title}  |  N={N}  |  t={t_s:.1f} s" if title else f"N={N}  |  t={t_s:.1f} s"
-    fig.suptitle(sup, fontsize=11)
+        sup = f"{title}  |  N={N}  |  t={t_s:.1f} s" if title else f"N={N}  |  t={t_s:.1f} s"
+        fig.suptitle(sup, fontsize=11)
+    else:
+        xy, xz, yz = _mid_slices(c_3d)
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+        plane_titles = [
+            "XY plane  (z = N/2)",
+            "XZ plane  (y = N/2)",
+            "YZ plane  (x = N/2)",
+        ]
+        for ax, data, ptitle in zip(axes, [xy, xz, yz], plane_titles):
+            im = ax.imshow(data, origin="lower", cmap=cmap,
+                           vmin=vmin, vmax=vmax, interpolation="nearest")
+            ax.set_title(f"{ptitle}\n{label},  t = {t_s:.1f} s", fontsize=9)
+            ax.set_xticks([]); ax.set_yticks([])
+            plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+        sup = f"{title}  |  N={N}  |  t={t_s:.1f} s" if title else f"N={N}  |  t={t_s:.1f} s"
+        fig.suptitle(sup, fontsize=11)
     fig.tight_layout()
 
     fname = out_dir / f"slices_{label.replace('_','').replace(' ','')}_t{t_s:.0f}s.png"
