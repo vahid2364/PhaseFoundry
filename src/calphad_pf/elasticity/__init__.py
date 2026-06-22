@@ -22,7 +22,7 @@ elastic_potential(...) / compute_mu_el_from_result(...)
     ``mu_total = mu_ch + mu_el``. See `elastic_potential.py`.
 """
 
-from .fft_solver import solve_elasticity, build_isotropic_stiffness
+from .fft_solver import solve_elasticity, build_isotropic_stiffness, build_cubic_stiffness
 from .interpolation import (
     InterpolationScheme,
     get_scheme,
@@ -38,6 +38,7 @@ from .elastic_potential import (
 __all__ = [
     "solve_elasticity",
     "build_isotropic_stiffness",
+    "build_cubic_stiffness",
     "InterpolationScheme",
     "get_scheme",
     "register_scheme",

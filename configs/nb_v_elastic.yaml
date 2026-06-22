@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-V Binary — Elasto-Chemical Spinodal Decomposition at 500 °C
+# ─────────────────────────────────────────────────────────────────────────────
+# Isotropic elasticity + Vegard's law eigenstrain coupled to Cahn-Hilliard.
+# CALPHAD thermodynamics: PhaseForge v2 (temperature-dependent).
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_elastic.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_v_elastic.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_v_elastic.yaml
+
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6            # domain size [m]
+  kappa:         1.0e-12           # gradient energy [J·m²/mol]
+  M:             5.0e-21           # mobility [m⁵/(J·s)]
+  c0:            0.6               # mean x_V (in spinodal at 500 °C)
+  noise:         0.01
+  seed:          42
+  dt:            1.0e-2
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       100000
+  save_every:    10000
+
+  elastic:
+    enabled:      true
+
+    # Isotropic elasticity (same stiffness for both phases — Vegard misfit only)
+    G_matrix:     40.0e9           # shear modulus [Pa]  (~Nb BCC at 500 °C)
+    delta:        1.0              # C_ppt / C_matrix = 1 (same crystal structure)
+    nu:           0.37             # Poisson's ratio (Nb-V BCC)
+
+    # Vegard's law eigenstrain: eps*(c) = (a_ppt - a_matrix)/a_matrix * c * I
+    # Unit conversion N_V = 1/V_m auto-computed from lattice params + c0 (BCC, 2 atoms/cell).
+    eigenstrain_model: vegard
+    a_matrix:     3.3008           # BCC Nb lattice parameter [Å]
+    a_ppt:        3.0274           # BCC V  lattice parameter [Å]
+    # Computed: eps_T = (3.0274 - 3.3008) / 3.3008 ≈ -0.0828
+    # Computed: V_m   ≈ 9.3e-6 m³/mol  →  N_V ≈ 1.07e5 mol/m³  (mu_el units: J/mol)
+
+    solve_every:  5                # re-solve elastic every 5 CH steps (speedup)
+    warm_start:   true
+    tol:          1.0e-6
+    max_iter:     300
+
+    # Save elastic field snapshots to elastic_fields.npz alongside fields.npz.
+    # Layout: mu_ch (n_snaps,N,N) J/mol | mu_el (n_snaps,N,N) J/mol
+    #         stress (n_snaps,N,N,2,2) Pa | strain (n_snaps,N,N,2,2) [-]
+    save_fields:  true
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV
+  run_name:      auto

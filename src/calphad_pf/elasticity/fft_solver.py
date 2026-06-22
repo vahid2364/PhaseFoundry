@@ -73,6 +73,35 @@ def build_isotropic_stiffness(G: float, nu: float) -> np.ndarray:
     return C
 
 
+def build_cubic_stiffness(C11: float, C12: float, C44: float) -> np.ndarray:
+    """
+    Build the 3×3×3×3 stiffness tensor for a cubic-symmetry crystal.
+
+    Zener anisotropy ratio: A_Z = 2 C44 / (C11 - C12)
+        A_Z = 1  →  isotropic
+        A_Z > 1  →  ⟨100⟩ elastically soft, precipitate squares up along x/y axes
+        A_Z < 1  →  ⟨110⟩ elastically soft, precipitate squares up at 45°
+
+    Parameters
+    ----------
+    C11, C12, C44 : float
+        Independent cubic elastic constants [Pa or dimensionless].
+
+    Returns
+    -------
+    C : ndarray (3, 3, 3, 3)
+    """
+    C = np.zeros((3, 3, 3, 3), dtype=np.float64)
+    for i in range(3):
+        C[i, i, i, i] = C11
+        for j in range(3):
+            if i != j:
+                C[i, i, j, j] = C12
+                C[i, j, i, j] = C44
+                C[i, j, j, i] = C44
+    return C
+
+
 def _interp_stiffness(c: np.ndarray,
                       C_mat: np.ndarray,
                       C_ppt: np.ndarray,

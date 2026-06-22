@@ -128,16 +128,41 @@ def run(cfg: dict) -> SimResult:
     el_cfg = sim.get("elastic", {})
     elastic_kwargs = {}
     if el_cfg.get("enabled", False):
+        # Eigenstrain model: "uniform" (constant eps_T) or "vegard" (linear in c)
+        eigenstrain_model = el_cfg.get("eigenstrain_model", "uniform")
+        if eigenstrain_model == "vegard":
+            a_matrix = float(el_cfg["a_matrix"])   # lattice param of c=0 phase [Å]
+            a_ppt    = float(el_cfg["a_ppt"])       # lattice param of c=1 phase [Å]
+            eps_T    = (a_ppt - a_matrix) / a_matrix
+            scheme   = "linear"                     # h(c)=c so eps*(c)=c*eps_T = Vegard
+
+            # Molar volume from Vegard lattice parameter at mean composition (BCC: 2 atoms/cell)
+            c0_scalar = float(np.mean(np.atleast_1d(sim["c0"])))
+            a_mean_m  = ((1.0 - c0_scalar) * a_matrix + c0_scalar * a_ppt) * 1e-10  # [m]
+            N_A       = 6.02214076e23
+            V_m       = a_mean_m**3 * N_A / 2.0                  # BCC molar volume [m³/mol]
+            N_V       = float(el_cfg.get("N_V", 1.0 / V_m))      # allow explicit override
+            print(f"  Vegard eigenstrain: a_matrix={a_matrix:.4f} Å, "
+                  f"a_ppt={a_ppt:.4f} Å → eps_T={eps_T:.5f}")
+            print(f"  Molar volume V_m = {V_m:.4e} m³/mol  →  N_V = {N_V:.4e} mol/m³")
+        else:
+            eps_T  = float(el_cfg.get("eps_T",  0.0))
+            scheme = el_cfg.get("scheme", "cubic")
+            N_V    = float(el_cfg.get("N_V", 1.0))
+
         elastic_kwargs = dict(
             elastic_enabled      = True,
             elastic_G_matrix     = float(el_cfg["G_matrix"]),
             elastic_delta        = float(el_cfg.get("delta",       1.0)),
             elastic_nu           = float(el_cfg.get("nu",          0.3)),
-            elastic_eps_T        = float(el_cfg.get("eps_T",       0.0)),
+            elastic_eps_T        = eps_T,
+            elastic_scheme       = scheme,
+            elastic_N_V          = N_V,
             elastic_solve_every  = int  (el_cfg.get("solve_every", 1)),
             elastic_warm_start   = bool (el_cfg.get("warm_start",  True)),
             elastic_tol          = float(el_cfg.get("tol",         1e-8)),
             elastic_max_iter     = int  (el_cfg.get("max_iter",    500)),
+            elastic_save_fields  = bool (el_cfg.get("save_fields", False)),
         )
 
     with warnings.catch_warnings():
@@ -194,6 +219,24 @@ def run(cfg: dict) -> SimResult:
     size_mb = npz_path.stat().st_size / 1e6
     print(f"  Raw fields saved → fields.npz  ({size_mb:.1f} MB, "
           f"{len(result.time_history)} snapshots)")
+
+    # ── save elastic field snapshots (optional) ───────────────────────────────
+    if el_cfg.get("enabled", False) and el_cfg.get("save_fields", False):
+        if result.mu_el_history:
+            el_dict = {
+                "mu_ch":  np.array(result.mu_ch_history,  dtype=np.float32),
+                "mu_el":  np.array(result.mu_el_history,  dtype=np.float32),
+                "stress": np.array(result.stress_history, dtype=np.float32),
+                "strain": np.array(result.strain_history, dtype=np.float32),
+                "time":   np.array(result.time_history,   dtype=np.float64),
+            }
+            el_path = output_dir / "elastic_fields.npz"
+            np.savez_compressed(el_path, **el_dict)
+            size_mb = el_path.stat().st_size / 1e6
+            print(f"  Elastic fields saved → elastic_fields.npz  ({size_mb:.1f} MB, "
+                  f"{len(result.mu_el_history)} snapshots)")
+        else:
+            print("  Warning: save_fields=true but no elastic snapshots were collected.")
 
     print(f"  Saving final-frame visualizations ...")
     if ndim == 2:

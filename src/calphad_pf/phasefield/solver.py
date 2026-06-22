@@ -110,6 +110,18 @@ class SimResult:
     ind_elements : list[str]
         Names of the independent composition fields (same order as axis 0
         of ``compositions``).
+    mu_ch_history : list of ndarray, shape (N_ind, N, N)
+        Snapshots of chemical potential [J/mol]. Non-empty only when
+        elastic_save_fields=True.
+    mu_el_history : list of ndarray, shape (N, N)
+        Snapshots of elastic chemical potential [J/mol]. Non-empty only when
+        elastic_save_fields=True.
+    stress_history : list of ndarray, shape (N, N, 2, 2)
+        Snapshots of Cauchy stress [Pa]. Non-empty only when
+        elastic_save_fields=True.
+    strain_history : list of ndarray, shape (N, N, 2, 2)
+        Snapshots of total strain [-]. Non-empty only when
+        elastic_save_fields=True.
     """
     compositions:         np.ndarray
     compositions_history: list = field(default_factory=list)
@@ -120,6 +132,10 @@ class SimResult:
     params:               dict = field(default_factory=dict)
     elapsed_seconds:      float = 0.0
     ind_elements:         list = field(default_factory=list)
+    mu_ch_history:        list = field(default_factory=list)
+    mu_el_history:        list = field(default_factory=list)
+    stress_history:       list = field(default_factory=list)
+    strain_history:       list = field(default_factory=list)
 
     # convenience: min/max across all fields
     @property
@@ -253,6 +269,7 @@ def solve_cahn_hilliard(
     elastic_max_iter:       int   = 500,
     elastic_scheme:         str   = "cubic",
     elastic_N_V:            float = 1.0,
+    elastic_save_fields:    bool  = False,
 ) -> SimResult:
     """
     General Cahn-Hilliard phase-field solver.
@@ -402,6 +419,7 @@ def solve_cahn_hilliard(
         _C_mat = _C_ppt = _eigenstrain = None
     _mu_el_cache      = None   # reused across elastic_solve_every steps
     _elastic_u_prev   = None   # warm-start displacement from last solve
+    _elastic_result   = None   # last full elastic solve result (for save_fields)
 
     # ── normalise M, kappa, c0 ────────────────────────────────────────────────
     M     = _to_matrix(M,     N_ind)    # (N_ind, N_ind)
@@ -515,7 +533,15 @@ def solve_cahn_hilliard(
     cmax_hist  = {el: [] for el in all_elements}
     t_phys     = 0.0
 
-    def _snapshot(c_arr: np.ndarray, step: int) -> None:
+    # elastic field snapshots (populated only when elastic_save_fields=True)
+    mu_ch_hist  : list[np.ndarray] = []
+    mu_el_hist  : list[np.ndarray] = []
+    stress_hist : list[np.ndarray] = []
+    strain_hist : list[np.ndarray] = []
+
+    def _snapshot(c_arr: np.ndarray, step: int,
+                  mu_ch_snap=None, mu_el_snap=None,
+                  stress_snap=None, strain_snap=None) -> None:
         """Save a snapshot of the current state."""
         nonlocal t_phys
         comp_hist.append(c_arr.copy())
@@ -555,6 +581,12 @@ def solve_cahn_hilliard(
         cmin_hist[ref_el].append(float(c_ref_arr.min()))
         cmean_hist[ref_el].append(float(c_ref_arr.mean()))
         cmax_hist[ref_el].append(float(c_ref_arr.max()))
+
+        if elastic_save_fields and mu_ch_snap is not None:
+            mu_ch_hist.append(np.array(mu_ch_snap, dtype=np.float32))
+            mu_el_hist.append(np.array(mu_el_snap,  dtype=np.float32))
+            stress_hist.append(np.array(stress_snap, dtype=np.float32))
+            strain_hist.append(np.array(strain_snap, dtype=np.float32))
 
         if output_dir is not None and save_frames:
             _save_frame(c_arr, step, output_dir, interpolant.ind_elements,
@@ -679,7 +711,14 @@ def solve_cahn_hilliard(
             should_snap = (step % save_every == 0) or (step == n_steps)
 
         if should_snap:
-            _snapshot(c, step)
+            if elastic_enabled and elastic_save_fields and _elastic_result is not None:
+                _snapshot(c, step,
+                          mu_ch_snap=mu_bulk - _mu_el_cache[np.newaxis, :, :],
+                          mu_el_snap=_mu_el_cache,
+                          stress_snap=_elastic_result["stress"],
+                          strain_snap=_elastic_result["strain"])
+            else:
+                _snapshot(c, step)
             if snapshot_callback is not None:
                 snapshot_callback(c, t_phys)
 
@@ -729,6 +768,10 @@ def solve_cahn_hilliard(
                                        if elastic_enabled else {})),
         elapsed_seconds      = elapsed,
         ind_elements         = interpolant.ind_elements,
+        mu_ch_history        = mu_ch_hist,
+        mu_el_history        = mu_el_hist,
+        stress_history       = stress_hist,
+        strain_history       = strain_hist,
     )
 
 
