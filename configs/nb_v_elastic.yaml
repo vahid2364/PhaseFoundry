@@ -49,10 +49,11 @@ simulation:
     elastic_csv:  data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
 
     # Endpoint compositions for interpolation (step 1b writes elastic_params.yaml)
-    # c_mat: Nb-rich matrix (x_Nb=1.0 → Born stable, A_Z=0.478)
-    # c_ppt: V-rich precipitate (x_Nb=0.10 → last Born-stable point, C44=+2.1 GPa)
-    c_mat: {NB: 1.00, V: 0.00}
-    c_ppt: {NB: 0.10, V: 0.90}
+    # Use actual equilibrium tie-line compositions at 500°C (from free energy log)
+    # rather than Born-stability extremes — gives physically correct, smaller eps_T
+    # and a more stable elastic solver at sharp interfaces.
+    c_mat: {NB: 0.96, V: 0.04}   # Nb-rich equilibrium phase at 500°C
+    c_ppt: {NB: 0.36, V: 0.64}   # V-rich equilibrium phase at 500°C
 
     # Vegard's law eigenstrain: auto-computed from a_mat/a_ppt in elastic_params.yaml
     eigenstrain_model: vegard
