@@ -664,10 +664,19 @@ def solve_cahn_hilliard(
                 u_init=(_elastic_u_prev if elastic_warm_start else None),
             )
             _elastic_u_prev = _elastic_result["displacement"]
-            _mu_el_cache = compute_mu_el_from_result(
+            _mu_el_new = compute_mu_el_from_result(
                 c[0], _elastic_result, _C_mat, _C_ppt, _eigenstrain,
                 N_V=elastic_N_V, scheme=elastic_scheme,
             )
+            # Guard: if elastic solve diverged (NaN/Inf), reuse previous cache
+            if np.any(~np.isfinite(_mu_el_new)):
+                warnings.warn(
+                    f"Step {step}: elastic mu_el contains NaN/Inf "
+                    "(solver likely did not converge) — reusing previous cached value.",
+                    stacklevel=2,
+                )
+            else:
+                _mu_el_cache = _mu_el_new
         if elastic_enabled:
             mu_bulk = mu_bulk + _mu_el_cache[np.newaxis, :, :]   # mu_total = mu_ch + mu_el
 

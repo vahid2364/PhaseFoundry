@@ -57,10 +57,10 @@ simulation:
     # Vegard's law eigenstrain: auto-computed from a_mat/a_ppt in elastic_params.yaml
     eigenstrain_model: vegard
 
-    solve_every:  5                # re-solve elastic every 5 CH steps (speedup)
+    solve_every:  10               # re-solve elastic every 10 CH steps (speedup)
     warm_start:   true
-    tol:          1.0e-6
-    max_iter:     300
+    tol:          1.0e-5           # relax tolerance — sharp interfaces stress FFT solver
+    max_iter:     500              # more iterations for late-stage sharp interfaces
 
     # Save elastic field snapshots to elastic_fields.npz alongside fields.npz.
     # Layout: mu_ch (n_snaps,N,N) J/mol | mu_el (n_snaps,N,N) J/mol
