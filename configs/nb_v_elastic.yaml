@@ -42,18 +42,20 @@ simulation:
   elastic:
     enabled:      true
 
-    # Isotropic elasticity (same stiffness for both phases — Vegard misfit only)
-    G_matrix:     40.0e9           # shear modulus [Pa]  (~Nb BCC at 500 °C)
-    delta:        1.0              # C_ppt / C_matrix = 1 (same crystal structure)
-    nu:           0.37             # Poisson's ratio (Nb-V BCC)
+    # ── Stiffness model ───────────────────────────────────────────────────────
+    # "isotropic"  — specify G_matrix, delta, nu manually
+    # "cubic_csv"  — read C11/C12/C44 from SQS/DFT CSV (requires step 1b)
+    stiffness_model: cubic_csv
+    elastic_csv:  data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
 
-    # Vegard's law eigenstrain: eps*(c) = (a_ppt - a_matrix)/a_matrix * c * I
-    # Unit conversion N_V = 1/V_m auto-computed from lattice params + c0 (BCC, 2 atoms/cell).
+    # Endpoint compositions for interpolation (step 1b writes elastic_params.yaml)
+    # c_mat: Nb-rich matrix (x_Nb=1.0 → Born stable, A_Z=0.478)
+    # c_ppt: V-rich precipitate (x_Nb=0.10 → last Born-stable point, C44=+2.1 GPa)
+    c_mat: {NB: 1.00, V: 0.00}
+    c_ppt: {NB: 0.10, V: 0.90}
+
+    # Vegard's law eigenstrain: auto-computed from a_mat/a_ppt in elastic_params.yaml
     eigenstrain_model: vegard
-    a_matrix:     3.3008           # BCC Nb lattice parameter [Å]
-    a_ppt:        3.0274           # BCC V  lattice parameter [Å]
-    # Computed: eps_T = (3.0274 - 3.3008) / 3.3008 ≈ -0.0828
-    # Computed: V_m   ≈ 9.3e-6 m³/mol  →  N_V ≈ 1.07e5 mol/m³  (mu_el units: J/mol)
 
     solve_every:  5                # re-solve elastic every 5 CH steps (speedup)
     warm_start:   true

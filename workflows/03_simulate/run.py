@@ -45,11 +45,14 @@ import numpy as np
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
+import yaml
+
 from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
 from calphad_pf.thermodynamics.storage import load_table
 from calphad_pf.thermodynamics.interpolant import build_interpolant
 from calphad_pf.phasefield.solver import solve_cahn_hilliard, SimResult
 from calphad_pf.phasefield.visualize import save_slices_2d, save_pyvista_3d
+from calphad_pf.elasticity import build_cubic_stiffness, build_isotropic_stiffness
 import numpy as np
 
 
@@ -128,20 +131,56 @@ def run(cfg: dict) -> SimResult:
     el_cfg = sim.get("elastic", {})
     elastic_kwargs = {}
     if el_cfg.get("enabled", False):
-        # Eigenstrain model: "uniform" (constant eps_T) or "vegard" (linear in c)
+        stiffness_model   = el_cfg.get("stiffness_model", "isotropic")
         eigenstrain_model = el_cfg.get("eigenstrain_model", "uniform")
-        if eigenstrain_model == "vegard":
-            a_matrix = float(el_cfg["a_matrix"])   # lattice param of c=0 phase [Å]
-            a_ppt    = float(el_cfg["a_ppt"])       # lattice param of c=1 phase [Å]
-            eps_T    = (a_ppt - a_matrix) / a_matrix
-            scheme   = "linear"                     # h(c)=c so eps*(c)=c*eps_T = Vegard
 
-            # Molar volume from Vegard lattice parameter at mean composition (BCC: 2 atoms/cell)
+        # ── stiffness tensors ─────────────────────────────────────────────────
+        if stiffness_model == "cubic_csv":
+            # Load pre-computed elastic_params.yaml written by step 1b
+            results_dir  = Path(cfg["output"]["results_dir"])
+            params_path  = results_dir / "elastic_params.yaml"
+            if not params_path.exists():
+                raise FileNotFoundError(
+                    f"elastic_params.yaml not found at {params_path}.\n"
+                    "Run step 1b first:\n"
+                    "  python workflows/01b_lookup_elastic/run.py "
+                    f"--config {args.config if 'args' in dir() else '<config>'}"
+                )
+            with open(params_path) as f:
+                ep = yaml.safe_load(f)
+            cm, cp = ep["C_mat"], ep["C_ppt"]
+            C_mat_tens = build_cubic_stiffness(
+                cm["C11_GPa"] * 1e9, cm["C12_GPa"] * 1e9, cm["C44_GPa"] * 1e9)
+            C_ppt_tens = build_cubic_stiffness(
+                cp["C11_GPa"] * 1e9, cp["C12_GPa"] * 1e9, cp["C44_GPa"] * 1e9)
+            print(f"  Stiffness (cubic_csv):")
+            print(f"    C_mat: C11={cm['C11_GPa']:.1f}  C12={cm['C12_GPa']:.1f}  "
+                  f"C44={cm['C44_GPa']:.1f} GPa  A_Z={cm['A_Z']:.3f}")
+            print(f"    C_ppt: C11={cp['C11_GPa']:.1f}  C12={cp['C12_GPa']:.1f}  "
+                  f"C44={cp['C44_GPa']:.1f} GPa  A_Z={cp['A_Z']:.3f}")
+            # Vegard lattice params come from elastic_params.yaml
+            a_matrix = ep["eigenstrain"]["a_matrix_A"]
+            a_ppt    = ep["eigenstrain"]["a_ppt_A"]
+            eigenstrain_model = "vegard"   # always vegard when using CSV
+        else:
+            # isotropic fallback — build from G_matrix / delta / nu
+            G_mat  = float(el_cfg["G_matrix"])
+            delta  = float(el_cfg.get("delta", 1.0))
+            nu_val = float(el_cfg.get("nu", 0.3))
+            C_mat_tens = build_isotropic_stiffness(G_mat, nu_val)
+            C_ppt_tens = build_isotropic_stiffness(delta * G_mat, nu_val)
+            a_matrix = float(el_cfg.get("a_matrix", 0.0))
+            a_ppt    = float(el_cfg.get("a_ppt",    0.0))
+
+        # ── eigenstrain and unit conversion ───────────────────────────────────
+        if eigenstrain_model == "vegard":
+            eps_T  = (a_ppt - a_matrix) / a_matrix
+            scheme = "linear"
             c0_scalar = float(np.mean(np.atleast_1d(sim["c0"])))
-            a_mean_m  = ((1.0 - c0_scalar) * a_matrix + c0_scalar * a_ppt) * 1e-10  # [m]
-            N_A       = 6.02214076e23
-            V_m       = a_mean_m**3 * N_A / 2.0                  # BCC molar volume [m³/mol]
-            N_V       = float(el_cfg.get("N_V", 1.0 / V_m))      # allow explicit override
+            a_mean_m  = ((1.0 - c0_scalar) * a_matrix + c0_scalar * a_ppt) * 1e-10
+            N_A = 6.02214076e23
+            V_m = a_mean_m**3 * N_A / 2.0          # BCC: 2 atoms/cell
+            N_V = float(el_cfg.get("N_V", 1.0 / V_m))
             print(f"  Vegard eigenstrain: a_matrix={a_matrix:.4f} Å, "
                   f"a_ppt={a_ppt:.4f} Å → eps_T={eps_T:.5f}")
             print(f"  Molar volume V_m = {V_m:.4e} m³/mol  →  N_V = {N_V:.4e} mol/m³")
@@ -152,9 +191,8 @@ def run(cfg: dict) -> SimResult:
 
         elastic_kwargs = dict(
             elastic_enabled      = True,
-            elastic_G_matrix     = float(el_cfg["G_matrix"]),
-            elastic_delta        = float(el_cfg.get("delta",       1.0)),
-            elastic_nu           = float(el_cfg.get("nu",          0.3)),
+            elastic_C_mat        = C_mat_tens,
+            elastic_C_ppt        = C_ppt_tens,
             elastic_eps_T        = eps_T,
             elastic_scheme       = scheme,
             elastic_N_V          = N_V,
