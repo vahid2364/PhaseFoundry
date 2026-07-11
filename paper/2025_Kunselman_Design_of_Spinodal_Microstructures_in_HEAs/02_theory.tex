@@ -32,6 +32,7 @@ Once formation energies have been computed for SQS supercells spanning the compo
 where $L^{(\nu)}_{A,B}$ are the $\nu$-th order binary interaction parameters determined by least-squares fitting to the MLIP-computed formation energies. Temperature-independent interaction parameters are assumed throughout. Higher-order ternary and quaternary interactions are incorporated analogously and are extracted by fitting to SQS energies at compositions spanning the multicomponent space.
 
 The fitted interaction parameters are assembled into a thermodynamic database (TDB) file compatible with PyCalphad \cite{otis2017pycalphad}. The resulting TDB for the BCC\_A2 phase in the \ch{Hf-Nb-Ti-V} system serves as the thermodynamic input for the stability analysis described below.
+\textcolor{blue}{Although pure Hf and Ti adopt the HCP structure at room temperature, the BCC\textsubscript{A2} phase is stabilized at the concentrated compositions studied here and is the experimentally observed structure~\cite{an2021spinodal}; the analysis throughout this work is therefore restricted to the BCC\textsubscript{A2} phase.}
 
 \subsection{Determining Stability From the Gibbs Energy Hessian}
 \label{sec:stability_theory}
@@ -746,55 +747,152 @@ are effectively equivalent for the binary system.  Differences may grow for
 higher-order systems where scattered-data interpolants are used; those cases are
 addressed in \Cref{sec:results}.
 
-\begin{figure}[htbp]
+\begin{figure}[!h]
     \centering
-    \includegraphics[width=\textwidth]{microstructure_methods}
+    \includegraphics[width=\textwidth]{figs/microstructure_methods}\\[6pt]
+    \includegraphics[width=\textwidth]{figs/microstructure_methods_3d}
     \caption{%
-        Microstructure comparison of the \texttt{fd} and \texttt{jansson}
-        derivative modes for the Nb-V BCC\textsubscript{A2} binary at
-        $T = \SI{500}{\celsius}$ after $80\,000$ time steps
-        ($t = \SI{800}{\second}$, $256 \times 256$ grid, $L = \SI{1}{\micro\metre}$,
-        initial composition $c_0 = x_{\rm V} = 0.50$).
-        (a)~Finite-difference and (b)~Jansson direct composition fields
-        $x_{\rm V}$; fully coarsened V-rich (red) and Nb-rich (blue) spinodal
-        domains are visible.
-        (c)~Absolute difference map
-        $|x^{\rm fd}_{\rm V} - x^{\rm jansson}_{\rm V}|$, showing that
-        discrepancies are confined to interfaces
-        ($\mathrm{RMSE} = \num{1.31e-5}$, max $= \num{2.42e-4}$).
-        The table summarises composition statistics and simulation wall times
-        for each derivative method (FD: \SI{279}{\second};
-        Jansson: \SI{199}{\second}).
+        Derivative-method comparison (\texttt{fd} vs.\ \texttt{jansson}) for
+        Nb-V BCC\textsubscript{A2} at $T = \SI{500}{\celsius}$
+        ($c_0 = x_{\rm V} = 0.50$, $L = \SI{1}{\micro\metre}$).
+        \textit{Top row} (2D, $256\times256$ grid, $t = \SI{800}{\second}$,
+        80\,000 steps):
+        (a)~finite-difference and (b)~Jansson direct composition fields
+        $x_{\rm V}$; (c)~absolute difference map
+        $|x^{\rm fd}_{\rm V} - x^{\rm jansson}_{\rm V}|$
+        ($\mathrm{RMSE} = \num{1.31e-5}$, max $= \num{2.42e-4}$);
+        table: composition statistics and wall times
+        (FD: \SI{279}{\second}; Jansson: \SI{199}{\second}).
+        \textit{Bottom row} (3D, $64^3$ grid, $t = \SI{800}{\second}$,
+        5\,000 steps, $z = L/2$ mid-plane slice):
+        (a)~finite-difference, (b)~Jansson, (c)~absolute difference;
+        discrepancies remain confined to domain interfaces in both 2D and 3D,
+        confirming method equivalence independent of dimensionality.
     }
     \label{fig:microstructure_methods}
-\end{figure}
-
-\Cref{fig:microstructure_methods_3d} extends this comparison to a
-three-dimensional $64\times64\times64$ domain under otherwise identical
-conditions.  The XY mid-plane slices from both methods are visually
-indistinguishable, and the absolute per-voxel difference remains confined to
-composition interfaces — the same pattern observed in 2D.  The RMSE and
-maximum discrepancy are consistent with their 2D counterparts, confirming
-that the equivalence of \texttt{fd} and \texttt{jansson} is not an artefact
-of the two-dimensional geometry.
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{microstructure_methods_3d}
-    \caption{%
-        3D derivative-method comparison for Nb-V BCC\textsubscript{A2} at
-        $T = \SI{500}{\celsius}$ ($64^3$ grid, $L = \SI{1}{\micro\metre}$,
-        $t = \SI{800}{\second}$, same seed and parameters as
-        \Cref{fig:microstructure_methods}).
-        Each panel shows the $x_{\rm V}$ composition on the $z = L/2$
-        mid-plane.
-        (a)~Finite-difference mode.
-        (b)~Jansson direct mode.
-        (c)~Absolute difference $|x^{\rm fd}_{\rm V} - x^{\rm jansson}_{\rm V}|$,
-        showing that discrepancies remain confined to domain interfaces.
-        The table reports mid-plane composition statistics and simulation
-        wall times for each method.
-    }
     \label{fig:microstructure_methods_3d}
 \end{figure}
+
+\subsubsection{Elastic Coupling via Coherency Strain}
+\label{sec:elastic_coupling_pf}
+
+{\color{blue}
+Coherency strains arising from composition-dependent lattice mismatch
+contribute an elastic free energy that supplements the chemical driving
+force.  Following Gururajan and Abinandanan \cite{gururajan2007phase},
+the total chemical potential entering \Cref{eq:CH_multicomp} is
+augmented by an elastic term:
+%
+\begin{equation}\label{eq:mu_tot_elastic}
+    \mu_j^{\rm tot} = \mu_j^{\rm ch} + \mu_j^{\rm el},
+\end{equation}
+%
+where $\mu_j^{\rm ch} = \partial G^\alpha_m/\partial x_j - \kappa_j\nabla^2 x_j$
+is the chemical contribution (\Cref{eq:mu_var_pf}) and $\mu_j^{\rm el}$
+is the elastic contribution derived from the variation of the elastic
+strain energy with respect to composition.
+
+Mechanical equilibrium is solved at each elastic update step using the
+Lippmann-Schwinger spectral scheme of Moulinec and
+Suquet \cite{moulinec1998numerical}, which reformulates the Navier
+equation as a Fredholm integral equation and solves it iteratively in
+Fourier space.  A homogeneous reference stiffness $\mathbf{C}^0$ is
+chosen to accelerate convergence, and the spatially varying stiffness
+field $\mathbf{C}(\boldsymbol{r})$ is treated as a perturbation.
+
+\paragraph{Eigenstrain and elastic chemical potential.}
+
+The elastic state of the microstructure is determined by the
+eigenstrain field $\boldsymbol{\varepsilon}^*(\boldsymbol{r})$, which encodes the
+stress-free lattice mismatch between the local composition and a
+reference state.  Two formulations are implemented in the present
+framework, summarized in \Cref{tab:eigenstrain_models}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{%
+        \color{blue}
+        Comparison of the two eigenstrain models available in the
+        CALPHAD-coupled phase-field solver.
+        $\alpha_k$ denotes the Vegard coefficient for element $k$,
+        $a(\boldsymbol{x})$ the SQS lattice parameter at composition
+        $\boldsymbol{x}$, $a_0 = a(\boldsymbol{x}_0)$ the reference
+        lattice parameter at the parent composition, $\boldsymbol{\sigma}$
+        the Cauchy stress, and $N_V$ the molar density.
+        All models use the Moulinec-Suquet spectral scheme with
+        homogeneous reference stiffness $\mathbf{C}^0$; the stiffness
+        contrast correction is neglected in both cases, which is standard
+        practice when the contrast is moderate.
+    }
+    \label{tab:eigenstrain_models}
+    \renewcommand{\arraystretch}{1.35}
+    \small\color{blue}
+    \begin{tabular}{lp{4.2cm}p{3.6cm}p{3.4cm}}
+        \toprule
+        & \textbf{Classical} (\texttt{fixed\_vegard})
+        & \multicolumn{2}{l}{\textbf{Composition-dependent} (\texttt{local\_vegard})} \\
+        \midrule
+        Eigenstrain field
+        & $\boldsymbol{\varepsilon}^*(\boldsymbol{r}) = \displaystyle\sum_k \alpha_k\, x_k(\boldsymbol{r})\,\mathbf{I}$
+        & \multicolumn{2}{l}{$\boldsymbol{\varepsilon}^*(\boldsymbol{r}) = \dfrac{a(\boldsymbol{x}(\boldsymbol{r})) - a_0}{a_0}\,\mathbf{I}$} \\[6pt]
+        Elastic $\mu_k^{\rm el}$
+        & $-\boldsymbol{\sigma}(\boldsymbol{r}):\boldsymbol{\Lambda}_k\,/\,N_V$
+        & \multicolumn{2}{l}{$-\alpha_k(\boldsymbol{x}_0)\,\mathrm{tr}(\boldsymbol{\sigma}(\boldsymbol{r}))\,/\,N_V$} \\[4pt]
+        Reference stiffness $\mathbf{C}^0$
+        & $\tfrac{1}{2}(\mathbf{C}_{\rm mat} + \mathbf{C}_{\rm ppt})$
+        & \multicolumn{2}{l}{$\mathbf{C}(\boldsymbol{x}_0)$ from SQS interpolant} \\[4pt]
+        Stiffness field $\mathbf{C}(\boldsymbol{r})$
+        & $(1-h)\,\mathbf{C}_{\rm mat} + h\,\mathbf{C}_{\rm ppt}$
+        & \multicolumn{2}{l}{SQS interpolant evaluated pointwise at $\boldsymbol{x}(\boldsymbol{r})$} \\[4pt]
+        $\alpha_k$ evaluation
+        & Fixed at tie-line midpoint (step 1b)
+        & \multicolumn{2}{l}{$\partial\ln a/\partial x_k$ at $\boldsymbol{x}_0$ via finite difference on SQS interpolant} \\[4pt]
+        Initial $\boldsymbol{\varepsilon}^*$ (uniform $\boldsymbol{x}_0$)
+        & $\sum_k \alpha_k\, x_{k,0}\,\mathbf{I} \neq \mathbf{0}$
+        & \multicolumn{2}{l}{$\mathbf{0}$ (vanishes exactly)} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+In the classical model (\texttt{fixed\_vegard}), the eigenstrain is linear
+in the composition fields with fixed Vegard coefficients
+$\alpha_k = \partial\ln a/\partial x_k$ evaluated at the midpoint between
+the tie-line endpoints.  The elastic chemical potential follows directly
+from the variation of the elastic energy with respect to $x_k$:
+$\mu_k^{\rm el} = -\boldsymbol{\sigma}:\boldsymbol{\Lambda}_k/N_V$,
+where $\boldsymbol{\Lambda}_k = \alpha_k\mathbf{I}$ is the Vegard tensor
+for element $k$.  The reference stiffness is taken as the arithmetic mean
+of the endpoint stiffness tensors, $\mathbf{C}^0 = \tfrac{1}{2}(\mathbf{C}_{\rm mat}+\mathbf{C}_{\rm ppt})$,
+and the spatially varying stiffness is interpolated between the two
+endpoints using a smooth switching function $h(x_{\rm ref})$.
+
+The composition-dependent model (\texttt{local\_vegard}) removes the
+assumption of fixed $\alpha_k$ by computing the eigenstrain directly from
+the MLIP-derived SQS lattice parameter $a(\boldsymbol{x})$ interpolated
+across the full composition space.  The eigenstrain at each point is the
+volumetric mismatch relative to the parent composition:
+$\varepsilon^*(\boldsymbol{r}) = [a(\boldsymbol{x}(\boldsymbol{r})) - a_0]/a_0$,
+which vanishes identically in the initial uniform microstructure and grows
+only as phase separation develops.  This is physically correct: an
+undecomposed single-phase alloy carries no coherency stress.  The classical
+model, by contrast, assigns a nonzero eigenstrain proportional to
+$\boldsymbol{x}_0$ everywhere in the initial field.  The reference
+stiffness $\mathbf{C}^0 = \mathbf{C}(\boldsymbol{x}_0)$ is evaluated from
+the SQS interpolant at the parent composition, capturing the correct elastic
+environment of the parent phase, while the spatially varying stiffness
+$\mathbf{C}(\boldsymbol{r})$ is evaluated pointwise from the same
+interpolant.  The elastic chemical potential uses $\alpha_k(\boldsymbol{x}_0)$
+--- the Vegard coefficient at the parent composition computed by finite
+difference on the SQS interpolant --- rather than a midpoint value,
+which is a first-order approximation that avoids per-point gradient
+evaluations on the scattered interpolant.
+
+In both models, the stiffness-contrast correction
+($\tfrac{1}{2}\delta\mathbf{C}:\boldsymbol{\varepsilon}^{\rm el}:\boldsymbol{\varepsilon}^{\rm el}$)
+is neglected, as is standard in spectral phase-field codes when the
+elastic contrast between the two phases is moderate \cite{gururajan2007phase}.
+The mechanical equilibrium is re-solved every $n_{\rm el}$ time steps
+and the resulting elastic chemical potential is cached between solves to
+reduce computational cost.
+}
 
