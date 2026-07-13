@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-Ti-V Quaternary — Elasto-Chemical Spinodal Decomposition at 500 °C
+# Composition: x_NB = 0.25, x_HF = 0.25, x_TI = 0.25, x_V = 0.25
+# ─────────────────────────────────────────────────────────────────────────────
+# Elastic endpoints derived from An et al. (Mater. Horiz. 8, 948, 2021) XRD:
+#   a_mat = 3.313 Å  (β,  Nb/Ti-rich)    A_Z_mat ≈ 1.17  → ⟨100⟩ modulation
+#   a_ppt = 3.259 Å  (β*, Hf/V-rich)     A_Z_ppt ≈ 1.12  → ⟨100⟩ modulation
+#   eps_T ≈ -1.6%,  f_ppt ≈ 1/3
+# Compositions satisfy the lever rule at f_ppt = 1/3, equiatomic c0,
+# and reproduce both lattice constants from the SQS/DFT interpolant (< 1e-4 Å²).
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+#   python workflows/01b_lookup_elastic/run.py      --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+
+system:
+  name:              nb_hf_ti_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, TI, V]       # V is reference; NB, HF, TI are independent
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+    HF: [0.001, 0.999]
+    TI: [0.001, 0.999]
+  n_points:          10                    # 10×10×10 grid → ~220 valid simplex points
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  # Gradient energy: one κ per independent field [J·m²/mol]
+  #   kappa[0] → x_NB,  kappa[1] → x_HF,  kappa[2] → x_TI
+  kappa:         [1.0e-12, 7.0e-12, 1.0e-12]
+
+  # Mobility matrix 3×3 [m⁵/(J·s)] — diagonal only (no cross-diffusion)
+  M:
+    - [5.0e-21, 0.0,     0.0    ]         # M_NbNb, M_NbHf, M_NbTi
+    - [0.0,     5.0e-23, 0.0    ]         # M_HfNb, M_HfHf, M_HfTi
+    - [0.0,     0.0,     5.0e-21]         # M_TiNb, M_TiHf, M_TiTi
+
+  # Mean composition: x_NB = 0.25, x_HF = 0.25, x_TI = 0.25 → x_V = 0.25
+  c0:            [0.25, 0.25, 0.25]       # [x_NB, x_HF, x_TI] (x_V = 1 − sum)
+
+  noise:         0.01
+  seed:          42
+  dt:            5.0e-1
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       3000000
+  save_every:    50000
+  incremental_npz: true
+
+  elastic:
+    enabled:      true
+
+    stiffness_model: cubic_csv
+    elastic_csv:  data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
+
+    # Endpoint compositions from An et al. 2021:
+    #   β  matrix  (Nb/Ti-rich):  a = 3.313 Å,  A_Z ≈ 1.17
+    #   β* precipitate (Hf/V-rich): a = 3.259 Å,  A_Z ≈ 1.12
+    c_mat: {NB: 0.30, HF: 0.23, TI: 0.30, V: 0.16}
+    c_ppt: {NB: 0.14, HF: 0.28, TI: 0.16, V: 0.42}
+
+    solve_every:  10
+    warm_start:   true
+    tol:          1.0e-5
+    max_iter:     500
+
+    save_fields:  true
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  run_name:      auto

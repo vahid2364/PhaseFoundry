@@ -44,7 +44,7 @@ simulation:
 
   # Mean composition: [x_NB, x_HF]; x_V = 1 - 0.50 - 0.10 = 0.40
   # Nb-V rich with small Hf addition — mirrors binary Nb-V c0=0.40 case
-  c0:            [0.50, 0.05]
+  c0:            [0.50, 0.05]      # [x_NB, x_HF] (independent fields; x_V = 1 - x_NB - x_HF)
 
   noise:         0.01
   seed:          42

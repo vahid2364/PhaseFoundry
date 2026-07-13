@@ -44,6 +44,11 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
+from calphad_pf.elasticity.sqs_interpolant import (
+    load_and_filter,
+    build_interpolators,
+    query_composition,
+)
 
 
 # ── Born stability criteria (cubic crystal) ───────────────────────────────────
@@ -64,125 +69,6 @@ def born_summary(label: str, C11: float, C12: float, C44: float) -> str:
         mark = "OK  " if ok else "FAIL"
         lines.append(f"    [{mark}] {crit}")
     return "\n".join(lines)
-
-
-# ── CSV loader & N-D interpolator ─────────────────────────────────────────────
-
-def _element_col(el: str) -> str:
-    """Map element name (case-insensitive) to CSV column name x_Xx."""
-    return "x_" + el.capitalize()
-
-
-def load_and_filter(csv_path: Path, elements: list[str]) -> pd.DataFrame:
-    """
-    Load CSV and return rows belonging to the active element subspace.
-
-    For a binary NbV system (elements=[NB, V]), rows where x_Hf=0 and
-    x_Ti=0 are returned.  For ternary NbHfV, rows where x_Ti=0 are
-    returned.  The constraint is: all CSV element columns NOT in `elements`
-    must be zero (within 1e-6).
-    """
-    df = pd.read_csv(csv_path)
-    all_csv_els = [c[2:].upper() for c in df.columns if c.startswith("x_")]
-    active = {e.upper() for e in elements}
-    inactive = [e for e in all_csv_els if e not in active]
-
-    mask = np.ones(len(df), dtype=bool)
-    for el in inactive:
-        col = _element_col(el)
-        if col in df.columns:
-            mask &= df[col].abs() < 1e-6
-
-    sub = df[mask].copy().reset_index(drop=True)
-    if len(sub) == 0:
-        raise ValueError(
-            f"No CSV rows found for element subspace {sorted(active)}. "
-            f"Check that the CSV contains data for this system."
-        )
-    return sub
-
-
-def build_interpolators(df: pd.DataFrame, ind_elements: list[str]):
-    """
-    Build interpolators for each elastic property.
-
-    1-D (binary)    → scipy.interpolate.interp1d (linear, clamp extrapolation)
-    N-D (N >= 2)    → scipy.interpolate.LinearNDInterpolator + NearestND fallback
-
-    Parameters
-    ----------
-    df : filtered DataFrame (rows belonging to the active subspace)
-    ind_elements : independent elements (all elements except reference).
-        For NbV with ref=V: ['NB'].
-        For NbHfV with ref=V: ['NB', 'HF'].
-
-    Returns
-    -------
-    dict mapping property name → callable interp(x_ind) → float
-    """
-    from scipy.interpolate import (interp1d, LinearNDInterpolator,
-                                   NearestNDInterpolator)
-
-    props = ["C11_GPa", "C12_GPa", "C44_GPa", "a_relaxed_A",
-             "shear_modulus_vrh_GPa", "bulk_modulus_vrh_GPa", "poisson_ratio"]
-
-    coords = np.column_stack([
-        df[_element_col(el)].values for el in ind_elements
-    ])   # shape (n_pts, n_ind)
-
-    interps = {}
-
-    if len(ind_elements) == 1:
-        # 1-D binary: use interp1d along the single independent axis
-        x1d = coords[:, 0]
-        order = np.argsort(x1d)
-        x1d_s = x1d[order]
-        for prop in props:
-            vals_s = df[prop].values[order]
-            f = interp1d(x1d_s, vals_s, kind="linear", bounds_error=False,
-                         fill_value=(vals_s[0], vals_s[-1]))  # clamp at edges
-            def make_fn_1d(fn):
-                def interp_fn(x):
-                    return float(fn(np.atleast_1d(x)[0]))
-                return interp_fn
-            interps[prop] = make_fn_1d(f)
-    else:
-        # N-D (N >= 2): LinearND inside hull, NearestND outside
-        for prop in props:
-            vals = df[prop].values
-            lin  = LinearNDInterpolator(coords, vals)
-            near = NearestNDInterpolator(coords, vals)
-            def make_fn_nd(l, n):
-                def fn(x):
-                    x = np.atleast_1d(np.asarray(x, dtype=float))
-                    v = l(x)
-                    if np.isnan(v):
-                        warnings.warn(
-                            f"Composition {x} outside convex hull — "
-                            "falling back to nearest-neighbour.",
-                            stacklevel=3,
-                        )
-                        v = n(x)
-                    return float(v)
-                return fn
-            interps[prop] = make_fn_nd(lin, near)
-
-    return interps
-
-
-def query_composition(interps: dict, comp: dict,
-                      ind_elements: list[str]) -> dict:
-    """
-    Query all elastic properties at a given composition.
-
-    Parameters
-    ----------
-    comp : dict mapping element name (upper) → mole fraction
-    ind_elements : independent elements in the same order used for interpolation
-    """
-    x_ind = np.array([comp.get(el.upper(), 0.0) for el in ind_elements],
-                     dtype=float)
-    return {prop: fn(x_ind) for prop, fn in interps.items()}
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -264,10 +150,42 @@ def run(cfg: dict) -> Path:
         warnings.warn("C_ppt fails Born stability — elastic solver may diverge. "
                       "Consider increasing x_Nb in c_ppt.", stacklevel=1)
 
+    # ── Vegard tensor: per-element α_k coefficients ───────────────────────────
+    # α_k = (∂a/∂x_k) / a_ref  via central finite difference on the interpolant.
+    # Evaluated at the midpoint between endpoints as the reference composition.
+    c_mid_ind = np.array([
+        0.5 * (comp_mat.get(el, 0.0) + comp_ppt.get(el, 0.0))
+        for el in ind_elements
+    ])
+    a_ref_val = interps["a_relaxed_A"](c_mid_ind)
+    delta_fd  = 0.02   # finite-difference step in mole fraction
+    alpha = {}
+    for k, el in enumerate(ind_elements):
+        x_p = c_mid_ind.copy(); x_p[k] += delta_fd
+        x_m = c_mid_ind.copy(); x_m[k] -= delta_fd
+        da_dxk = (interps["a_relaxed_A"](x_p) - interps["a_relaxed_A"](x_m)) / (2 * delta_fd)
+        alpha[el] = round(float(da_dxk / a_ref_val), 8)
+
+    # ── Optional eps_T override (rescales α_k, keeps C_mat/C_ppt unchanged) ──────
+    eps_T_override = el_cfg.get("eps_T_override", None)
+    if eps_T_override is not None:
+        eps_T_override = float(eps_T_override)
+        if abs(eps_T) < 1e-12:
+            warnings.warn("eps_T from endpoints is ~0; cannot apply eps_T_override.", stacklevel=1)
+        else:
+            scale = eps_T_override / eps_T
+            alpha = {el: round(ak * scale, 8) for el, ak in alpha.items()}
+            print(f"\n  eps_T_override: {eps_T_override:.5f} ({eps_T_override*100:.2f}%)")
+            print(f"    Rescaling α_k by {scale:.4f}  (original eps_T = {eps_T*100:.2f}%)")
+            eps_T = eps_T_override   # update for output
+
     # ── Vegard eigenstrain summary ────────────────────────────────────────────
-    print(f"\n  Vegard eigenstrain:")
+    print(f"\n  Vegard eigenstrain (tensorial Λ):")
     print(f"    a_mat = {a_mat:.4f} Å  |  a_ppt = {a_ppt:.4f} Å")
-    print(f"    eps_T = (a_ppt - a_mat) / a_mat = {eps_T:.5f} ({eps_T*100:.2f}%)")
+    print(f"    eps_T (endpoints) = {eps_T:.5f} ({eps_T*100:.2f}%)  [for reference]")
+    print(f"    a_ref (midpoint)  = {a_ref_val:.4f} Å")
+    for el, ak in alpha.items():
+        print(f"    α_{el} = {ak:.6f}  (eigenstrain per unit x_{el})")
     print(f"\n  Zener anisotropy:")
     print(f"    A_Z_mat = {A_Z_mat:.3f}  |  A_Z_ppt = {A_Z_ppt:.3f}")
     if A_Z_mat < 1:
@@ -309,18 +227,23 @@ def run(cfg: dict) -> Path:
             "born_check":  chk_ppt,
         },
         "eigenstrain": {
-            "model":       "vegard",
-            "a_matrix_A":  round(a_mat,  6),
-            "a_ppt_A":     round(a_ppt,  6),
-            "eps_T":       round(eps_T,  8),
-            "eps_T_pct":   round(eps_T * 100, 4),
+            "model":        "vegard_tensor",
+            "a_ref_A":      round(float(a_ref_val), 6),
+            "a_mat_A":      round(a_mat, 6),
+            "a_ppt_A":      round(a_ppt, 6),
+            "eps_T_endpoints": round(eps_T, 8),
+            "eps_T_override_applied": eps_T_override is not None,
+            "alpha":        alpha,   # {ELEMENT: α_k} — used by build_vegard_tensor
         },
     }
 
-    # ── write elastic_params.yaml ─────────────────────────────────────────────
-    results_dir = Path(cfg["output"]["results_dir"])
-    results_dir.mkdir(parents=True, exist_ok=True)
-    out_path = results_dir / "elastic_params.yaml"
+    # ── write elastic_params.yaml into the run-specific output folder ────────
+    sim = cfg["simulation"]
+    T_folder   = f"{sim['temperature_C']}C"
+    run_folder = results_dir = Path(cfg["output"]["results_dir"]) \
+                 / T_folder / "kinetics" / cfg["output"]["run_name"]
+    run_folder.mkdir(parents=True, exist_ok=True)
+    out_path = run_folder / "elastic_params.yaml"
     with open(out_path, "w") as f:
         yaml.dump(out, f, default_flow_style=False, sort_keys=False)
 

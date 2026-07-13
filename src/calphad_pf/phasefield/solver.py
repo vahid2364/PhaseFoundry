@@ -81,6 +81,8 @@ from ..elasticity import (
     solve_elasticity,
     build_isotropic_stiffness,
     compute_mu_el_from_result,
+    build_vegard_tensor,
+    compute_mu_el_tensorial,
 )
 
 
@@ -231,6 +233,29 @@ def stable_dt(
     return safety * dx**2 / (M_max * eig_max)
 
 
+# ── incremental NPZ checkpoint ────────────────────────────────────────────────
+
+def _flush_npz_checkpoint(
+    path:         Path,
+    comp_hist:    list,
+    time_hist:    list,
+    F_hist:       list,
+    ind_elements: list,
+    meta:         dict,
+) -> None:
+    """Write (overwrite) a checkpoint NPZ with all snapshots accumulated so far."""
+    save_dict: dict = {}
+    for i, el in enumerate(ind_elements):
+        history = np.array([s[i] for s in comp_hist], dtype=np.float32)
+        save_dict[f"x_{el.lower()}"]       = history
+        save_dict[f"x_{el.lower()}_final"] = comp_hist[-1][i].astype(np.float32)
+    save_dict["time"]        = np.array(time_hist, dtype=np.float64)
+    save_dict["free_energy"] = np.array(F_hist,    dtype=np.float64)
+    for k, v in meta.items():
+        save_dict[k] = v
+    np.savez_compressed(path, **save_dict)
+
+
 # ── main solver ───────────────────────────────────────────────────────────────
 
 def solve_cahn_hilliard(
@@ -259,22 +284,30 @@ def solve_cahn_hilliard(
     use_gpu:        bool  = False,
     # ── elastic coupling (optional) ────────────────────────────────────────
     elastic_enabled:       bool  = False,
-    # pre-built stiffness tensors (from run.py; override G_matrix/delta/nu)
+    # Model-based interface: supply a pre-built EigenstrainModel.
+    # Controls how eps_star, mu_el, C_eff, and C_field are computed.
+    # When None, falls back to FixedVegardModel built from Lambda/C_mat/C_ppt.
+    elastic_model:          object | None = None,
+    # pre-built stiffness tensors (from run.py)
     elastic_C_mat:          np.ndarray | None = None,
     elastic_C_ppt:          np.ndarray | None = None,
     # isotropic fallback (used only when elastic_C_mat/C_ppt are None)
     elastic_G_matrix:       float | None = None,
     elastic_delta:          float = 1.0,
     elastic_nu:             float = 0.3,
-    elastic_eps_T:          float = 0.0,
+    # Vegard tensor Λ, shape (N_ind, ndim, ndim) — built by run.py from alpha values
+    # Replaces scalar elastic_eps_T: eps*(x) = einsum('kxy,kij->xyij', c, Lambda)
+    elastic_Lambda:         np.ndarray | None = None,
     elastic_sigma_applied:  np.ndarray | None = None,
     elastic_solve_every:    int   = 1,
     elastic_warm_start:     bool  = True,
     elastic_tol:            float = 1e-8,
     elastic_max_iter:       int   = 500,
-    elastic_scheme:         str   = "cubic",
     elastic_N_V:            float = 1.0,
     elastic_save_fields:    bool  = False,
+    # ── incremental NPZ checkpointing ─────────────────────────────────────
+    incremental_npz:        bool  = False,
+    npz_meta:               dict  | None = None,
 ) -> SimResult:
     """
     General Cahn-Hilliard phase-field solver.
@@ -346,8 +379,7 @@ def solve_cahn_hilliard(
         parameters are read, ``solve_elasticity`` is never called, and the
         timestep loop is byte-for-byte identical to the no-elasticity path
         (zero overhead, zero behavior change for existing configs).
-        Currently requires N_ind == 1 and ndim == 2 (binary-system limit
-        matching the paper; multicomponent generalization is future work).
+        Supports ndim=2 and ndim=3; binary and multi-component systems.
     elastic_G_matrix : float or None
         Matrix shear modulus G^m [Pa].  Required if elastic_enabled=True.
     elastic_delta : float
@@ -401,36 +433,43 @@ def solve_cahn_hilliard(
 
     # ── elastic coupling setup (no-op unless elastic_enabled=True) ───────────
     if elastic_enabled:
-        if N_ind != 1:
-            raise NotImplementedError(
-                "elastic_enabled=True currently requires a binary system "
-                f"(N_ind == 1); got N_ind={N_ind}. Multicomponent eigenstrain/"
-                "modulus mixing is not yet implemented."
-            )
-        if ndim != 2:
-            raise NotImplementedError(
-                "elastic_enabled=True currently only supports ndim=2 "
-                f"(2-D elasticity solver); got ndim={ndim}."
-            )
         if elastic_C_mat is not None and elastic_C_ppt is not None:
-            # pre-built tensors supplied by caller (cubic_csv or custom)
             _C_mat = elastic_C_mat
             _C_ppt = elastic_C_ppt
         elif elastic_G_matrix is not None:
-            # isotropic fallback
             _C_mat = build_isotropic_stiffness(elastic_G_matrix, elastic_nu)
             _C_ppt = build_isotropic_stiffness(elastic_delta * elastic_G_matrix, elastic_nu)
         else:
             raise ValueError(
-                "elastic_enabled=True requires either elastic_C_mat/elastic_C_ppt "
-                "(pre-built tensors) or elastic_G_matrix (isotropic fallback)."
+                "elastic_enabled=True requires elastic_C_mat/elastic_C_ppt "
+                "or elastic_G_matrix."
             )
-        _eigenstrain = elastic_eps_T * np.eye(3)
-        print(f"  Elastic coupling ENABLED:  eps_T = {elastic_eps_T:.5f}  "
-              f"solve_every = {elastic_solve_every}  N_V = {elastic_N_V:.4e}")
+        if elastic_Lambda is None:
+            raise ValueError(
+                "elastic_enabled=True requires elastic_Lambda — the Vegard "
+                "eigenstrain coefficient tensor of shape (N_ind, ndim, ndim). "
+                "Build it with build_vegard_tensor(alpha, ind_elements, ndim) "
+                "using alpha values from elastic_params.yaml (step 1b output)."
+            )
+        _Lambda = elastic_Lambda   # (N_ind, ndim, ndim)
+
+        # Build or validate the eigenstrain model
+        if elastic_model is not None:
+            _model = elastic_model
+            print(f"  Elastic coupling ENABLED ({_model.__class__.__name__}):  "
+                  f"N_ind={N_ind}  solve_every={elastic_solve_every}  "
+                  f"N_V={elastic_N_V:.4e}")
+        else:
+            from ..elasticity.models import FixedVegardModel
+            _model = FixedVegardModel(_Lambda, _C_mat, _C_ppt)
+            print(f"  Elastic coupling ENABLED (FixedVegardModel):  "
+                  f"N_ind={N_ind}  solve_every={elastic_solve_every}  "
+                  f"N_V={elastic_N_V:.4e}")
+            for k, el in enumerate(interpolant.ind_elements):
+                print(f"    α_{el} = {_Lambda[k, 0, 0]:.5f}")
     else:
-        _C_mat = _C_ppt = _eigenstrain = None
-    _mu_el_cache      = None   # reused across elastic_solve_every steps
+        _C_mat = _C_ppt = _Lambda = None
+    _mu_el_cache      = None   # (N_ind, N, N), reused across elastic_solve_every steps
     _elastic_u_prev   = None   # warm-start displacement from last solve
     _elastic_result   = None   # last full elastic solve result (for save_fields)
 
@@ -605,6 +644,13 @@ def solve_cahn_hilliard(
             _save_frame(c_arr, step, output_dir, interpolant.ind_elements,
                         reference_element=interpolant.reference_element)
 
+        if incremental_npz and output_dir is not None:
+            _flush_npz_checkpoint(
+                output_dir / "fields_checkpoint.npz",
+                comp_hist, time_hist, F_hist,
+                interpolant.ind_elements, npz_meta or {},
+            )
+
     # ── time integration ──────────────────────────────────────────────────────
     _snapshot(c, 0)
     t_start = time.perf_counter()
@@ -629,8 +675,8 @@ def solve_cahn_hilliard(
         step += 1
 
         # degenerate mobility scalar: product of ALL compositions
-        c_ref = 1.0 - c.sum(axis=0)                          # (N, N)
-        deg   = np.prod(c, axis=0) * np.clip(c_ref, 1e-8, 1) # (N, N)
+        c_ref = 1.0 - c.sum(axis=0)                           # (*spatial,)
+        deg   = np.prod(c, axis=0) * np.clip(c_ref, 1e-8, 1)  # (*spatial,)
         deg_mean = float(np.mean(deg))
 
         # spatially-averaged effective mobility matrix
@@ -649,37 +695,46 @@ def solve_cahn_hilliard(
                          (1.0 - eps * (interpolant.N_ind + 1)) /
                          np.maximum(c_clamp.sum(axis=0), 1e-10),
                          1.0)
-        c_eval = c_clamp * scale[np.newaxis, :, :]
-        mu_bulk = interpolant.mu(c_eval)                      # (N_ind, N, N)
+        c_eval = c_clamp * scale[np.newaxis]
+        mu_bulk = interpolant.mu(c_eval)                      # (N_ind, *spatial)
 
         # ── elastic chemical potential (no-op unless elastic_enabled) ─────────
-        # mu_el is computed from the UNCLAMPED field c (the stored, mass-
-        # conserving field), not c_eval — elasticity has no out-of-bounds
-        # interpolant-table issue, so no clamping is needed here.
+        # Clamp composition to the physical simplex before passing to the
+        # elastic model — the SQS interpolant (local_vegard) falls back to
+        # nearest-neighbour outside [0,1], which can amplify overshoot.
+        # Mass conservation is unaffected: the stored field c is never modified.
         if elastic_enabled and (step % elastic_solve_every == 0 or _mu_el_cache is None):
+            c_el = np.clip(c, 0.0, 1.0)
+            # re-normalise so rows still sum to ≤ 1 on the simplex
+            row_sum = c_el.sum(axis=0, keepdims=True)
+            c_el = np.where(row_sum > 1.0, c_el / row_sum, c_el)
+            eps_star   = _model.eps_star_field(c_el, ndim)
+            C_eff_ov   = _model.C_eff(_C_mat, _C_ppt)
+            C_field_ov = _model.C_field(c_el, _C_mat, _C_ppt)
+            c_ref = np.clip(1.0 - c.sum(axis=0), 0.0, 1.0)
             _elastic_result = solve_elasticity(
-                c[0], _C_mat, _C_ppt, _eigenstrain,
+                c_ref, _C_mat, _C_ppt,
+                eps_star_field=eps_star,
+                C_eff_override=C_eff_ov,
+                C_field_override=C_field_ov,
                 sigma_applied=elastic_sigma_applied, Lx=Lx,
                 tol=elastic_tol, max_iter=elastic_max_iter,
-                scheme=elastic_scheme, verbose=False,
+                verbose=False,
                 u_init=(_elastic_u_prev if elastic_warm_start else None),
             )
             _elastic_u_prev = _elastic_result["displacement"]
-            _mu_el_new = compute_mu_el_from_result(
-                c[0], _elastic_result, _C_mat, _C_ppt, _eigenstrain,
-                N_V=elastic_N_V, scheme=elastic_scheme,
-            )
+            _mu_el_new = _model.mu_el(_elastic_result["stress"], c_el, elastic_N_V)
             # Guard: if elastic solve diverged (NaN/Inf), abort with a clear message
             if np.any(~np.isfinite(_mu_el_new)):
                 raise RuntimeError(
                     f"Step {step}: elastic mu_el contains NaN/Inf — "
-                    "the FFT elasticity solver diverged (likely unconverged at a sharp interface). "
-                    "Try: increase tol (e.g. 1e-4), increase max_iter, increase solve_every, "
-                    "or reduce dt."
+                    "the FFT elasticity solver diverged (likely unconverged at a "
+                    "sharp interface). Try: increase tol, increase max_iter, "
+                    "increase solve_every, or reduce dt."
                 )
-            _mu_el_cache = _mu_el_new
+            _mu_el_cache = _mu_el_new   # shape (N_ind, *spatial)
         if elastic_enabled:
-            mu_bulk = mu_bulk + _mu_el_cache[np.newaxis, :, :]   # mu_total = mu_ch + mu_el
+            mu_bulk = mu_bulk + _mu_el_cache   # both (N_ind, *spatial)
 
         # FFT of each field and its bulk chemical potential
         c_hat   = [_fftn(c[i])        for i in range(N_ind)]
@@ -735,7 +790,7 @@ def solve_cahn_hilliard(
         if should_snap:
             if elastic_enabled and elastic_save_fields and _elastic_result is not None:
                 _snapshot(c, step,
-                          mu_ch_snap=mu_bulk - _mu_el_cache[np.newaxis, :, :],
+                          mu_ch_snap=mu_bulk - _mu_el_cache,
                           mu_el_snap=_mu_el_cache,
                           stress_snap=_elastic_result["stress"],
                           strain_snap=_elastic_result["strain"])
@@ -784,7 +839,6 @@ def solve_cahn_hilliard(
                                     **({"elastic_G_matrix": elastic_G_matrix,
                                         "elastic_delta": elastic_delta,
                                         "elastic_nu": elastic_nu,
-                                        "elastic_eps_T": elastic_eps_T,
                                         "elastic_solve_every": elastic_solve_every,
                                         "elastic_warm_start": elastic_warm_start}
                                        if elastic_enabled else {})),

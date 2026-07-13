@@ -142,17 +142,15 @@ def build_run_name(cfg: dict) -> str:
 
     ndim = int(sim.get("dimensions", 2))
 
-    # composition tag: c50  or  c50Nb05Hf  (ternary+)
+    # composition tag: always includes element symbol to avoid ambiguity
+    # binary: c60Nb  |  ternary: c60Nb05Hf
     c0 = sim["c0"]
     if not isinstance(c0, list):
         c0 = [c0]
-    if len(c0) == 1:
-        comp_tag = f"c{round(c0[0] * 100):02d}"
-    else:
-        parts = []
-        for xi, el in zip(c0, ind_els):
-            parts.append(f"{round(xi * 100):02d}{el.capitalize()}")
-        comp_tag = "c" + "".join(parts)
+    parts = []
+    for xi, el in zip(c0, ind_els):
+        parts.append(f"{round(xi * 100):02d}{el.capitalize()}")
+    comp_tag = "c" + "".join(parts)
 
     # kappa tag: 1e-12 → kappa1e12
     kappa = sim["kappa"]
@@ -174,7 +172,8 @@ def build_run_name(cfg: dict) -> str:
     if m:
         tdb_tag = f"tdbv{m.group(1)}"
 
-    return f"pf_{ndim}d_{comp_tag}_{kappa_tag}_{M_tag}_{tdb_tag}"
+    elastic_tag = "_elastic" if sim.get("elastic", {}).get("enabled", False) else ""
+    return f"pf_{ndim}d_{comp_tag}_{kappa_tag}_{M_tag}_{tdb_tag}{elastic_tag}"
 
 
 def _sci_tag(value: float) -> str:

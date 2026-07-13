@@ -99,12 +99,39 @@ def _format_energy(arr: np.ndarray) -> tuple[np.ndarray, str]:
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
-def run(save_path: str | None = None, show: bool = True) -> None:
+def run(save_prefix: str | None = None, show: bool = True) -> None:
+    """
+    Parameters
+    ----------
+    save_prefix : str or None
+        Path stem for the three panel PDFs. When given, the script writes
+        ``<save_prefix>_a.pdf``, ``<save_prefix>_b.pdf``, ``<save_prefix>_c.pdf``
+        — one file per panel, identical in construction to the eigenvalues
+        figure panels (eigenvalues_Hf1.pdf, Hf25.pdf, Hf4.pdf).
+    show : bool
+        Whether to open an interactive window after saving.
+    """
     # ── locate table ──────────────────────────────────────────────────────────
-    table_dir = _ROOT / "data" / "nb_v" / "fine"
-    tables    = sorted(table_dir.glob("*.h5"))
+    # Search known data directories for NbV HDF5 tables, preferring v2 then v1.
+    candidates = [
+        _ROOT / "data" / "HfNbTiV_BCC_PhaseForge_v2_Tdep" / "NbV",
+        _ROOT / "data" / "HfNbTiV_BCC_PhaseForge_v1_Tindep" / "NbV",
+        _ROOT / "data" / "HfNbTiV_BCC_PhaseForge_v3" / "NbV",
+        _ROOT / "data" / "nb_v" / "fine",
+    ]
+    tables = []
+    table_dir = None
+    for d in candidates:
+        tables = sorted(d.glob("*.h5"))
+        if tables:
+            table_dir = d
+            break
     if not tables:
-        raise FileNotFoundError(f"No HDF5 tables in {table_dir}. Run step 1 first.")
+        raise FileNotFoundError(
+            "No NbV HDF5 tables found. Searched:\n"
+            + "\n".join(f"  {d}" for d in candidates)
+            + "\nRun step 1 first."
+        )
 
     T_target = 773.15   # 500 °C
     best = min(tables, key=lambda p: abs(
@@ -175,23 +202,11 @@ def run(save_path: str | None = None, show: bool = True) -> None:
     h_ref         = curves["jansson"]["h"]
     spinodal_mask = h_ref < 0
 
-    # ── figure layout ─────────────────────────────────────────────────────────
-    fig, axes = plt.subplots(
-        1, 3,
-        figsize = (7.2, 2.32),  # Nature double-column width: 7.2 in; height −20%
-    )
-    fig.subplots_adjust(left=0.09, right=0.98, top=0.98, bottom=0.38, wspace=0.38)
-    ax_gm, ax_mu, ax_h = axes
+    # ── per-panel helpers ─────────────────────────────────────────────────────
+    CALPHAD_ALPHA = 0.40
 
-    panel_labels = ["(a)", "(b)", "(c)"]
-    CALPHAD_ALPHA = 0.40   # 60 % transparent so lines show through
-
-    # ── per-panel helper ──────────────────────────────────────────────────────
     def _shade_spinodal(ax):
-        """Light red fill where H < 0 (spinodal decomposition region).
-        NOTE: xv_scan is x_V = 1 − x_NB, so spinodal region indices map
-        directly — H is still ∂²G/∂x_NB², unchanged by the axis flip.
-        """
+        """Light red fill where H < 0."""
         in_region = False
         x_start   = None
         for k, is_sp in enumerate(spinodal_mask):
@@ -216,8 +231,21 @@ def run(save_path: str | None = None, show: bool = True) -> None:
                 ha="right", va="bottom",
                 fontsize=9, fontweight="bold")
 
-    # ── Panel A: G_m ─────────────────────────────────────────────────────────
+    # Legend handles (placed in panel a only)
+    legend_handles = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=COLORS["calphad"],
+               markersize=5, label=LABELS["calphad"]),
+        Line2D([0], [0], ls=LINE_STYLES["fd"],      color=COLORS["fd"],      lw=1.8, label=LABELS["fd"]),
+        Line2D([0], [0], ls=LINE_STYLES["jansson"],  color=COLORS["jansson"], lw=1.8, label=LABELS["jansson"]),
+        Line2D([0], [0], ls=LINE_STYLES["hybrid"],   color=COLORS["hybrid"],  lw=1.8, label=LABELS["hybrid"]),
+        mpatches.Patch(facecolor="#FFCCCC", alpha=0.7, edgecolor="none",
+                       label="Spinodal region ($H < 0$)"),
+    ]
+
     gm_scale = 1e3   # J → kJ
+
+    # ── Panel A: G_m — individual figure ────────────────────────────────────
+    fig_a, ax_gm = plt.subplots(1, 1)
     ax_gm.scatter(x_raw, gm_raw / gm_scale,
                   s=14, color=COLORS["calphad"], zorder=5,
                   label=LABELS["calphad"], alpha=CALPHAD_ALPHA, linewidths=0)
@@ -228,9 +256,12 @@ def run(save_path: str | None = None, show: bool = True) -> None:
     _shade_spinodal(ax_gm)
     ax_gm.set_xlabel("$x_{\\mathrm{V}}$")
     ax_gm.set_ylabel("$G_m$  (kJ mol$^{-1}$)")
-    _add_panel_label(ax_gm, panel_labels[0])
+    _add_panel_label(ax_gm, "(a)")
+    ax_gm.legend(handles=legend_handles, fontsize=7.5, handlelength=2.0,
+                 framealpha=0.92, loc="upper right")
 
-    # ── Panel B: μ ────────────────────────────────────────────────────────────
+    # ── Panel B: μ — individual figure ──────────────────────────────────────
+    fig_b, ax_mu = plt.subplots(1, 1)
     ax_mu.axhline(0, color="0.6", lw=0.7, ls=":", zorder=0)
     ax_mu.scatter(x_raw, mu_raw / gm_scale,
                   s=14, color=COLORS["calphad"], zorder=5,
@@ -242,9 +273,11 @@ def run(save_path: str | None = None, show: bool = True) -> None:
     _shade_spinodal(ax_mu)
     ax_mu.set_xlabel("$x_{\\mathrm{V}}$")
     ax_mu.set_ylabel("$\\mu_{\\mathrm{Nb}} - \\mu_{\\mathrm{V}}$  (kJ mol$^{-1}$)")
-    _add_panel_label(ax_mu, panel_labels[1])
+    _add_panel_label(ax_mu, "(b)")
 
-    # ── Panel C: H = d²G/dx_NB² ──────────────────────────────────────────────
+    # ── Panel C: H = d²G/dx_NB² — individual figure ──────────────────────────
+    h_clip = 150.0   # kJ/mol
+    fig_c, ax_h = plt.subplots(1, 1)
     ax_h.axhline(0, color="0.35", lw=1.0, ls="--", zorder=1)
     ax_h.scatter(x_raw, h_raw / gm_scale,
                  s=14, color=COLORS["calphad"], zorder=5,
@@ -256,44 +289,16 @@ def run(save_path: str | None = None, show: bool = True) -> None:
     _shade_spinodal(ax_h)
     ax_h.set_xlabel("$x_{\\mathrm{V}}$")
     ax_h.set_ylabel("$\\partial^2 G / \\partial x_{\\mathrm{Nb}}^2$  (kJ mol$^{-1}$)")
-    _add_panel_label(ax_h, panel_labels[2])
-
-    # Clip y to the physically interesting band: show spinodal crossing clearly.
-    # Entropy diverges at x→0,1 giving huge H; clip to ±150 kJ/mol.
-    h_clip = 150.0   # kJ/mol
     ax_h.set_ylim(-h_clip, h_clip)
-    # Annotate clipped edges
     for x_note in [0.04, 0.96]:
         ax_h.annotate(
             "$H \\to +\\infty$",
             xy=(x_note, 0.93), xycoords="axes fraction",
             ha="center", va="top", fontsize=6.5, color="0.45",
         )
+    _add_panel_label(ax_h, "(c)")
 
-    # ── shared legend (below panels) ─────────────────────────────────────────
-    # Build handles manually so order is controlled
-    legend_handles = [
-        Line2D([0], [0], marker="o", color="w", markerfacecolor=COLORS["calphad"],
-               markersize=5, label=LABELS["calphad"]),
-        Line2D([0], [0], ls=LINE_STYLES["fd"],      color=COLORS["fd"],      lw=1.8, label=LABELS["fd"]),
-        Line2D([0], [0], ls=LINE_STYLES["jansson"],  color=COLORS["jansson"], lw=1.8, label=LABELS["jansson"]),
-        Line2D([0], [0], ls=LINE_STYLES["hybrid"],   color=COLORS["hybrid"],  lw=1.8, label=LABELS["hybrid"]),
-        mpatches.Patch(facecolor="#FFCCCC", alpha=0.7, edgecolor="none",
-                       label="Spinodal region ($H < 0$)"),
-    ]
-    # Legend placed in the reserved bottom margin (y=0.14 in figure coords,
-    # within the 32% bottom space set by subplots_adjust(bottom=0.32)).
-    fig.legend(
-        handles        = legend_handles,
-        loc            = "lower center",
-        bbox_to_anchor = (0.5, 0.01),
-        ncols          = 3,
-        frameon        = True,
-        fontsize       = 7.5,
-        handlelength   = 2.0,
-        columnspacing  = 1.2,
-    )
-
+    all_figs = [fig_a, fig_b, fig_c]
 
     # ── quantitative residual summary (printed, not on figure) ───────────────
     print("\n── Residuals vs CALPHAD raw data (at raw x_NB points) ──────────────")
@@ -311,16 +316,19 @@ def run(save_path: str | None = None, show: bool = True) -> None:
               f"RMSE H = {rmse_h:10.1f}  J/mol")
 
     # ── save / show ───────────────────────────────────────────────────────────
-    if save_path is not None:
-        out = Path(save_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(out, dpi=300)
-        print(f"\nFigure saved → {out}")
+    if save_prefix is not None:
+        stem = Path(save_prefix)
+        stem.parent.mkdir(parents=True, exist_ok=True)
+        for suffix, fig in zip(["_a", "_b", "_c"], all_figs):
+            out = stem.parent / (stem.name + suffix + ".pdf")
+            fig.savefig(out, dpi=300, bbox_inches="tight")
+            print(f"Panel saved → {out}")
 
     if show:
         plt.show()
     else:
-        plt.close(fig)
+        for fig in all_figs:
+            plt.close(fig)
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
@@ -329,10 +337,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Derivative-method comparison for binary Nb-V"
     )
-    parser.add_argument("--save", default=None,
-                        help="Path to save the figure (PNG/PDF/SVG)")
+    parser.add_argument(
+        "--save", default=None,
+        help=(
+            "Path stem for the three panel PDFs.  E.g. "
+            "'paper/2025_Kunselman_Design_of_Spinodal_Microstructures_in_HEAs"
+            "/figs/derivative_method_comparison' writes "
+            "'..._a.pdf', '..._b.pdf', '..._c.pdf'."
+        ),
+    )
     parser.add_argument("--no-show", action="store_true",
                         help="Do not open an interactive window")
     args = parser.parse_args()
 
-    run(save_path=args.save, show=not args.no_show)
+    run(save_prefix=args.save, show=not args.no_show)

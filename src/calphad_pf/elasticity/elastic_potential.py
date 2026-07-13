@@ -35,6 +35,75 @@ import numpy as np
 from .interpolation import InterpolationScheme, get_scheme
 
 
+# ── Vegard tensor ────────────────────────────────────────────────────────────
+
+def build_vegard_tensor(alpha: dict, ind_elements: list[str],
+                        ndim: int = 2) -> np.ndarray:
+    """
+    Build the Vegard eigenstrain coefficient tensor Λ, shape (N_ind, ndim, ndim).
+
+    Λ[k] = α_k × I_d,   where α_k = (a_k − a_ref) / a_ref
+
+    For isotropic Vegard's law the per-element eigenstrain coefficient is a
+    scaled identity (no shear component).  The total eigenstrain field at each
+    pixel is then::
+
+        eps*(x) = Σ_k  Λ[k] × c_k(x)   →  einsum('kxy,kij->xyij', c, Lambda)
+
+    Parameters
+    ----------
+    alpha : dict  {ELEMENT_UPPER: float}
+        Per-element Vegard coefficient α_k = (a_k − a_ref) / a_ref.
+        Computed by step 1b and stored in elastic_params.yaml.
+    ind_elements : list[str]
+        Independent elements in the same order as the composition fields c[k].
+    ndim : int
+        Spatial dimension (2 for 2-D, 3 for 3-D).
+
+    Returns
+    -------
+    Lambda : ndarray, shape (N_ind, ndim, ndim)
+    """
+    N_ind = len(ind_elements)
+    Lambda = np.zeros((N_ind, ndim, ndim), dtype=np.float64)
+    for k, el in enumerate(ind_elements):
+        Lambda[k] = float(alpha[el.upper()]) * np.eye(ndim)
+    return Lambda
+
+
+def compute_mu_el_tensorial(sigma: np.ndarray,
+                             Lambda: np.ndarray,
+                             N_V: float) -> np.ndarray:
+    """
+    Elastic chemical potential in the tensorial Vegard formulation.
+
+    μ_el_k(x) = −(1/N_V) × σ(x) : Λ_k
+               = −(1/N_V) × σ_ij(x) × Λ_{k,ij}
+
+    This is the variational derivative δF_el/δc_k of the elastic free energy
+    with respect to the k-th composition field, for a linear (Vegard) coupling
+    between composition and eigenstrain.  The stiffness-contrast term (term 1
+    in G&A Eq. 36) is omitted here because it is negligible when the stiffness
+    contrast between phases is small relative to the eigenstrain coupling.
+
+    Parameters
+    ----------
+    sigma  : ndarray, shape (*spatial, d, d)
+        Cauchy stress field from ``solve_elasticity()``.
+    Lambda : ndarray, shape (N_ind, d, d)
+        Vegard eigenstrain coefficient tensor (from ``build_vegard_tensor``).
+    N_V    : float
+        Molar density [mol/m³] = 1/V_m.  Converts Pa → J/mol so the result
+        can be added directly to μ_ch [J/mol].
+
+    Returns
+    -------
+    mu_el : ndarray, shape (N_ind, *spatial)
+        Elastic chemical potential for each independent element [J/mol].
+    """
+    return -np.einsum('...ij,kij->k...', sigma, Lambda) / N_V
+
+
 # ── elastic strain ──────────────────────────────────────────────────────────
 
 def elastic_strain(strain: np.ndarray,

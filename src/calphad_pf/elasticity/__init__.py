@@ -23,6 +23,12 @@ elastic_potential(...) / compute_mu_el_from_result(...)
 """
 
 from .fft_solver import solve_elasticity, build_isotropic_stiffness, build_cubic_stiffness
+from .models import (
+    EigenstrainModel,
+    FixedVegardModel,
+    LocalVegardModel,
+    build_eigenstrain_model,
+)
 from .interpolation import (
     InterpolationScheme,
     get_scheme,
@@ -33,6 +39,8 @@ from .elastic_potential import (
     elastic_free_energy_density,
     elastic_potential,
     compute_mu_el_from_result,
+    build_vegard_tensor,
+    compute_mu_el_tensorial,
 )
 
 __all__ = [
@@ -46,4 +54,10 @@ __all__ = [
     "elastic_free_energy_density",
     "elastic_potential",
     "compute_mu_el_from_result",
+    "build_vegard_tensor",
+    "compute_mu_el_tensorial",
+    "EigenstrainModel",
+    "FixedVegardModel",
+    "LocalVegardModel",
+    "build_eigenstrain_model",
 ]
