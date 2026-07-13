@@ -31,11 +31,13 @@
 
 ```
 PhaseForge TDB
-   └─ Step 1  ─  pycalphad → HDF5 thermodynamic tables  (G_m, μ, ∂μ/∂x)
-   └─ Step 1b ─  SQS/MLIP  → elastic constant tables (C_ij, lattice parameter)
-   └─ Step 2  ─  HDF5 → scattered interpolant surrogate + spinodal boundaries
-   └─ Step 3  ─  surrogate → Cahn–Hilliard PFM simulation (pseudo-spectral)
-   └─ Step 4  ─  simulation outputs → figures and analysis
+   └─ Step 1   ─  pycalphad → HDF5 thermodynamic tables  (G_m, μ, ∂μ/∂x)
+   └─ Step 1b  ─  SQS/MLIP  → elastic constant tables (C_ij, lattice parameter)
+   └─ Step 2   ─  HDF5 → scattered interpolant surrogate + spinodal boundaries
+   └─ Step 3   ─  surrogate → Cahn–Hilliard PFM simulation (pseudo-spectral)
+   └─ Step 4   ─  simulation outputs → post-processing and field extraction
+   └─ Step 5   ─  surrogate + derivatives → thermodynamic validation figures  (optional)
+   └─ Step 6   ─  chemical-only vs. elasto-chemical → comparison figures
 ```
 
 ---
