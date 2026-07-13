@@ -298,33 +298,20 @@ and $|\lambda_{\rm max}(H)|$ is the largest absolute eigenvalue of
 the Gibbs energy Hessian $H_{ij} = \partial^2 G^\alpha_m/\partial
 x_i\partial x_j$ evaluated in a neighbourhood of $\boldsymbol{x}_0$.
 
+{\color{blue}
 \subsubsection{Eyre Convex-Splitting Stabilisation}
 \label{sec:eyre}
 
-The semi-implicit scheme of \Cref{eq:semi_implicit} treats the gradient
-energy term $\kappa_i k^4$ implicitly, which unconditionally damps
-high-wavenumber oscillations arising from interfacial stiffness.
-However, within the spinodal region the diagonal Hessian elements
-$H_{ii} = \partial^2 G^\alpha_m / \partial x_i^2$ are \emph{negative},
-and the corresponding bulk contribution $M_{ii} H_{ii} k^2$ enters
-the numerator with a destabilising sign.  For large $|\Delta t H_{ii}|$
-this explicit term can cause unbounded growth and numerical blowup,
-regardless of the spatial resolution.
+The semi-implicit scheme of \Cref{eq:semi_implicit} treats the gradient energy term $\kappa_i k^4$ implicitly, which unconditionally damps high-wavenumber oscillations arising from interfacial stiffness. However, within the spinodal region the diagonal Hessian elements $H_{ii} = \partial^2 G^\alpha_m / \partial x_i^2$ are \emph{negative}, and the corresponding bulk contribution $M_{ii} H_{ii} k^2$ enters the numerator with a destabilising sign.  For large $|\Delta t H_{ii}|$ this explicit term can cause unbounded growth and numerical blowup, regardless of the spatial resolution.
 
-\paragraph{Convex-splitting decomposition.}
-
-Following Eyre \cite{eyre1998unconditionally}, we decompose the molar
-Gibbs energy $G^\alpha_m$ into a \emph{contracting} (convex) part
-$G^+$ and an \emph{expanding} (concave) part $G^-$,
+Following Eyre \cite{eyre1998unconditionally}, we apply a convex-splitting decomposition of the molar Gibbs energy $G^\alpha_m$ into a \emph{contracting} (convex) part $G^+$ and an \emph{expanding} (concave) part $G^-$,
 %
 \begin{equation}\label{eq:eyre_split}
     G^\alpha_m(\boldsymbol{x}) = G^+(\boldsymbol{x}) - G^-(\boldsymbol{x}),
     \qquad G^{\pm} \text{ convex},
 \end{equation}
 %
-and treat $G^+$ implicitly and $G^-$ explicitly in time.  For a
-quadratic approximation to the bulk free energy at the mean composition
-$\boldsymbol{x}_0$, a sufficient convex-splitting for component $i$ is
+and treat $G^+$ implicitly and $G^-$ explicitly in time.  For a quadratic approximation to the bulk free energy at the mean composition $\boldsymbol{x}_0$, a sufficient convex-splitting for component $i$ is
 %
 \begin{equation}\label{eq:eyre_Adef}
     G^+_i = \tfrac{A_i}{2}\,x_i^2,
@@ -335,31 +322,25 @@ $\boldsymbol{x}_0$, a sufficient convex-splitting for component $i$ is
 where the \emph{stabilisation constant} $A_i$ must satisfy
 %
 \begin{equation}\label{eq:eyre_condition}
-    A_i \;\geq\; \max\!\bigl(0,\,-H_{ii}(\boldsymbol{x}_0)\bigr)
+    A_i \;\geq\; \max\bigl(0,\,-H_{ii}(\boldsymbol{x}_0)\bigr)
 \end{equation}
 %
-to ensure that $G^+_i - \tfrac{A_i}{2}x_i^2$ remains convex
-\cite{eyre1998unconditionally,shen2010numerical}.  With this
-splitting, the update rule for field $i$ in Fourier space becomes
+to ensure that $G^+_i - \tfrac{A_i}{2}x_i^2$ remains convex \cite{eyre1998unconditionally,shen2010numerical}.  With this splitting, the update rule for field $i$ in Fourier space becomes
 %
 \begin{equation}\label{eq:eyre_update}
     \hat{x}_i^{\,n+1}
     = \frac{
         \hat{x}_i^{\,n}
-        + \Delta t\,k^2\,M^{\rm eff}_{ii}
-          \bigl(\hat{\mu}_{i,\rm bulk}^{\,n} - A_i\,\hat{x}_i^{\,n}\bigr)
-        + \Delta t\,k^2\,\hat{s}^{\,n}_{\rm cross}
+        + \Delta t\,k^2 \displaystyle\sum_j M^{\rm eff}_{ij}\,\hat{\mu}_{j,\rm bulk}^{\,n}
+        - \Delta t\,k^2\,M^{\rm eff}_{ii}\,A_i\,\hat{x}_i^{\,n}
+        - \Delta t\,k^4 \displaystyle\sum_{j \neq i} M^{\rm eff}_{ij}\,\kappa_j\,\hat{x}_j^{\,n}
       }{
         1 + \Delta t\,k^2\,M^{\rm eff}_{ii}\,A_i
         + \Delta t\,k^4\,M^{\rm eff}_{ii}\,\kappa_i
       },
 \end{equation}
 %
-where $\hat{s}^{\,n}_{\rm cross}$ collects all off-diagonal mobility
-cross-terms treated explicitly.  The denominator is strictly positive
-for any $\Delta t > 0$, $A_i \geq 0$, $\kappa_i > 0$, making the
-scheme \emph{unconditionally stable}: the solution cannot grow without
-bound regardless of the chosen time step.
+where the diagonal chemical potential term $M^{\rm eff}_{ii}\,\hat{\mu}_{i,\rm bulk}^{\,n}$ and off-diagonal bulk cross-terms $\sum_{j\neq i}M^{\rm eff}_{ij}\,\hat{\mu}_{j,\rm bulk}^{\,n}$ both enter at order $k^2$, while the off-diagonal gradient cross-terms enter at order $k^4$, consistent with \Cref{eq:semi_implicit}. The denominator is strictly positive for any $\Delta t > 0$, $A_i \geq 0$, $\kappa_i > 0$, making the scheme \emph{unconditionally stable}: the solution cannot grow without bound regardless of the chosen time step.
 
 \paragraph{Role of the stabilisation constant.}
 
@@ -376,7 +357,7 @@ Three regimes arise:
 
 \begin{enumerate}
     \item \textbf{$A_i = |H_{ii}|$ (minimum required).}
-          $H^{\rm eff}_{ii} = 0$ — the linear spinodal driving force
+          $H^{\rm eff}_{ii} = 0$: the linear spinodal driving force
           is exactly neutralised in the explicit part, and decomposition
           is driven purely by the \emph{nonlinear} deviation of
           $\mu_{i,\rm bulk}$ from its linearisation about $\boldsymbol{x}_0$.
@@ -385,7 +366,7 @@ Three regimes arise:
           of the spinodal growth rate.
 
     \item \textbf{$A_i > |H_{ii}|$ (over-stabilised).}
-          $H^{\rm eff}_{ii} > 0$ — the explicit update treats component
+          $H^{\rm eff}_{ii} > 0$: the explicit update treats component
           $i$ as if it were thermodynamically \emph{stable}, actively
           opposing spinodal growth at every time step.  The scheme
           remains unconditionally stable and will not blow up for any
@@ -395,7 +376,7 @@ Three regimes arise:
           rate slower than the true physical dynamics.
 
     \item \textbf{$A_i < |H_{ii}|$ (under-stabilised).}
-          $H^{\rm eff}_{ii} < 0$ — the explicit term retains a net
+          $H^{\rm eff}_{ii} < 0$: the explicit term retains a net
           destabilising contribution.  The scheme may blow up for large
           $\Delta t$ and is only conditionally stable, recovering the
           classical CFL restriction.
@@ -455,7 +436,7 @@ concrete example, for the binary Nb$_{50}$V$_{50}$ system at
 $H_{\rm Nb}(\boldsymbol{x})$ takes the value
 $\SI{-7239}{\joule\per\mol}$ at the nominal composition
 $x_{\rm Nb} = 0.50$, but reaches $\SI{-19840}{\joule\per\mol}$ near
-$x_{\rm Nb} = 0.75$ — an increase of nearly $2.7\times$.  Relying
+$x_{\rm Nb} = 0.75$, an increase of nearly $2.7\times$.  Relying
 solely on the point evaluation at $\boldsymbol{x}_0$ therefore
 underestimates the required stabilisation constant by that factor,
 causing the scheme to lose unconditional stability as the field
@@ -496,8 +477,7 @@ that grid, the interpolated chemical potential is undefined (typically
 returning \texttt{NaN}).  Because the update \Cref{eq:eyre_update}
 is evaluated in Fourier space, a single \texttt{NaN} propagates
 instantaneously to every grid point, halting the simulation.  This is
-\emph{not} a stability failure of the Eyre scheme — it is a
-thermodynamic evaluation error — and it cannot be resolved by adjusting
+\emph{not} a stability failure of the Eyre scheme; it is a thermodynamic evaluation error, and it cannot be resolved by adjusting
 $\Delta t$ or $A_i$.
 
 The correct remedy is to evaluate the chemical potential on a
@@ -525,6 +505,7 @@ accurate reproduction of the linear spinodal growth rate, while values
 $\alpha_{\rm s} \gg 1$ can be used to fast-forward to late-stage
 microstructural states at the cost of temporal fidelity in the
 early regime.
+}
 
 \subsubsection{CALPHAD-Coupled Surrogate for Thermodynamic Driving Forces}
 \label{sec:calphad_surrogate}
@@ -572,7 +553,7 @@ $\lambda^* = 4\pi\sqrt{\kappa_i/|H_{ij}|}$ and the stable time step
 (Eq.~\ref{eq:dt_stable_pf}), so derivative errors propagate
 directly into microstructural length and time scales.
 
-\paragraph{Method I — Finite differences on $G^\alpha_m$ (\texttt{fd}).}
+\paragraph{Method I: Finite differences on $G^\alpha_m$ (\texttt{fd}).}
 The chemical potential and Hessian are obtained numerically from the
 $G^\alpha_m$ surrogate by central finite differences:
 %
@@ -593,7 +574,7 @@ surrogate, and errors in $H_{ij}$ are amplified near the simplex
 boundaries where the ideal-entropy contribution
 $-RT\sum_i x_i \ln x_i$ makes $G^\alpha_m$ highly curved.
 
-\paragraph{Method II — Direct Jansson interpolation (\texttt{jansson}).}
+\paragraph{Method II: Direct Jansson interpolation (\texttt{jansson}).}
 Under the simplex constraint $x_n = 1 - \sum_{i=1}^{n-1} x_i$, the
 Gibbs-Duhem equation gives \cite{deFontaine1979}:
 %
@@ -619,11 +600,10 @@ Eq.~\ref{eq:H_jansson_pf}) using identical backends.  This method is
 free of finite-difference truncation error and satisfies the
 Gibbs-Duhem relation exactly at every queried composition.  For an
 $n$-component system, it requires $(n-1)$ additional surrogates for
-the chemical potentials and $(n-1)^2$ for the Hessian components —
-a total of $(n-1)n$ interpolants beyond the $G^\alpha_m$ surface —
+the chemical potentials and $(n-1)^2$ for the Hessian components, a total of $(n-1)n$ interpolants beyond the $G^\alpha_m$ surface,
 all constructed once at simulation startup.
 
-\paragraph{Method III — Hybrid: Jansson $\mu$, finite-difference $H$ (\texttt{hybrid}).}
+\paragraph{Method III: Hybrid: Jansson $\mu$, finite-difference $H$ (\texttt{hybrid}).}
 The bulk driving force $\mu_j - \mu_n$ is obtained from the Jansson
 surrogates (Eq.~\ref{eq:mu_jansson_pf}), while the Hessian $H_{ij}$
 is obtained by finite differences on $G^\alpha_m$
@@ -723,8 +703,7 @@ into erroneous microstructural length-scale predictions; the
 \end{table}
 
 To confirm that point-wise derivative agreement translates into equivalent field
-evolution, we ran two identical Cahn-Hilliard simulations --- one each for the
-\texttt{fd} and \texttt{jansson} modes --- on the Nb-V BCC\textsubscript{A2}
+evolution, we ran two identical Cahn-Hilliard simulations, one each for the \texttt{fd} and \texttt{jansson} modes, on the Nb-V BCC\textsubscript{A2}
 binary at $T = \SI{500}{\celsius}$ using a $256 \times 256$ periodic domain of
 side $L = \SI{1}{\micro\metre}$,
 $\kappa = \SI{1e-12}{\joule\per\metre}$, $M = \SI{5e-21}{\metre\cubed\second\per\kg}$,
@@ -882,8 +861,7 @@ the SQS interpolant at the parent composition, capturing the correct elastic
 environment of the parent phase, while the spatially varying stiffness
 $\mathbf{C}(\boldsymbol{r})$ is evaluated pointwise from the same
 interpolant.  The elastic chemical potential uses $\alpha_k(\boldsymbol{x}_0)$
---- the Vegard coefficient at the parent composition computed by finite
-difference on the SQS interpolant --- rather than a midpoint value,
+, the Vegard coefficient at the parent composition computed by finite difference on the SQS interpolant, rather than a midpoint value,
 which is a first-order approximation that avoids per-point gradient
 evaluations on the scattered interpolant.
 
