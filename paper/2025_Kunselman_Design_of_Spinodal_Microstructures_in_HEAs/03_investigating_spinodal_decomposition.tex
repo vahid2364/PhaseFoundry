@@ -1,7 +1,7 @@
 \clearpage
 \section{Investigating Spinodal Decomposition in the Hf-Nb-Ti-V System}
 
-The sections below apply the MLIP-informed pipeline---ORB potential energies, Jansson-based chemical potential derivatives, and a semi-implicit spectral Cahn--Hilliard solver---to the \ch{Hf-Nb-Ti-V} system.
+The sections below apply the MLIP-informed pipeline, using ORB potential energies, Jansson-based chemical potential derivatives, and a semi-implicit spectral Cahn--Hilliard solver, applied to the \ch{Hf-Nb-Ti-V} system.
 We progress from binary to quaternary subsystems, demonstrating at each stage how thermodynamic driving forces, coherency strain, and numerical tractability jointly govern which compositions and temperatures are accessible to simulation.
 
 Selecting a productive target composition requires meeting two criteria simultaneously.
@@ -77,7 +77,7 @@ For the Hf-rich composition \ch{Hf_{0.6}Nb_{0.1}Ti_{0.1}V_{0.2}}, the coherent H
 \subsection{Binary Nb--V: First Demonstration of the MLIP-Informed Pipeline}
 \label{sec:binary}
 
-The binary Nb--V system is the first demonstration of the complete framework: a machine-learned interatomic potential (ORB) supplies the thermodynamic database, Jansson interpolation evaluates chemical potentials and their composition derivatives directly from the CALPHAD dataset --- bypassing finite-difference approximations --- and the spectral Cahn-Hilliard solver propagates the resulting elasto-chemical driving forces on the grid.
+The binary Nb--V system is the first demonstration of the complete framework: a machine-learned interatomic potential (ORB) supplies the thermodynamic database, Jansson interpolation evaluates chemical potentials and their composition derivatives directly from the CALPHAD dataset, bypassing finite-difference approximations, and the spectral Cahn-Hilliard solver propagates the resulting elasto-chemical driving forces on the grid.
 The single independent composition field isolates the Jansson derivative from multi-component complexity, and the well-characterized miscibility gap at \SI{500}{\celsius} with no spectator elements provides a clean validation setting before extension to the ternary and quaternary subsystems.
 The equilibrium BCC\textsubscript{A2} tie-line endpoints at \SI{500}{\celsius} are an Nb-rich phase ($x_{\rm Nb} = 0.96$) and a V-rich phase ($x_{\rm Nb} = 0.36$), between which the stiffness tensors $C_{ij}$ and Vegard eigenstrain coefficient $\alpha_{\rm Nb} = \partial\ln a/\partial x_{\rm Nb}$ are linearly interpolated from SQS configurations evaluated with the ORB machine-learned interatomic potential.
 The coefficient $\alpha_{\rm Nb} = 0.0874$ is evaluated at the tie-line midpoint ($x_{\rm Nb} = 0.66$, $a_{\rm ref} = \SI{3.228}{\angstrom}$), giving a total misfit strain $\varepsilon_T = -5.5\%$ between the two equilibrium phases and a molar volume $N_V = \SI{8.99e4}{\mol\per\metre\cubed}$.
@@ -135,7 +135,7 @@ At $x_{\rm Nb}^0 = 0.50$, coherency strain completely suppresses spinodal decomp
 At $x_{\rm Nb}^0 = 0.60$ and $0.70$, decomposition proceeds and produces a labyrinthine, bicontinuous morphology with channels preferentially aligned along $\langle 110 \rangle$, reflecting the elastically soft direction ($A_Z < 1$).
 At $x_{\rm Nb}^0 = 0.80$, the V-rich phase constitutes a small minority and forms isolated $\langle 110 \rangle$-elongated islands embedded in a continuous Nb-rich matrix.
 
-The absence of decomposition at $x_{\rm Nb}^0 = 0.50$ reflects a direct thermodynamic consequence of coherency: at this composition and temperature, the elastic penalty is sufficient to render the smallest positive eigenvalue of the coherent Gibbs energy Hessian positive, stabilizing the alloy against all composition fluctuations. That the chemical-only simulation at the same composition decomposes freely establishes that this stability is entirely elastic in origin. Coherency strain thus closes the miscibility gap at the symmetric composition in Nb--V --- an effect that a purely chemical phase-field model would miss entirely.
+The absence of decomposition at $x_{\rm Nb}^0 = 0.50$ reflects a direct thermodynamic consequence of coherency: at this composition and temperature, the elastic penalty is sufficient to render the smallest positive eigenvalue of the coherent Gibbs energy Hessian positive, stabilizing the alloy against all composition fluctuations. That the chemical-only simulation at the same composition decomposes freely establishes that this stability is entirely elastic in origin. Coherency strain thus closes the miscibility gap at the symmetric composition in Nb--V, an effect that a purely chemical phase-field model would miss entirely.
 
 \begin{figure}[!h]
     \centering
@@ -163,12 +163,17 @@ The absence of decomposition at $x_{\rm Nb}^0 = 0.50$ reflects a direct thermody
 \subsection{Ternary Nb--Hf--V: Temperature and Composition Dependence}
 \label{sec:ternary}
 
-Adding Hf to the binary Nb--V system changes the character of the spinodal instability qualitatively.
-Table~\ref{tab:spinodal_regimes} summarizes four distinct regimes for the ternary Nb$_{50}$Hf$_5$V$_{45}$ alloy across \SIrange{500}{1000}{\celsius}, identified from the signs of the diagonal Hessian elements $H_{\rm Nb}$, $H_{\rm Hf}$, and $H_{\rm V} = H_{\rm Nb} + H_{\rm Hf} + 2H_{\rm Nb,Hf}$.
-Above \SI{700}{\celsius}, no diagonal instability exists; the spinodal is driven solely by weak off-diagonal Nb--Hf coupling ($\lambda_{\min} \lesssim 0$) and produces no significant decomposition.
-Between \SI{600}{\celsius} and \SI{700}{\celsius}, only $H_{\rm Nb} < 0$: Nb segregates asymmetrically against a stable V$+$Hf background, with Hf acting as an inert spectator.
-Below \SI{500}{\celsius}, $H_{\rm V}$ also turns negative, recovering a binary-like Nb--V demixing, but Hf remains a positive-curvature stiffener that suppresses $\Delta t$.
-The most numerically tractable temperature for this ternary is \SI{700}{\celsius}, where the Nb-driven spinodal ($|\lambda_{\min}| = \SI{13272}{\joule\per\mol}$) is active without the stiffness penalty, albeit with a driving force approximately six times weaker than at \SI{500}{\celsius}.
+{\color{blue}
+Hf functions as a dual-action tuning element in the Nb--V spinodal: it deepens the chemical miscibility gap as its fraction increases, yet its large atomic radius simultaneously raises the coherency penalty that opposes decomposition.
+These two competing effects define a composition window, roughly $x_{\rm Hf}^0 \leq 0.25$, within which spinodal microstructures are accessible under elasto-chemical coupling at \SI{500}{\celsius}, and place a strict upper bound on Hf content above which coherency strain closes the gap entirely.
+
+The temperature dependence compounds this picture.
+Table~\ref{tab:spinodal_regimes} identifies four regimes for Nb$_{50}$Hf$_5$V$_{45}$ from the signs of the diagonal Hessian elements $H_{\rm Nb}$, $H_{\rm Hf}$, and $H_{\rm V} = H_{\rm Nb} + H_{\rm Hf} + 2H_{\rm Nb,Hf}$.
+Above \SI{700}{\celsius} no element is individually unstable; the spinodal survives only through weak off-diagonal Nb--Hf coupling ($\lambda_{\min} \lesssim 0$) and produces no significant microstructure.
+Between \SI{600}{\celsius} and \SI{700}{\celsius}, $H_{\rm Nb} < 0$ alone drives an asymmetric instability in which Nb segregates against a stable V$+$Hf background.
+Below \SI{500}{\celsius}, V also destabilizes ($H_{\rm V} < 0$), recovering binary-like Nb--V demixing, but Hf then acts as a positive-curvature stiffener that severely constrains the stable time step (Eq.~\ref{eq:dt_stability}).
+The optimal operating point is \SI{500}{\celsius}--\SI{700}{\celsius}, where the Nb-driven spinodal is thermodynamically active and Hf remains a spectator rather than a numerical bottleneck.
+}
 
 \begin{table}[!h]
     \centering
@@ -185,44 +190,52 @@ The most numerically tractable temperature for this ternary is \SI{700}{\celsius
     \label{tab:spinodal_regimes}
     \scriptsize
     \renewcommand{\arraystretch}{1.0}
-    \begin{tabularx}{\textwidth}{lllll}
+    \setlength{\tabcolsep}{4pt}
+    \newcommand{\unst}[1]{\textcolor{BrickRed}{$#1{<}0$}}
+    \newcommand{\stab}[1]{\textcolor{gray}{$#1{>}0$}}
+    \begin{tabularx}{\textwidth}{lp{3.0cm}lll>{\raggedright\arraybackslash}Xp{3.0cm}}
         \toprule
-        Regime & System & Diagonal instabilities & Physical character & Equilibrium BCC phases$^{a}$ \\
+        System & Temperature & Instabilities & Hf role & $\Delta t$ & Character & BCC phases$^{a}$ \\
         \midrule
-        $T < \SI{750}{\celsius}$
-            & Binary Nb$_{50}$V$_{50}$
-            & $H_{\rm Nb} = H_{\rm V} < 0$
-            & Symmetric Nb$\leftrightarrow$V demixing; both components drive decomposition equally
-            & BCC$_1$: Nb$_{99}$V$_{1}$\newline BCC$_2$: Nb$_{1}$V$_{99}$ \\
-        $T > \SI{700}{\celsius}$
-            & Ternary Nb$_{50}$Hf$_5$V$_{45}$
-            & None ($H_{\rm Nb},\,H_{\rm Hf},\,H_{\rm V} > 0$)
-            & No diagonal instability; only weak off-diagonal Nb--Hf coupling drives marginal spinodal ($\lambda_{\min} \lesssim 0$); no significant decomposition
-            & Single-phase BCC: Nb$_{50}$Hf$_{5}$V$_{45}$ \\
-        \SIrange{600}{700}{\celsius}
-            & Ternary Nb$_{50}$Hf$_5$V$_{45}$
-            & $H_{\rm Nb} < 0$ only
-            & Asymmetric spinodal: Nb segregates against a stable V$+$Hf matrix; Hf acts as inert spectator
-            & BCC$_1$: Nb$_{90}$Hf$_{9}$V$_{1}$\newline BCC$_2$: Nb$_{2}$Hf$_{0.1}$V$_{98}$ \\
-        $T < \SI{500}{\celsius}$
-            & Ternary Nb$_{50}$Hf$_5$V$_{45}$
-            & $H_{\rm Nb} < 0$,\; $H_{\rm V} < 0$
-            & Binary-like Nb--V demixing; Hf remains stable ($H_{\rm Hf} > 0$) and imposes numerical stiffness
-            & BCC$_1$: Nb$_{91}$Hf$_{9}$V$_{0.3}$\newline BCC$_2$: Nb$_{0.6}$Hf$_{0.04}$V$_{99}$ \\
+        Binary Nb$_{50}$V$_{50}$
+            & $T < \SI{750}{\celsius}$
+            & \unst{H_{\rm Nb}}\,=\,\unst{H_{\rm V}}
+            & absent & fast
+            & Symmetric Nb$\leftrightarrow$V demixing
+            & BCC$_1$: Nb$_{99}$V$_{1}$; BCC$_2$: Nb$_1$V$_{99}$ \\
+        \midrule
+        \multirow{3}{*}{Ternary Nb$_{50}$Hf$_5$V$_{45}$}
+            & $T > \SI{700}{\celsius}$
+            & \stab{H_{\rm Nb}}, \stab{H_{\rm Hf}}, \stab{H_{\rm V}}
+            & stable & fast
+            & No instability; marginal off-diagonal Nb--Hf coupling only
+            & Single-phase BCC \\
+            & \SIrange{600}{700}{\celsius}
+            & \unst{H_{\rm Nb}}, \stab{H_{\rm Hf}}, \stab{H_{\rm V}}
+            & spectator & moderate
+            & Asymmetric Nb-driven spinodal; optimal window
+            & BCC$_1$: Nb$_{90}$Hf$_9$V$_1$; BCC$_2$: Nb$_2$Hf$_{0.1}$V$_{98}$ \\
+            & $T < \SI{500}{\celsius}$
+            & \unst{H_{\rm Nb}}, \stab{H_{\rm Hf}}, \unst{H_{\rm V}}
+            & stiffener & penalized
+            & Binary-like Nb--V demixing; $H_{\rm Hf}{>}0$ constrains $\Delta t$
+            & BCC$_1$: Nb$_{91}$Hf$_9$V$_{0.3}$; BCC$_2$: Nb$_{0.6}$Hf$_{0.04}$V$_{99}$ \\
         \bottomrule
-        \multicolumn{5}{l}{\footnotesize $^{a}$~Equilibrium tie-line endpoints computed with \texttt{pycalphad}
-            (\texttt{BCC\_A2} miscibility gap) using an ORB-MLIP CALPHAD database for the HfNbTiV system.
-            Subscripts are at.\%; representative temperatures: \SI{500}{\celsius} for
-            $T<\SI{750}{\celsius}$ rows, \SI{700}{\celsius} for the
-            \SIrange{600}{700}{\celsius} row.}
+        \multicolumn{7}{l}{$^{a}$~Tie-line endpoints from \texttt{pycalphad} (\texttt{BCC\_A2}, ORB-MLIP database); subscripts at.\%. \SI{500}{\celsius} for $T{<}\SI{750}{\celsius}$ rows, \SI{700}{\celsius} for \SIrange{600}{700}{\celsius} row.}
     \end{tabularx}
 \end{table}
 
 Figure~\ref{fig:ternary_summary} consolidates three further perspectives on the ternary system.
-The Hf sweep (panels a--e) shows that at low Hf fractions ($x_{\rm Hf}^0 = 0.05$, 0.10) decomposition produces isolated Nb-rich precipitates consistent with a minority-phase microstructure; increasing Hf to 0.20 and 0.25 shifts the tie-line endpoints and produces well-developed bicontinuous Nb--V domains, indicating that Hf progressively deepens the miscibility gap.
-The middle row (panels e--f) isolates the elastic contribution at $x_{\rm Hf}^0 = 0.25$: the chemical-only simulation (e) produces isotropic interconnected domains, while the elasto-chemical case (f) remains nearly uniform, demonstrating that coherency strain again closes the miscibility gap at this composition, extending the suppression seen in the binary at $x_{\rm Nb}^0 = 0.50$ to the ternary.
-The bottom row (panels g--h) shows the temperature dependence for Nb$_{50}$Hf$_5$V$_{45}$: at \SI{500}{\celsius} (g) decomposition is early-stage with small, diffuse Nb-rich clusters, while at \SI{600}{\celsius} (h) the domains are better developed despite the higher temperature, consistent with the Hessian analysis showing that $H_{\rm Nb} < 0$ with a moderate driving force at \SI{600}{\celsius} while the system sits closer to the spinodal boundary at \SI{500}{\celsius} for this dilute-Hf composition.
-Panel (i) places these simulations in context by showing the ternary BCC\textsubscript{A2} miscibility gap across all three binary subsystems (Hf--Nb, Nb--V, Hf--V), with the composition space accessible to the ternary highlighted.
+{\color{blue}
+Figure~\ref{fig:ternary_summary}(a) shows the chemical-only Hf-content sweep across six compositions ($x_{\rm Hf}^0 = 0.05$--$0.45$), each after \SI{6000}{\second} of isothermal aging at \SI{500}{\celsius}.
+At low Hf fractions ($x_{\rm Hf}^0 = 0.05$, 0.10) decomposition produces isolated Nb-rich precipitates consistent with a minority-phase microstructure.
+Increasing Hf to 0.20 and 0.25 shifts the tie-line endpoints and produces well-developed bicontinuous Nb--V domains, indicating that Hf progressively deepens the miscibility gap.
+At $x_{\rm Hf}^0 = 0.35$ the domains coarsen to a coarser, lower-contrast pattern, and in Nb$_{50}$Hf$_{45}$V$_{5}$ no decomposition occurs, placing this composition outside the chemical spinodal at \SI{500}{\celsius}.
+
+Figure~\ref{fig:ternary_summary}(b) shows the corresponding elasto-chemical sweep using the composition-dependent coherency eigenstrain model; snapshots are taken after \SI{30000}{\second} for Nb$_{50}$Hf$_{5}$V$_{45}$, Nb$_{50}$Hf$_{10}$V$_{40}$, Nb$_{50}$Hf$_{20}$V$_{30}$, and Nb$_{50}$Hf$_{25}$V$_{25}$; \SI{15000}{\second} for Nb$_{50}$Hf$_{35}$V$_{15}$; and \SI{150000}{\second} for Nb$_{50}$Hf$_{45}$V$_{5}$.
+The elastic coupling further narrows the spinodal region: Nb$_{50}$Hf$_{5}$V$_{45}$, Nb$_{50}$Hf$_{10}$V$_{40}$, Nb$_{50}$Hf$_{20}$V$_{30}$, and Nb$_{50}$Hf$_{25}$V$_{25}$ still decompose with phase contrast and domain connectivity similar to the chemical-only case, while Nb$_{50}$Hf$_{35}$V$_{15}$ and Nb$_{50}$Hf$_{45}$V$_{5}$ remain uniform throughout the simulation.
+The suppression at $x_{\rm Hf}^0 = 0.35$ is purely elastic in origin: the chemical-only simulation at the same composition decomposes, whereas coherency strain raises the effective free-energy curvature above zero and stabilizes the solid solution.
+This trend, where elastic stabilization becomes dominant as Hf content increases, is consistent with the larger Vegard misfit parameter of Hf relative to V and the attendant increase in elastic self-energy at Hf-rich compositions.} Figure~\ref{fig:ternary_summary}(c) maps the simulated compositions onto the ternary BCC\textsubscript{A2} miscibility gap, projected across the Hf--Nb, Nb--V, and Hf--V binary subsystems.
 
 \begin{figure*}[!h]
     \centering
@@ -243,10 +256,13 @@ Panel (i) places these simulations in context by showing the ternary BCC\textsub
         ($128\times128$ grid, $L = \SI{1}{\micro\metre}$,
         $\kappa = \SI{1e-12}{\joule\metre\squared\per\mol}$,
         $M_{\rm Nb} = \SI{5e-21}{\metre\tothe{5}\per\joule\per\second}$).
-        \textbf{(a)} Chemical-only simulations.
-        \textbf{(b)} Elasto-chemical simulations with Vegard coherency strain;
-        panels marked ``simulation pending'' are reserved for calculations in
-        progress.
+        \textbf{(a)} Chemical-only simulations{\color{blue}, all compositions after \SI{6000}{\second} of isothermal aging}.
+        {\color{blue}\textbf{(b)} Elasto-chemical simulations using the composition-dependent coherency eigenstrain
+        strain model; snapshots after \SI{30000}{\second} (Nb$_{50}$Hf$_{5}$V$_{45}$, Nb$_{50}$Hf$_{10}$V$_{40}$, Nb$_{50}$Hf$_{20}$V$_{30}$, Nb$_{50}$Hf$_{25}$V$_{25}$),
+        \SI{15000}{\second} (Nb$_{50}$Hf$_{35}$V$_{15}$), and \SI{150000}{\second} (Nb$_{50}$Hf$_{45}$V$_{5}$).
+        Compositions with $x_{\rm Hf}^0 \geq 0.35$ show no spinodal decomposition,
+        demonstrating that coherency strain suppresses the miscibility gap at
+        high Hf content.}
         \textbf{(c)} Ternary BCC\textsubscript{A2} miscibility gap across all
         three binary subsystems (Hf--Nb, Nb--V, Hf--V).
         Colormap: $x_{\rm Nb}$ increases from blue (low) to red (high).
@@ -257,29 +273,27 @@ Panel (i) places these simulations in context by showing the ternary BCC\textsub
 \subsection{Quaternary HfNbTiV: Phase-Field Prediction and Experimental Validation}
 \label{sec:quaternary}
 
-\subsubsection{Chemical-only microstructure and CALPHAD tie-line}
+{\color{blue}
+Equiatomic Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$ lies within the BCC\textsubscript{A2} spinodal at \SI{500}{\celsius} ($\lambda_{\min} < 0$) and produces well-evolved microstructure on accessible simulation timescales.
+The chemical-only simulation at \SI{60000}{\second} yields ellipsoidal V-rich precipitates ($x_{\rm V}^{\rm max} = 0.751$) in an Nb/Hf/Ti-rich matrix (Figure~\ref{fig:quaternary_chem}(a)).
+Diffuse Hf halos around precipitate cores arise from the tenfold lower Hf mobility rather than an independent Hf instability, consistent with the kinetic analysis in Section~\ref{sec:ternary}.
 
-The equiatomic composition Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$ satisfies both criteria identified in Section~\ref{sec:stability_landscape}: $\lambda_{\min} < 0$ at \SI{500}{\celsius} and, with the mobility assignments described below, sufficient microstructural evolution is accessible within $10^6$ steps.
-Figure~\ref{fig:quaternary_chem} shows the composition fields from a chemical-only Cahn-Hilliard simulation ($128\times128$ grid, $L = \SI{1}{\micro\metre}$, $\Delta t = \SI{0.1}{\second}$, $\boldsymbol{\kappa} = [\num{1e-12},\,\num{7e-12},\,\num{1e-12}]\,\si{\joule\metre\squared\per\mol}$, $\mathbf{M} = \operatorname{diag}[\num{5e-21},\,\num{5e-23},\,\num{5e-21}]\,\si{\metre\tothe{5}\per\joule\per\second}$) at step 600{,}000.
-Ellipsoidal V-rich precipitates form in an Nb/Hf/Ti-rich matrix; the diffuse Hf halos around precipitate cores reflect the tenfold lower Hf mobility relative to Nb and Ti rather than an independent Hf instability.
-
-To validate the partitioning directions and obtain physically correct tie-line endpoints for the elasto-chemical simulation, we computed the CALPHAD equilibrium tie-line at \SI{500}{\celsius} using \texttt{pycalphad} with an ORB-MLIP CALPHAD database for the HfNbTiV system (\Cref{tab:quaternary_tieline}).
-Two BCC\textsubscript{A2} phases coexist: an Nb/Hf/Ti-rich matrix (phase fraction $\approx 0.67$) and a V-rich precipitate (phase fraction $\approx 0.33$).
-The phase-field partitioning directions match the CALPHAD prediction for all four elements; Nb and V compositions agree quantitatively, while Hf and Ti have not yet reached their equilibrium values at step 600{,}000, consistent with slow Hf kinetics and residual V in the matrix.
+The elasto-chemical simulation at \SI{700000}{\second} reproduces the same V-rich/Nb-Ti-rich partitioning but with reduced compositional contrast ($x_{\rm V}^{\rm max} = 0.691$), reflecting the elastic penalty that opposes sharp composition gradients (Figure~\ref{fig:quaternary_chem}(b)).
+CALPHAD equilibrium predicts two coexisting BCC\textsubscript{A2} phases ($f_{\rm ppt} \approx 0.33$, Table~\ref{tab:quaternary_tieline}).
+Both simulations approach the CALPHAD endpoints for Nb ($x_{\rm Nb}^{\rm mat} \approx 0.30$) and V ($x_{\rm V}^{\rm ppt} \approx 0.71$), while Hf and Ti remain far from their equilibrium values, consistent with slow Hf kinetics and the limited simulation timescales accessible.
+}
 
 \begin{table}[!h]
     \centering
     \caption{%
-        CALPHAD equilibrium tie-line endpoints for equiatomic
-        Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$ BCC\textsubscript{A2} at
-        \SI{500}{\celsius}, computed with \texttt{pycalphad} using the
-        ORB-MLIP CALPHAD database for the HfNbTiV system.
-        Phase-field composition ranges from the final frame (step 600{,}000)
-        are shown for comparison; PFM values are non-equilibrium, particularly
-        for Hf (slow kinetics) and V (matrix still draining).
+        CALPHAD tie-line endpoints for equiatomic Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$
+        BCC\textsubscript{A2} at \SI{500}{\celsius} (ORB-MLIP database), with
+        chemical and elasto-chemical phase-field composition ranges shown for
+        comparison. PFM values are non-equilibrium, particularly for Hf and V.
     }
     \label{tab:quaternary_tieline}
-    \renewcommand{\arraystretch}{1.3}
+    \scriptsize
+    \renewcommand{\arraystretch}{1.0}
     \setlength{\tabcolsep}{5pt}
     \begin{tabular}{llcccc}
         \toprule
@@ -291,39 +305,50 @@ The phase-field partitioning directions match the CALPHAD prediction for all fou
             & Precipitate ($f \approx 0.33$)
             & 0.148 & 0.002 & 0.136 & 0.714 \\
         \midrule
-        \multirow{2}{*}{PFM (step 600{,}000)}
-            & Matrix
-            & $\approx 0.30$ & $\approx 0.33$ & $\approx 0.29$ & $\approx 0.11$ \\
-            & Precipitate
-            & $\approx 0.11$ & $\approx 0.06$ & $\approx 0.06$ & $\approx 0.68$ \\
+        \multirow{2}{*}{Chemical PFM (\SI{60000}{\second})}
+            & Matrix (max)
+            & 0.331 & 0.365 & 0.310 & 0.751 \\
+            & Precipitate (min)
+            & 0.096 & 0.048 & 0.103 & 0.015 \\
+        \midrule
+        \multirow{2}{*}{Elasto-chem.\ PFM (\SI{700000}{\second})}
+            & Matrix (max)
+            & 0.396 & 0.426 & 0.353 & 0.691 \\
+            & Precipitate (min)
+            & 0.127 & 0.056 & 0.125 & 0.053 \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-\begin{figure}[!h]
+\begin{figure}[!ht]
     \centering
-    \includegraphics[width=\textwidth]{figs/quaternary_chem_step600k.pdf}
+    \begin{overpic}[width=0.32\textwidth]{figs/quaternary_chem_step600k.pdf}
+        \put(3,92){\colorbox{black!25}{\makebox(6.1,3.4){\textbf{(a)}}}}
+    \end{overpic}\hfill
+    \begin{overpic}[width=0.32\textwidth]{figs/quaternary_elastic_step600k.pdf}
+        \put(3,92){\colorbox{black!25}{\makebox(6.1,3.4){\textbf{(b)}}}}
+    \end{overpic}\hfill
+    \begin{overpic}[width=0.345\textwidth]{figs/equiatomic_quaternary_alloy_experimental.jpg}
+        \put(3,92){\colorbox{black!25}{\makebox(6.1,3.4){\textbf{(c)}}}}
+    \end{overpic}
     \caption{%
-        Composition fields from the chemical-only Cahn-Hilliard simulation of
-        equiatomic Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$ BCC\textsubscript{A2}
-        at \SI{500}{\celsius} ($128\times128$ grid, $L = \SI{1}{\micro\metre}$,
-        step 600{,}000, $\Delta t = \SI{0.1}{\second}$).
-        From left to right: $x_{\rm Nb}$, $x_{\rm Hf}$, $x_{\rm Ti}$, $x_{\rm V}$.
-        V-rich precipitates (blue in $x_{\rm Nb}$, $x_{\rm Hf}$, $x_{\rm Ti}$;
-        red in $x_{\rm V}$) are embedded in an Nb/Hf/Ti-rich matrix.
-        Diffuse halos in $x_{\rm Hf}$ reflect the tenfold lower Hf mobility
-        ($M_{\rm Hf} = \SI{5e-23}{\metre\tothe{5}\per\joule\per\second}$).
-        Partitioning directions are consistent with the CALPHAD tie-line
-        (\Cref{tab:quaternary_tieline}).
+        Phase-field simulations of equiatomic Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$ at \SI{500}{\celsius}
+        and HAADF-STEM comparison.
+        (a)~Chemical-only simulation at \SI{60000}{\second}: $x_{\rm V}$ field ($128\times128$,
+        $L = \SI{1}{\micro\metre}$) with insets showing $x_{\rm Nb}$, $x_{\rm Hf}$, $x_{\rm Ti}$
+        for the highlighted region.
+        (b)~Elasto-chemical simulation at \SI{700000}{\second}: same fields with elastic coupling.
+        (c)~HAADF-STEM image of as-cast alloy showing alternating $\beta$/$\beta^*$ BCC\textsubscript{A2}
+        variants; reproduced from An~et~al.\ \cite{an2021spinodal}.
     }
     \label{fig:quaternary_chem}
 \end{figure}
 
-\subsubsection{Elasto-chemical prediction and comparison with experiment}
 
-The elastic response of the quaternary system differs fundamentally from the binary baseline of Section~\ref{sec:binary}.
-At the CALPHAD tie-line matrix composition, the SQS/DFT interpolant yields $A_Z^{\rm mat} = 1.52 > 1$, identifying $\langle 100 \rangle$ as the elastically soft direction — the opposite selection from the binary NbV case ($A_Z = 0.33 < 1$).
-Table~\ref{tab:elastic_comparison} compares the full set of model predictions against the experimental characterization of equiatomic HfNbTiV by An~et~al.\ \cite{an2021spinodal}, who identified two coexisting BCC\textsubscript{A2} phases in an as-cast alloy by XRD, HAADF-STEM, and EDS.
+{\color{blue}
+The MLIP-computed elastic constants predict a spinodal modulation direction in the quaternary that differs qualitatively from the binary and ternary baselines: the SQS/ORB-MLIP interpolant evaluated at the CALPHAD matrix composition yields $A_Z^{\rm mat} = 1.52 > 1$, selecting $\langle 100 \rangle$ as the elastically soft direction and therefore the preferred microstructure alignment, opposite to the binary NbV ($A_Z = 0.33 < 1$) and ternary NbHfV ($A_Z = 0.37 < 1$) cases where $\langle 110 \rangle$ is favored.
+Table~\ref{tab:elastic_comparison} compares the full set of model predictions against the experimental characterization of equiatomic HfNbTiV by An~et~al.\ \cite{an2021spinodal}, who identified two coexisting BCC\textsubscript{A2} phases in an as-cast alloy by XRD, HAADF-STEM, and EDS, revealing three areas of agreement and disagreement.
+}
 
 \begin{table}[!h]
     \centering
@@ -332,84 +357,122 @@ Table~\ref{tab:elastic_comparison} compares the full set of model predictions ag
         BCC\textsubscript{A2} HfNbTiV alloy.
         Experimental values are from An~et~al.\ \cite{an2021spinodal} (as-cast,
         characterized by XRD, HAADF-STEM, and EDS).
-        Binary predictions use the NbV tie-line endpoints; quaternary
-        predictions use the CALPHAD tie-line at \SI{500}{\celsius}
-        (\Cref{tab:quaternary_tieline}).
+        Binary predictions use the Nb$_{50}$V$_{50}$ CALPHAD tie-line endpoints
+        (matrix: Nb$_{96}$V$_{4}$; precipitate: Nb$_{36}$V$_{64}$) at \SI{500}{\celsius}.
+        Ternary predictions use the Nb$_{50}$Hf$_{25}$V$_{25}$ CALPHAD tie-line endpoints
+        (matrix: Nb$_{70}$Hf$_{10}$V$_{20}$; precipitate: Nb$_{15}$Hf$_{35}$V$_{50}$) at \SI{500}{\celsius}.
+        Quaternary predictions use the equiatomic Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$ CALPHAD tie-line
+        at \SI{500}{\celsius} (\Cref{tab:quaternary_tieline}).
         $A_Z = 2C_{44}/(C_{11}-C_{12})$: $A_Z > 1$ selects
         $\langle 100 \rangle$ modulation, $A_Z < 1$ selects
         $\langle 110 \rangle$.
         $\varepsilon_T = (a_{\rm ppt} - a_{\rm mat})/a_{\rm mat}$.
     }
     \label{tab:elastic_comparison}
-    \renewcommand{\arraystretch}{1.3}
+    \scriptsize
+    \renewcommand{\arraystretch}{1.0}
     \setlength{\tabcolsep}{4pt}
-    \begin{tabularx}{\textwidth}{lXXX}
+    \begin{tabularx}{\textwidth}{lXXXX}
         \toprule
         Property
-            & Experiment \cite{an2021spinodal}
-            & Binary NbV (this work)
-            & Quaternary NbHfTiV (this work) \\
+            & Binary Nb$_{50}$V$_{50}$ (this work)
+            & Ternary Nb$_{50}$Hf$_{25}$V$_{25}$ (this work)
+            & Quaternary Nb$_{25}$Hf$_{25}$Ti$_{25}$V$_{25}$ (this work)
+            & Experiment \cite{an2021spinodal} \\
         \midrule
         Precipitate enriched in
-            & Hf $+$ V
             & V
-            & V (Hf in matrix) \\
+            & V
+            & V (Hf in matrix)
+            & Hf $+$ V \\
         Matrix enriched in
-            & Nb $+$ Ti
             & Nb
-            & Nb, Hf, Ti \\
+            & Nb
+            & Nb, Hf, Ti
+            & Nb $+$ Ti \\
         Precipitate phase fraction
-            & $\approx 1/3$
             & ---
-            & $\approx 0.33$ \\
+            & ---
+            & $\approx 0.33$
+            & $\approx 1/3$ \\
         $a_{\rm mat}$ (\AA)
-            & 3.313
             & 3.312
-            & 3.382 \\
+            & 3.286
+            & 3.382
+            & 3.313 \\
         $a_{\rm ppt}$ (\AA)
-            & 3.259
             & 3.130
-            & 3.089 \\
+            & 3.265
+            & 3.089
+            & 3.259 \\
         $\varepsilon_T$
-            & $-1.6\%$ (XRD); $0.54\%$ (TEM)
             & $-5.5\%$
-            & $-8.7\%$ \\
+            & $-0.64\%$
+            & $-8.7\%$
+            & $-1.6\%$ (XRD); $0.54\%$ (TEM) \\
         $A_Z$ (matrix)
-            & ---
             & 0.33
-            & \textbf{1.52} \\
+            & 0.37
+            & \textbf{1.52}
+            & --- \\
         $A_Z$ (precipitate)
-            & ---
             & 0.31
-            & 0.32 \\
+            & 1.09
+            & 0.32
+            & --- \\
         Spinodal modulation direction
-            & $\langle 100 \rangle$
             & $\langle 110 \rangle$ (predicted)
-            & $\langle 100 \rangle$ (predicted) \\
+            & $\langle 110 \rangle$ (predicted)
+            & $\langle 100 \rangle$ (predicted)
+            & $\langle 110 \rangle$ (observed) \\
         Modulation wavelength
-            & ${\approx}\SI{50}{\nano\metre}$
             & ---
-            & ${\approx}50$--\SI{100}{\nano\metre} \\
+            & ---
+            & ${\approx}50$--\SI{100}{\nano\metre}
+            & 50--\SI{100}{\nano\metre} \\
         \bottomrule
     \end{tabularx}
 \end{table}
 
-Three findings emerge from this comparison.
-
-\textit{Hf partitioning is inconsistent between the CALPHAD model and experiment.}
+{\color{blue}
+Hf partitioning is reversed between the CALPHAD model and experiment.
 An~et~al.\ demonstrate via HAADF-STEM Z-contrast that Hf ($Z = 72$, the heaviest constituent) enriches the precipitate phase ($\beta^*$), co-segregating with V.
 The ORB-MLIP CALPHAD model assigns Hf to the matrix alongside Nb and Ti (\Cref{tab:quaternary_tieline}).
-The most likely origin of this discrepancy is the thermal history: the experimental alloy was drop-cast and spinodal decomposition occurred during rapid cooling from the melt, far from the \SI{500}{\celsius} equilibrium tie-line used in the simulation.
-Non-equilibrium partitioning during rapid quenching can favor kinetically accessible configurations that differ from the thermodynamic ground state, particularly for a heavy element such as Hf whose equilibrium diffusivity is low.
+The most probable explanation is non-equilibrium partitioning during rapid solidification: the experimental alloy was drop-cast, so decomposition occurred on cooling from the melt rather than at \SI{500}{\celsius}.
+Database inaccuracies in the ORB-MLIP model for heavy-element BCC alloys cannot be excluded, but the thermal-history explanation is supported by the low equilibrium diffusivity of Hf, which makes kinetic trapping plausible.
 
-\textit{The misfit strain is overestimated by the CALPHAD model.}
-An~et~al.\ report a lattice misfit of $-1.6\%$ from XRD peak separation and $0.54\%$ from TEM atomic-column measurements, both substantially smaller than the $-8.7\%$ predicted by the quaternary CALPHAD tie-line.
-This overestimate is a direct consequence of the incorrect Hf partitioning: if Hf (large atomic radius, $a_{\rm Hf}^{\rm BCC} \approx \SI{3.62}{\angstrom}$) were to co-enrich the precipitate with V (small atomic radius, $a_{\rm V}^{\rm BCC} \approx \SI{3.03}{\angstrom}$), the opposing contributions to the precipitate lattice parameter would partially cancel, yielding a much smaller net misfit consistent with experiment.
-The binary NbV misfit of $-5.5\%$ is also larger than the experimental value, though less severely so.
+The coherency misfit is overestimated, directly tracing to the Hf partitioning error.
+An~et~al.\ report a lattice misfit of $-1.6\%$ from XRD peak separation and $+0.54\%$ from TEM atomic-column measurements, both substantially smaller than the $-8.7\%$ predicted by the quaternary CALPHAD tie-line.
+If Hf (large atomic radius, $a_{\rm Hf}^{\rm BCC} \approx \SI{3.62}{\angstrom}$) co-partitions with V (small radius, $a_{\rm V}^{\rm BCC} \approx \SI{3.03}{\angstrom}$) into the precipitate, their opposing contributions to the precipitate lattice parameter partially cancel, yielding a net misfit consistent with experiment.
+This internal consistency supports the thermal-history origin of the discrepancy; the binary NbV misfit of $-5.5\%$ is similarly overestimated, though less severely.
 
-\textit{The quaternary elastic anisotropy correctly predicts the observed spinodal modulation direction.}
-The HAADF-STEM fast Fourier transform patterns in An~et~al.\ (Fig.~1(e,f) of that work) show spinodal modulation wavevectors along $\langle 100 \rangle$, the elastically soft direction for alloys with $A_Z > 1$.
-The quaternary CALPHAD model gives $A_Z^{\rm mat} = 1.52 > 1$ for the Nb/Hf/Ti-rich matrix, correctly selecting $\langle 100 \rangle$ as the preferred modulation direction.
-The binary NbV model gives $A_Z = 0.33 < 1$ for both phases, which would predict $\langle 110 \rangle$ modulation, inconsistent with the experimental observation.
-This agreement demonstrates that the multi-element matrix composition, rather than the V-rich precipitate, controls the elastic anisotropy and hence the morphological selection in this system.
-The phase fraction ($\approx 1/3$) and modulation wavelength (${\approx}50$--\SI{100}{\nano\metre}) are also reproduced by the quaternary model.
+The quaternary elastic anisotropy does not correctly predict the observed $\langle 110 \rangle$ spinodal modulation direction.
+The SAED pattern in An~et~al.\ (Fig.~1(c) inset, $[001]$ zone axis) shows diffraction spots along $\langle 110 \rangle$, and the $\beta^*$ lamellae visible in the HAADF-STEM image are elongated along $\langle 110 \rangle$, identifying this as the experimental modulation direction.
+The quaternary CALPHAD model gives $A_Z^{\rm mat} = 1.52 > 1$, which predicts $\langle 100 \rangle$ modulation, inconsistent with the observed $\langle 110 \rangle$.
+The binary NbV and ternary NbHfV models ($A_Z < 1$) correctly predict $\langle 110 \rangle$, though for the wrong physical reason (dilute chemistry rather than the full quaternary matrix composition).
+Interpolating the SQS/ORB-MLIP elastic constants along a compositional path from the ternary matrix (Nb$_{70}$Hf$_{10}$V$_{20}$, $A_Z = 0.37$) to the quaternary matrix (Nb$_{30}$Hf$_{37}$Ti$_{31}$V$_{2}$, $A_Z = 1.52$) reveals that $A_Z$ crosses unity at $x_{\rm Ti} \approx 0.13$--$0.16$, identifying Ti addition as the element responsible for flipping the predicted modulation direction from $\langle 110 \rangle$ to $\langle 100 \rangle$ (Figure~\ref{fig:az_vs_ti}).
+Ti has a high $C_{44}/C'$ ratio in BCC that preferentially stiffens the relevant shear mode, driving $A_Z$ above unity as its concentration increases.
+This discrepancy may reflect the as-cast, non-equilibrium character of the experimental microstructure, where kinetics and thermal history rather than the equilibrium elastic anisotropy govern the early-stage modulation direction.
+
+Despite these discrepancies, the model correctly predicts a phase fraction of $\approx 1/3$ and a modulation wavelength of ${\approx}50$--\SI{100}{\nano\metre}, both in close agreement with the experimental observations of An~et~al.
+
+The quantitative discrepancies observed in the quaternary system point primarily to limitations of the current MLIP description.
+The SQS/ORB-MLIP elastic constants are 0~K static estimates that have not been validated against DFT or experimental measurements for the specific quaternary compositions predicted by the CALPHAD tie-line; errors in these values propagate directly into both the coherency misfit and the $A_Z$ prediction.
+Moreover, the 0~K static approximation does not capture finite-temperature lattice softening or the effect of short-range chemical order on the shear moduli, both of which are significant in multicomponent BCC alloys near a miscibility gap.
+Non-equilibrium solidification in the as-cast specimen may contribute to the Hf partitioning discrepancy, but the systematic nature of the elastic errors suggests that dedicated DFT validation of the quaternary elastic constants and an improved finite-temperature MLIP description are the most impactful paths toward quantitative agreement with experiment.
+}
+
+\begin{figure}[!h]
+    \centering
+    \includegraphics[width=0.9\textwidth]{figs/az_vs_ti.pdf}
+    \caption{%
+        Zener anisotropy $A_Z = C_{44}/C'$ from SQS/MLIP elastic constants for three MLIP
+        versions along three composition paths.
+        (a)~Binary Nb$_{50-x}$V$_{x}$: $A_Z < 1$ throughout ($\langle 110 \rangle$ favored).
+        (b)~Ternary Nb$_{50}$Hf$_{50-x}$V$_{x}$: $A_Z$ crosses unity near $x_{\rm V} \approx 0.11$.
+        (c)~Quaternary Nb$_{25}$Hf$_{25}$V$_{50-x}$Ti$_{x}$: Ti drives the crossover at
+        $x_{\rm Ti} \approx 0.13$--$0.16$, switching modulation from $\langle 110 \rangle$
+        to $\langle 100 \rangle$.
+    }
+    \label{fig:az_vs_ti}
+\end{figure}
