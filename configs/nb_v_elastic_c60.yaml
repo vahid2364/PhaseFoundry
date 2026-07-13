@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-V Binary — Elasto-Chemical Spinodal Decomposition at 500 °C
+# ─────────────────────────────────────────────────────────────────────────────
+# Isotropic elasticity + Vegard's law eigenstrain coupled to Cahn-Hilliard.
+# CALPHAD thermodynamics: PhaseForge v2 (temperature-dependent).
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_elastic_c60.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_v_elastic_c60.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_v_elastic_c60.yaml
+
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6            # domain size [m]
+  kappa:         1.0e-12           # gradient energy [J·m²/mol]
+  M:             5.0e-21           # mobility [m⁵/(J·s)]
+  c0:            0.6               # mean x_NB (independent field; x_V = 1 - x_NB)
+  noise:         0.01
+  seed:          42
+  dt:            1.0e-2
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       100000
+  save_every:    10000
+
+  elastic:
+    enabled:      true
+
+    # ── Stiffness model ───────────────────────────────────────────────────────
+    # "isotropic"  — specify G_matrix, delta, nu manually
+    # "cubic_csv"  — read C11/C12/C44 from SQS/DFT CSV (requires step 1b)
+    stiffness_model: cubic_csv
+    elastic_csv:  data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
+
+    # Endpoint compositions for interpolation (step 1b writes elastic_params.yaml)
+    # Use actual equilibrium tie-line compositions at 500°C (from free energy log)
+    # rather than Born-stability extremes — gives physically correct, smaller eps_T
+    # and a more stable elastic solver at sharp interfaces.
+    c_mat: {NB: 0.96, V: 0.04}   # Nb-rich equilibrium phase at 500°C
+    c_ppt: {NB: 0.36, V: 0.64}   # V-rich equilibrium phase at 500°C
+
+    # Hard-code eps_T to experimental XRD value (An et al. 2021: -1.63%).
+    # Step 1b rescales all α_k by (eps_T_override / eps_T_computed) so the
+    # Vegard tensor produces this misfit while C_mat and C_ppt remain unchanged.
+    # Comment out to revert to the lattice-parameter-derived value (-5.5%).
+    eps_T_override: -0.0163
+
+    # Vegard tensor Λ: α_k computed by step 1b via finite differences on the
+    # lattice-parameter interpolant, then rescaled by eps_T_override if set.
+
+    solve_every:  10               # re-solve elastic every 10 CH steps (speedup)
+    warm_start:   true
+    tol:          1.0e-5           # relax tolerance — sharp interfaces stress FFT solver
+    max_iter:     500              # more iterations for late-stage sharp interfaces
+
+    # Save elastic field snapshots to elastic_fields.npz alongside fields.npz.
+    # Layout: mu_ch (n_snaps,N,N) J/mol | mu_el (n_snaps,N,N) J/mol
+    #         stress (n_snaps,N,N,2,2) Pa | strain (n_snaps,N,N,2,2) [-]
+    save_fields:  true
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV
+  run_name:      auto

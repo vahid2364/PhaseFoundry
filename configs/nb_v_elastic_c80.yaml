@@ -1,13 +1,14 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Nb-V Binary — Elasto-Chemical Spinodal Decomposition at 500 °C
+# Nb-V Binary — Elasto-Chemical Spinodal Decomposition at 500 °C  (c0 = 0.80)
 # ─────────────────────────────────────────────────────────────────────────────
-# Isotropic elasticity + Vegard's law eigenstrain coupled to Cahn-Hilliard.
-# CALPHAD thermodynamics: PhaseForge v2 (temperature-dependent).
+# Same as nb_v_elastic_c60.yaml but with mean composition c0 = 0.50 (symmetric
+# spinodal) instead of c0 = 0.60.  Thermodynamic data and elastic_params.yaml
+# are shared with the c0=0.60 run — no need to re-run steps 1 or 1b.
 #
 # Run steps in order:
-#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_elastic.yaml
-#   python workflows/02_fit_surrogate/run.py        --config configs/nb_v_elastic.yaml
-#   python workflows/03_simulate/run.py             --config configs/nb_v_elastic.yaml
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_elastic_c60.yaml   # shared
+#   python workflows/01b_lookup_elastic/run.py      --config configs/nb_v_elastic_c60.yaml   # shared
+#   python workflows/03_simulate/run.py             --config configs/nb_v_elastic_c80.yaml
 
 system:
   name:              nb_v
@@ -29,7 +30,7 @@ simulation:
   Lx:            1.0e-6            # domain size [m]
   kappa:         1.0e-12           # gradient energy [J·m²/mol]
   M:             5.0e-21           # mobility [m⁵/(J·s)]
-  c0:            0.6               # mean x_V (in spinodal at 500 °C)
+  c0:            0.80              # mean x_NB (independent field; x_V = 1 - x_NB)
   noise:         0.01
   seed:          42
   dt:            1.0e-2
@@ -55,8 +56,8 @@ simulation:
     c_mat: {NB: 0.96, V: 0.04}   # Nb-rich equilibrium phase at 500°C
     c_ppt: {NB: 0.36, V: 0.64}   # V-rich equilibrium phase at 500°C
 
-    # Vegard's law eigenstrain: auto-computed from a_mat/a_ppt in elastic_params.yaml
-    eigenstrain_model: vegard
+    # Vegard tensor Λ: α_k computed by step 1b via finite differences on the
+    # lattice-parameter interpolant; no manual input required here.
 
     solve_every:  10               # re-solve elastic every 10 CH steps (speedup)
     warm_start:   true

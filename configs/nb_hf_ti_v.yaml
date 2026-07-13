@@ -31,7 +31,7 @@ simulation:
     - [0.0,     0.0,     5.0e-21]
 
   # Close to Nb-V corner: x_NB=0.50, x_HF=0.05, x_TI=0.05, x_V=0.40
-  c0:            [0.50, 0.05, 0.05]
+  c0:            [0.50, 0.05, 0.05]  # [x_NB, x_HF, x_TI] (independent fields; x_V = 1 - sum)
 
   noise:         0.01
   seed:          42

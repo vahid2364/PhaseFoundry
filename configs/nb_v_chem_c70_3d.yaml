@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-V Binary — Chemical-Only Spinodal Decomposition at 500 °C  (c0 = 0.70)
+# ─────────────────────────────────────────────────────────────────────────────
+# No elastic coupling. Thermodynamic data shared with other NbV v2 runs.
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_chem_c70_3d.yaml  # shared
+#   python workflows/03_simulate/run.py             --config configs/nb_v_chem_c70_3d.yaml
+
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    3
+  N:             128
+  Lx:            1.0e-6
+  kappa:         1.0e-12
+  M:             5.0e-21
+  c0:            0.70              # mean x_NB (independent field; x_V = 1 - x_NB)
+  noise:         0.01
+  seed:          42
+  dt:            null                   # auto stable dt
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       20000
+  save_every:    2500
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV
+  run_name:      auto

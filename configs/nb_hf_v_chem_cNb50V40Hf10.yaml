@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-V Ternary — Chemical-Only Spinodal Decomposition at 500 °C
+# Composition: x_NB = 0.50, x_HF = 0.05, x_V = 0.45
+# ─────────────────────────────────────────────────────────────────────────────
+# No elastic coupling. Same kinetic and numerical parameters as binary NbV runs.
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_v_chem_c50Nb05Hf.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_v_chem_c50Nb05Hf.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_v_chem_c50Nb05Hf.yaml
+
+system:
+  name:              nb_hf_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]        # V is reference; NB and HF are independent
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]                  # independent element 1
+    HF: [0.001, 0.999]                  # independent element 2
+  n_points:          20                 # 20×20 grid → ~210 valid simplex points
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  # Gradient energy: one κ per independent field [J·m²/mol]
+  #   kappa[0] → x_NB field
+  #   kappa[1] → x_HF field
+  # κ_HF scaled to match binary κ_NB; Hf diffuses slowly so its interface
+  # width is set by its own κ/|H_HF| ratio.
+  kappa:         [1.0e-12, 7.0e-12]
+
+  # Mobility matrix 2×2 [m⁵/(J·s)]
+  # M_HF ~100× smaller than M_NB: Hf is larger and diffuses slower at 500 °C.
+  M:
+    - [5.0e-21, 0.0    ]              # M_NbNb, M_NbHf
+    - [0.0,     5.0e-23]              # M_HfNb, M_HfHf
+
+  # Mean composition: x_NB = 0.50, x_HF = 0.05 → x_V = 0.45
+  c0:            [0.50, 0.10]         # [x_NB, x_HF] (independent fields; x_V = 1 - x_NB - x_HF)
+
+  noise:         0.01
+  seed:          42
+  dt:            1.0e-2
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       600000
+  save_every:    100000
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  run_name:      auto

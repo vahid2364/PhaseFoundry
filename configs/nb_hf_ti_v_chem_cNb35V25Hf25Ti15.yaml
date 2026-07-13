@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-Ti-V Quaternary — Chemical-Only Spinodal Decomposition at 500 °C
+# Composition: x_NB = 0.45, x_HF = 0.25, x_TI = 0.05, x_V = 0.25
+# ─────────────────────────────────────────────────────────────────────────────
+# No elastic coupling. Same kinetic and numerical parameters as binary NbV runs.
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_ti_v_chem_cNb45V25Hf25Ti5.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_ti_v_chem_cNb45V25Hf25Ti5.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_ti_v_chem_cNb45V25Hf25Ti5.yaml
+
+system:
+  name:              nb_hf_ti_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, TI, V]       # V is reference; NB, HF, TI are independent
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+    HF: [0.001, 0.999]
+    TI: [0.001, 0.999]
+  n_points:          10                    # 10×10×10 grid → ~220 valid simplex points
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  # Gradient energy: one κ per independent field [J·m²/mol]
+  #   kappa[0] → x_NB,  kappa[1] → x_HF,  kappa[2] → x_TI
+  # κ_HF scaled 7× relative to κ_NB (|H_HF|/|H_NB| ≈ 7.4 in Nb-Hf-V at 500°C).
+  # κ_TI matched to κ_NB as a first estimate (Ti diffuses comparably to Nb in BCC).
+  kappa:         [1.0e-12, 7.0e-12, 1.0e-12]
+
+  # Mobility matrix 3×3 [m⁵/(J·s)] — diagonal only (no cross-diffusion)
+  # M_HF ~100× smaller than M_NB/M_TI: Hf is larger and diffuses slower at 500 °C.
+  M:
+    - [5.0e-21, 0.0,     0.0    ]         # M_NbNb, M_NbHf, M_NbTi
+    - [0.0,     5.0e-23, 0.0    ]         # M_HfNb, M_HfHf, M_HfTi
+    - [0.0,     0.0,     5.0e-21]         # M_TiNb, M_TiHf, M_TiTi
+
+  # Mean composition: x_NB = 0.45, x_HF = 0.25, x_TI = 0.05 → x_V = 0.25
+  c0:            [0.35, 0.25, 0.15]       # [x_NB, x_HF, x_TI] (independent fields; x_V = 1 - sum)
+
+  noise:         0.01
+  seed:          42
+  dt:            1.0e-1
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       600000
+  save_every:    50000
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  run_name:      auto

@@ -37,6 +37,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
 from calphad_pf.phasefield.solver import solve_cahn_hilliard
+from calphad_pf.elasticity import build_vegard_tensor
 
 
 # ── synthetic double-well "interpolant" (mimics GmInterpolant's API) ──────────
@@ -96,13 +97,15 @@ def _common_kwargs(N=32, n_steps=20, save_every=10, **overrides):
 # ── test 1: mass conservation with elastic coupling on ───────────────────────
 
 def test_mass_conservation_with_elastic_coupling():
+    Lambda = build_vegard_tensor({"A": 0.087}, ["A"], ndim=2)
     result = solve_cahn_hilliard(
         **_common_kwargs(
             elastic_enabled=True,
             elastic_G_matrix=1.0,
             elastic_delta=0.5,
             elastic_nu=0.3,
-            elastic_eps_T=0.01,
+            elastic_Lambda=Lambda,
+            elastic_N_V=1.0,
             elastic_solve_every=1,
             elastic_max_iter=200,
         )
@@ -132,9 +135,9 @@ def test_off_switch_matches_pre_existing_path():
 
 def test_degenerate_elastic_coupling_equals_off():
     """
-    With delta=1 (no modulus mismatch) and eps_T=0 (no eigenstrain), mu_el is
-    identically zero everywhere (test_elastic_potential.test_trivial_case),
-    so the CH evolution should match the elastic_enabled=False run closely.
+    With delta=1 (no modulus mismatch) and Lambda=0 (no eigenstrain), mu_el is
+    identically zero everywhere, so the CH evolution should match the
+    elastic_enabled=False run closely.
 
     Note: not bit-identical, because the elastic solve still runs (and its
     own internal arithmetic introduces O(1e-16) floating point noise into
@@ -144,11 +147,13 @@ def test_degenerate_elastic_coupling_equals_off():
     kwargs = _common_kwargs(n_steps=30, save_every=15)
 
     result_off = solve_cahn_hilliard(elastic_enabled=False, **kwargs)
+    Lambda_zero = np.zeros((1, 2, 2))
     result_degenerate = solve_cahn_hilliard(
         elastic_enabled=True,
         elastic_G_matrix=1.0,
         elastic_delta=1.0,     # no modulus mismatch
-        elastic_eps_T=0.0,     # no eigenstrain
+        elastic_Lambda=Lambda_zero,  # zero eigenstrain → mu_el = 0
+        elastic_N_V=1.0,
         elastic_max_iter=200,
         **kwargs,
     )

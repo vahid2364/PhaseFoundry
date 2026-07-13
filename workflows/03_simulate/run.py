@@ -52,7 +52,10 @@ from calphad_pf.thermodynamics.storage import load_table
 from calphad_pf.thermodynamics.interpolant import build_interpolant
 from calphad_pf.phasefield.solver import solve_cahn_hilliard, SimResult
 from calphad_pf.phasefield.visualize import save_slices_2d, save_pyvista_3d
-from calphad_pf.elasticity import build_cubic_stiffness, build_isotropic_stiffness
+from calphad_pf.elasticity import (
+    build_cubic_stiffness, build_isotropic_stiffness, build_vegard_tensor,
+    build_eigenstrain_model,
+)
 import numpy as np
 
 
@@ -137,8 +140,10 @@ def run(cfg: dict) -> SimResult:
         # ── stiffness tensors ─────────────────────────────────────────────────
         if stiffness_model == "cubic_csv":
             # Load pre-computed elastic_params.yaml written by step 1b
-            results_dir  = Path(cfg["output"]["results_dir"])
-            params_path  = results_dir / "elastic_params.yaml"
+            T_folder     = f"{sim['temperature_C']}C"
+            params_path  = (Path(cfg["output"]["results_dir"])
+                            / T_folder / "kinetics" / cfg["output"]["run_name"]
+                            / "elastic_params.yaml")
             if not params_path.exists():
                 raise FileNotFoundError(
                     f"elastic_params.yaml not found at {params_path}.\n"
@@ -158,10 +163,6 @@ def run(cfg: dict) -> SimResult:
                   f"C44={cm['C44_GPa']:.1f} GPa  A_Z={cm['A_Z']:.3f}")
             print(f"    C_ppt: C11={cp['C11_GPa']:.1f}  C12={cp['C12_GPa']:.1f}  "
                   f"C44={cp['C44_GPa']:.1f} GPa  A_Z={cp['A_Z']:.3f}")
-            # Vegard lattice params come from elastic_params.yaml
-            a_matrix = ep["eigenstrain"]["a_matrix_A"]
-            a_ppt    = ep["eigenstrain"]["a_ppt_A"]
-            eigenstrain_model = "vegard"   # always vegard when using CSV
         else:
             # isotropic fallback — build from G_matrix / delta / nu
             G_mat  = float(el_cfg["G_matrix"])
@@ -169,33 +170,70 @@ def run(cfg: dict) -> SimResult:
             nu_val = float(el_cfg.get("nu", 0.3))
             C_mat_tens = build_isotropic_stiffness(G_mat, nu_val)
             C_ppt_tens = build_isotropic_stiffness(delta * G_mat, nu_val)
-            a_matrix = float(el_cfg.get("a_matrix", 0.0))
-            a_ppt    = float(el_cfg.get("a_ppt",    0.0))
+            ep = {}   # no elastic_params.yaml in isotropic mode
 
-        # ── eigenstrain and unit conversion ───────────────────────────────────
-        if eigenstrain_model == "vegard":
-            eps_T  = (a_ppt - a_matrix) / a_matrix
-            scheme = "linear"
-            c0_scalar = float(np.mean(np.atleast_1d(sim["c0"])))
-            a_mean_m  = ((1.0 - c0_scalar) * a_matrix + c0_scalar * a_ppt) * 1e-10
+        # ── Vegard tensor Λ and unit conversion ──────────────────────────────
+        ind_elements = [e for e in elements if e != ref_el]
+        es_data = ep.get("eigenstrain", {}) if stiffness_model == "cubic_csv" else {}
+        if stiffness_model == "cubic_csv" and "alpha" in es_data:
+            # Tensorial Vegard: α_k from step 1b finite-difference
+            alpha_dict = {k.upper(): v for k, v in es_data["alpha"].items()}
+            a_ref_A    = float(es_data.get("a_ref_A", es_data.get("a_mat_A", 3.3)))
             N_A = 6.02214076e23
-            V_m = a_mean_m**3 * N_A / 2.0          # BCC: 2 atoms/cell
+            a_ref_m = a_ref_A * 1e-10
+            V_m = a_ref_m**3 * N_A / 2.0          # BCC: 2 atoms/cell
             N_V = float(el_cfg.get("N_V", 1.0 / V_m))
-            print(f"  Vegard eigenstrain: a_matrix={a_matrix:.4f} Å, "
-                  f"a_ppt={a_ppt:.4f} Å → eps_T={eps_T:.5f}")
-            print(f"  Molar volume V_m = {V_m:.4e} m³/mol  →  N_V = {N_V:.4e} mol/m³")
+            Lambda = build_vegard_tensor(alpha_dict, ind_elements, ndim=ndim)
+            print(f"  Vegard tensor Λ (tensorial):")
+            for k, el in enumerate(ind_elements):
+                print(f"    α_{el} = {alpha_dict[el.upper()]:.6f}  "
+                      f"→  Λ[{k}] = α × I")
+            print(f"  a_ref = {a_ref_A:.4f} Å  "
+                  f"→  V_m = {V_m:.4e} m³/mol  N_V = {N_V:.4e} mol/m³")
         else:
-            eps_T  = float(el_cfg.get("eps_T",  0.0))
-            scheme = el_cfg.get("scheme", "cubic")
-            N_V    = float(el_cfg.get("N_V", 1.0))
+            # Legacy scalar Vegard fallback (binary only)
+            if stiffness_model == "cubic_csv":
+                a_mat_A = float(es_data.get("a_mat_A", es_data.get("a_matrix_A", 3.3)))
+                a_ppt_A = float(es_data.get("a_ppt_A", 3.3))
+                alpha_dict = {ind_elements[0].upper():
+                              (a_ppt_A - a_mat_A) / a_mat_A}
+                a_ref_A = a_mat_A
+            else:
+                a_mat_A = float(el_cfg.get("a_matrix", 0.0))
+                a_ppt_A = float(el_cfg.get("a_ppt", 0.0))
+                alpha_dict = {ind_elements[0].upper():
+                              (a_ppt_A - a_mat_A) / a_mat_A}
+                a_ref_A = a_mat_A
+            N_A = 6.02214076e23
+            a_ref_m = a_ref_A * 1e-10
+            V_m = a_ref_m**3 * N_A / 2.0
+            N_V = float(el_cfg.get("N_V", 1.0 / V_m))
+            Lambda = build_vegard_tensor(alpha_dict, ind_elements, ndim=ndim)
+            print(f"  Vegard fallback (scalar): α_{ind_elements[0]} = "
+                  f"{list(alpha_dict.values())[0]:.6f}")
+
+        # Build eigenstrain model (fixed_vegard default; local_vegard optional)
+        model_name = el_cfg.get("eigenstrain_model", "fixed_vegard")
+        _model = build_eigenstrain_model(
+            model_name    = model_name,
+            el_cfg        = el_cfg,
+            elastic_params = ep if stiffness_model == "cubic_csv" else {},
+            ind_elements  = ind_elements,
+            c0            = c0_cfg,
+            ndim          = ndim,
+            Lambda        = Lambda,
+            C_mat         = C_mat_tens,
+            C_ppt         = C_ppt_tens,
+            all_elements  = [e.upper() for e in elements],
+        )
 
         elastic_kwargs = dict(
             elastic_enabled      = True,
             elastic_C_mat        = C_mat_tens,
             elastic_C_ppt        = C_ppt_tens,
-            elastic_eps_T        = eps_T,
-            elastic_scheme       = scheme,
+            elastic_Lambda       = Lambda,
             elastic_N_V          = N_V,
+            elastic_model        = _model,
             elastic_solve_every  = int  (el_cfg.get("solve_every", 1)),
             elastic_warm_start   = bool (el_cfg.get("warm_start",  True)),
             elastic_tol          = float(el_cfg.get("tol",         1e-8)),
@@ -203,25 +241,37 @@ def run(cfg: dict) -> SimResult:
             elastic_save_fields  = bool (el_cfg.get("save_fields", False)),
         )
 
+    incremental_npz = bool(sim.get("incremental_npz", False))
+    npz_meta = dict(
+        T_C      = np.float32(sim["temperature_C"]),
+        T_K      = np.float32(T_K),
+        N        = np.int32(sim["N"]),
+        ndim     = np.int32(ndim),
+        Lx       = np.float64(sim["Lx"]),
+        elements = np.array([e for e in elements if e != ref_el]),
+    )
+
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         result = solve_cahn_hilliard(
-            interpolant = interp,
-            M           = M_cfg,
-            kappa       = kappa_cfg,
-            c0          = c0_cfg,
-            N           = sim["N"],
-            Lx          = sim["Lx"],
-            noise       = sim["noise"],
-            seed        = sim["seed"],
-            dt          = dt,
-            n_steps     = sim["n_steps"],
-            save_every  = sim["save_every"],
-            output_dir  = output_dir,
-            save_frames = True,
-            ndim        = ndim,
-            use_gpu     = use_gpu,
-            adaptive_dt = adaptive_dt,
+            interpolant     = interp,
+            M               = M_cfg,
+            kappa           = kappa_cfg,
+            c0              = c0_cfg,
+            N               = sim["N"],
+            Lx              = sim["Lx"],
+            noise           = sim["noise"],
+            seed            = sim["seed"],
+            dt              = dt,
+            n_steps         = sim["n_steps"],
+            save_every      = sim["save_every"],
+            output_dir      = output_dir,
+            save_frames     = True,
+            ndim            = ndim,
+            use_gpu         = use_gpu,
+            adaptive_dt     = adaptive_dt,
+            incremental_npz = incremental_npz,
+            npz_meta        = npz_meta,
             **elastic_kwargs,
         )
 
@@ -253,7 +303,17 @@ def run(cfg: dict) -> SimResult:
     save_dict["elements"]    = np.array(ind_elements)
 
     npz_path = output_dir / "fields.npz"
-    np.savez_compressed(npz_path, **save_dict)
+    checkpoint = output_dir / "fields_checkpoint.npz"
+    if incremental_npz and checkpoint.exists():
+        # checkpoint already has the complete history written during the run;
+        # update _final fields to the last composition and rename
+        ckpt = dict(np.load(checkpoint, allow_pickle=True))
+        for i, el in enumerate(ind_elements):
+            ckpt[f"x_{el.lower()}_final"] = result.compositions[i].astype(np.float32)
+        np.savez_compressed(npz_path, **ckpt)
+        checkpoint.unlink()
+    else:
+        np.savez_compressed(npz_path, **save_dict)
     size_mb = npz_path.stat().st_size / 1e6
     print(f"  Raw fields saved → fields.npz  ({size_mb:.1f} MB, "
           f"{len(result.time_history)} snapshots)")
