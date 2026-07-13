@@ -113,11 +113,26 @@ python workflows/01_generate_thermo_data/run.py --config configs/nb_v_chem_c50.y
 # Step 1b: look up elastic constants (elasto-chemical runs only)
 python workflows/01b_lookup_elastic/run.py --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
 
-# Step 2: fit surrogate interpolant
+# Step 1c: compute CALPHAD tie-line endpoints (elasto-chemical runs only)
+python workflows/01c_calphad_tieline/run.py --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+
+# Step 2: fit surrogate interpolant + spinodal boundaries
 python workflows/02_fit_surrogate/run.py --config configs/nb_v_chem_c50.yaml
 
 # Step 3: run Cahn–Hilliard simulation
 python workflows/03_simulate/run.py --config configs/nb_v_chem_c50.yaml
+
+# Step 4: post-process simulation outputs
+python workflows/04_postprocess/run.py --config configs/nb_v_chem_c50.yaml
+
+# Step 5: validate thermodynamic tables and derivatives (optional)
+python workflows/05_validate/run.py --config configs/nb_v_chem_c50.yaml
+
+# Step 6: compare chemical-only vs. elasto-chemical results
+python workflows/06_compare/run.py --config configs/nb_v_elastic_c50.yaml
+
+# Or run the full pipeline at once
+python workflows/run_all.py --config configs/nb_v_chem_c50.yaml
 ```
 
 ---
