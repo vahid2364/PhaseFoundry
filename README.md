@@ -139,36 +139,197 @@ python workflows/run_all.py --config configs/nb_v_chem_c50.yaml
 
 ## Configuration Reference
 
+All runs are configured by a single YAML file. Four modes are supported; examples below use the canonical configs shipped with the repository.
+
+---
+
+### Mode 1 — Binary, Chemical-Only, 2D
+*Example: `configs/nb_v_chem_c50.yaml`*
+
+```yaml
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2.tdb
+  elements:          [NB, V]           # V is the reference element
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200               # number of grid points per axis
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128                   # grid size (N × N)
+  Lx:            1.0e-6               # domain side length [m]
+  kappa:         1.0e-12              # gradient energy coefficient [J·m²/mol]
+  M:             5.0e-21              # scalar mobility [m⁵/(J·s)]
+  c0:            0.50                 # mean x_NB (x_V = 1 − x_NB)
+  noise:         0.01                 # amplitude of initial composition noise
+  seed:          42
+  dt:            1.0e-2               # time step [s]
+  derivative_method: jansson          # jansson | finite_diff | hybrid
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       100000
+  save_every:    10000
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbV
+  results_dir: results/HfNbTiV_BCC_PhaseForge_v2/NbV
+  run_name:    auto                   # auto = timestamp-based
+```
+
+---
+
+### Mode 2 — Binary, Chemical-Only, 3D
+*Example: `configs/nb_v_chem_c50_3d.yaml`*
+
+Same as Mode 1 with these changes:
+
+```yaml
+simulation:
+  dimensions:  3                      # 3D simulation (N × N × N)
+  dt:          null                   # null = solver computes stable dt automatically
+  n_steps:     10001
+  save_every:  2000
+```
+
+---
+
+### Mode 3 — Ternary, Elasto-Chemical, 2D
+*Example: `configs/nb_hf_v_elastic_cNb50V25Hf25.yaml`*
+
+```yaml
+system:
+  name:              nb_hf_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]      # V is reference; NB and HF are independent fields
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+    HF: [0.001, 0.999]
+  n_points:          20               # 20×20 grid → ~210 valid simplex points
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 7.0e-12]  # [κ_NB, κ_HF]  [J·m²/mol]
+
+  M:                                  # 2×2 mobility matrix [m⁵/(J·s)]
+    - [5.0e-21, 0.0    ]             # M_HF ~100× smaller: Hf diffuses slower at 500 °C
+    - [0.0,     5.0e-23]
+
+  c0:            [0.50, 0.25]         # [x_NB, x_HF]  (x_V = 1 − x_NB − x_HF)
+  noise:         0.01
+  seed:          42
+  dt:            0.05
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       600000
+  save_every:    100000
+  incremental_npz: true
+
+  elastic:
+    enabled:           true
+    stiffness_model:   cubic_csv        # reads C_ij from CSV, interpolates to local composition
+    eigenstrain_model: local_vegard     # Vegard eigenstrain: ε* = Λ · δc
+    elastic_csv:       data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
+
+    # Tie-line endpoint compositions (from CALPHAD equilibrium at 500 °C via step 1b)
+    c_mat: {NB: 0.70, HF: 0.10, V: 0.20}   # matrix (Nb-rich)
+    c_ppt: {NB: 0.15, HF: 0.35, V: 0.50}   # precipitate (V/Hf-rich)
+
+    solve_every: 10        # re-solve elasticity every N time steps
+    warm_start:  true      # initialize elastic solver from previous solution
+    tol:         1.0e-5    # convergence tolerance for iterative solver
+    max_iter:    500
+
+    save_fields: true      # save stress/strain fields to NPZ
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  results_dir: results/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  run_name:    auto
+```
+
+---
+
+### Mode 4 — Quaternary, Elasto-Chemical, 2D
+*Example: `configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml`*
+
 ```yaml
 system:
   name:              nb_hf_ti_v
   db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
-  elements:          [NB, HF, TI, V]
+  elements:          [NB, HF, TI, V]  # V is reference; NB, HF, TI are independent fields
   phase:             BCC_A2
   reference_element: V
 
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+    HF: [0.001, 0.999]
+    TI: [0.001, 0.999]
+  n_points:          10               # 10×10×10 grid → ~220 valid simplex points
+  temperatures_C:    [500]
+
 simulation:
   temperature_C: 500
+  dimensions:    2
   N:             128
   Lx:            1.0e-6
-  kappa:         [1.0e-12, 7.0e-12, 1.0e-12]   # per component [J·m²/mol]
-  M:                                              # mobility matrix [m⁵/(J·s)]
-    - [5.0e-21, 0.0,     0.0    ]
-    - [0.0,     5.0e-23, 0.0    ]
-    - [0.0,     0.0,     5.0e-21]
-  c0:            [0.25, 0.25, 0.25]
+
+  kappa:         [1.0e-12, 7.0e-12, 1.0e-12]  # [κ_NB, κ_HF, κ_TI]  [J·m²/mol]
+
+  M:                                            # 3×3 mobility matrix [m⁵/(J·s)]
+    - [5.0e-21, 0.0,     0.0    ]              # M_NbNb, M_NbHf, M_NbTi
+    - [0.0,     5.0e-23, 0.0    ]              # M_HfNb, M_HfHf, M_HfTi
+    - [0.0,     0.0,     5.0e-21]              # M_TiNb, M_TiHf, M_TiTi
+
+  c0:            [0.25, 0.25, 0.25]            # [x_NB, x_HF, x_TI]  (x_V = 1 − sum)
+  noise:         0.01
+  seed:          42
   dt:            5.0e-1
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
   n_steps:       3000000
   save_every:    50000
-  derivative_method: jansson
-  incremental_npz:   true
+  incremental_npz: true
 
   elastic:
-    enabled:       true
-    stiffness_model: cubic_csv
-    elastic_csv:   data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
-    c_mat: {NB: 0.30, HF: 0.23, TI: 0.30, V: 0.16}
-    c_ppt: {NB: 0.14, HF: 0.28, TI: 0.16, V: 0.42}
+    enabled:           true
+    stiffness_model:   cubic_csv
+    eigenstrain_model: local_vegard
+    elastic_csv:       data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
+
+    # Endpoint compositions from An et al. 2021 XRD (lever rule at f_ppt = 1/3)
+    c_mat: {NB: 0.30, HF: 0.23, TI: 0.30, V: 0.16}   # β  matrix  (Nb/Ti-rich),  A_Z ≈ 1.17
+    c_ppt: {NB: 0.14, HF: 0.28, TI: 0.16, V: 0.42}   # β* precipitate (Hf/V-rich), A_Z ≈ 1.12
+
+    solve_every: 10
+    warm_start:  true
+    tol:         1.0e-5
+    max_iter:    500
+
+    save_fields: true
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  results_dir: results/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  run_name:    auto
 ```
 
 ---
