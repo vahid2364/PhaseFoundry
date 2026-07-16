@@ -32,13 +32,14 @@ def az_along_path(rbf, c_tern, c_quat, n=300):
     AZ   = C44 / ((C11 - C12) / 2)
     return comp[:, 3], AZ   # xTi, AZ
 
-# Path A: Nb25Hf25V(50-x)Ti(x), x from 0 to 0.50  [xHf, xNb, xV, xTi]
-xti_range  = np.linspace(0, 0.50, 300)
+# Path A: Nb25Hf25V(x)Ti(50-x), x_V from 0 to 0.50  [xHf, xNb, xV, xTi]
+xti_range  = np.linspace(0, 0.50, 300)          # kept for compatibility
+xv_quat    = np.linspace(0, 0.50, 300)           # x_V increases, x_Ti decreases
 comps_A    = np.column_stack([
     np.full(300, 0.25),
     np.full(300, 0.25),
-    0.50 - xti_range,
-    xti_range,
+    xv_quat,
+    0.50 - xv_quat,
 ])
 
 # Path B: Nb50Hf(50-x)Vx, x from 0 to 0.50  [xHf, xNb, xV, xTi]
@@ -85,7 +86,7 @@ CURVES = [
     # (comps, x_param, label, color, ls, is_binary)
     (comps_C, xv_bin,     r'Nb$_{50-x}$V$_{x}$  ($x_{\rm V}$)',             '#2ca02c', '--',  True),
     (comps_B, xv_range,   r'Nb$_{50}$Hf$_{50-x}$V$_{x}$  ($x_{\rm V}$)',   '#d62728', '-.',  False),
-    (comps_A, xti_range,  r'Nb$_{25}$Hf$_{25}$V$_{50-x}$Ti$_{x}$  ($x_{\rm Ti}$)', '#1f77b4', '-', False),
+    (comps_A, xv_quat,    r'Nb$_{25}$Hf$_{25}$V$_{x}$Ti$_{50-x}$  ($x_{\rm V}$)',  '#1f77b4', '-', False),
 ]
 
 fig, ax = plt.subplots(figsize=(5.5, 4.0))
@@ -116,7 +117,7 @@ ax.text(0.99, 1.02, r'$\langle 100\rangle$ favored', fontsize=7.5,
 ax.text(0.99, 0.97, r'$\langle 110\rangle$ favored', fontsize=7.5,
         transform=ax.get_yaxis_transform(), va='top', ha='right')
 
-ax.set_xlabel(r'$x_{\rm V}$ or $x_{\rm Ti}$ (mole fraction)', fontsize=9)
+ax.set_xlabel(r'$x_{\rm V}$ (mole fraction)', fontsize=9)
 ax.set_ylabel(r'Zener anisotropy $A_Z = C_{44}/C\,^{\prime}$', fontsize=9)
 ax.set_xlim(-0.01, 0.51)
 ax.set_ylim(0.2, 2.2)
