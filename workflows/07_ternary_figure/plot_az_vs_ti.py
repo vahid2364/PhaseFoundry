@@ -130,8 +130,6 @@ for ax, (comps, x_range, xlabel, panel, xlim, ylim) in zip(axes, panels):
 
 for ax in axes:
     ax.set_ylabel(r'Zener anisotropy $A_Z$')
-axes[2].annotate('ORB-v2', xy=(0.02, 0.60), xycoords='axes fraction',
-                 fontsize=7.5, color='#1f77b4')
 
 fig.tight_layout()
 
