@@ -61,20 +61,10 @@ comps_C    = np.column_stack([
 ])
 
 VERSIONS = {
-    'MLIP-v1': {
-        'csv':   ROOT / 'data/HfNbTiV_BCC_PhaseForge_v1_Tindep/sqs_elastic_constants_HfNbVTi_v1.csv',
-        'color': '#d62728',
-        'ls':    '--',
-    },
     'ORB-v2': {
         'csv':   ROOT / 'data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv',
         'color': '#1f77b4',
         'ls':    '-',
-    },
-    'GRACE-2L': {
-        'csv':   ROOT / 'data/HfNbTiV_BCC_PhaseForge_v3/sqs_elastic_constants_HfNbVTi-GRACE-2L-SMAX-OMAT-large.csv',
-        'color': '#2ca02c',
-        'ls':    '-.',
     },
 }
 
@@ -140,7 +130,8 @@ for ax, (comps, x_range, xlabel, panel, xlim, ylim) in zip(axes, panels):
 
 for ax in axes:
     ax.set_ylabel(r'Zener anisotropy $A_Z$')
-axes[2].legend(fontsize=7.5, loc='upper left', frameon=False)
+axes[2].annotate('ORB-v2', xy=(0.02, 0.60), xycoords='axes fraction',
+                 fontsize=7.5, color='#1f77b4')
 
 fig.tight_layout()
 
