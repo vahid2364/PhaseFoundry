@@ -30,9 +30,9 @@ import matplotlib.pyplot as plt
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
-from calphad_pf.thermodynamics.storage import load_table
-from calphad_pf.thermodynamics.interpolant import build_interpolant
+from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.thermodynamics.storage import load_table
+from phasefoundry.thermodynamics.interpolant import build_interpolant
 
 
 def _glob_tables(cfg: dict) -> list[Path]:
@@ -93,12 +93,12 @@ def run(cfg: dict) -> None:
 # ── binary path ───────────────────────────────────────────────────────────────
 
 def _run_binary(cfg, paths, results_dir, ref_el, sim_T_C):
-    from calphad_pf.thermodynamics.fitting import build_gm_spline_surrogate
-    from calphad_pf.thermodynamics.spinodal import (
+    from phasefoundry.thermodynamics.fitting import build_gm_spline_surrogate
+    from phasefoundry.thermodynamics.spinodal import (
         spinodal_boundary_binary, binodal_boundary_binary,
         plot_spinodal, plot_phase_diagram,
     )
-    from calphad_pf.thermodynamics.plot import plot_free_energy_vs_composition
+    from phasefoundry.thermodynamics.plot import plot_free_energy_vs_composition
 
     ind_el = [e for e in cfg["system"]["elements"] if e != ref_el][0]
     x_el   = ref_el.capitalize()

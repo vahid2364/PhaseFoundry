@@ -41,7 +41,7 @@ import pycalphad  # noqa: F401 — must be imported first
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
 
 STEP_SCRIPTS = {
     1: _ROOT / "workflows" / "01_generate_thermo_data" / "run.py",

@@ -57,9 +57,9 @@ def _get_quaternary_field() -> tuple[np.ndarray, float]:
         d = np.load(_CACHE_QUA)
         return d["jansson_nb"], float(d["t_jansson"])
 
-    from calphad_pf.thermodynamics.storage import load_table
-    from calphad_pf.thermodynamics.interpolant import build_interpolant
-    from calphad_pf.phasefield.solver import solve_cahn_hilliard, stable_dt
+    from phasefoundry.thermodynamics.storage import load_table
+    from phasefoundry.thermodynamics.interpolant import build_interpolant
+    from phasefoundry.phasefield.solver import solve_cahn_hilliard, stable_dt
 
     ELEMENTS  = ["NB", "HF", "TI", "V"]
     REF_EL    = "V"

@@ -39,7 +39,7 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.config import load_config, apply_overrides, resolve_paths
+from phasefoundry.config import load_config, apply_overrides, resolve_paths
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def make_comparison_figure(
     tdb_tag       TDB version tag used in run_name
     out_dir       Output directory (defaults to results_dir/T_CC/comparison/)
     """
-    from calphad_pf.config import _sci_tag   # reuse compact tag helper
+    from phasefoundry.config import _sci_tag   # reuse compact tag helper
 
     def _run_name(c0: float, elastic: bool) -> str:
         c_pct   = round(c0 * 100)

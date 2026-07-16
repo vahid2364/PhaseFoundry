@@ -1,5 +1,5 @@
 """
-calphad_pf.elasticity — FFT-based elasticity solver for periodic microstructures
+phasefoundry.elasticity — FFT-based elasticity solver for periodic microstructures
 ==================================================================================
 
 Implements the displacement-formulation iterative scheme from:

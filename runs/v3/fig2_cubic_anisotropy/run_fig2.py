@@ -40,10 +40,10 @@ from matplotlib.gridspec import GridSpec
 _ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from calphad_pf.elasticity import (
+from phasefoundry.elasticity import (
     solve_elasticity, build_cubic_stiffness,
 )
-from calphad_pf.elasticity.elastic_potential import compute_mu_el_from_result
+from phasefoundry.elasticity.elastic_potential import compute_mu_el_from_result
 
 OUT_DIR = Path(__file__).parent
 

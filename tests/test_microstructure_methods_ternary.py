@@ -34,9 +34,9 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable  # noqa: F401
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.thermodynamics.storage import load_table
-from calphad_pf.thermodynamics.interpolant import build_interpolant
-from calphad_pf.phasefield.solver import solve_cahn_hilliard
+from phasefoundry.thermodynamics.storage import load_table
+from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.phasefield.solver import solve_cahn_hilliard
 
 # ── style ─────────────────────────────────────────────────────────────────────
 
@@ -85,7 +85,7 @@ _CACHE = _ROOT / "tests" / "_cache_microstructure_nbhfv.npz"
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _run_simulations() -> tuple[dict[str, np.ndarray], dict[str, float]]:
-    from calphad_pf.phasefield.solver import stable_dt
+    from phasefoundry.phasefield.solver import stable_dt
     import numpy as np
 
     table_dir = _ROOT / "data" / "nb_hf_v"

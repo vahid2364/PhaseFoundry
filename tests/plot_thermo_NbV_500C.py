@@ -25,7 +25,7 @@ import matplotlib.ticker as ticker
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "src"))
 
-from calphad_pf.thermodynamics.storage import load_table
+from phasefoundry.thermodynamics.storage import load_table
 
 # ── load data ─────────────────────────────────────────────────────────────────
 TDB_STEM = "HfNbTiV_BCC_PhaseForge_v3"

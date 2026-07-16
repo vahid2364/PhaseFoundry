@@ -32,8 +32,8 @@ from matplotlib.lines import Line2D
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.thermodynamics.storage import load_table
-from calphad_pf.thermodynamics.interpolant import build_interpolant
+from phasefoundry.thermodynamics.storage import load_table
+from phasefoundry.thermodynamics.interpolant import build_interpolant
 
 
 # ── style ─────────────────────────────────────────────────────────────────────

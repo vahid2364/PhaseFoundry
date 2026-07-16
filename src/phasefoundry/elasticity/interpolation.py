@@ -1,5 +1,5 @@
 """
-calphad_pf.elasticity.interpolation
+phasefoundry.elasticity.interpolation
 ====================================
 Composition-interpolation functions for the elastically inhomogeneous
 Cahn-Hilliard model (Gururajan & Abinandanan, 2007).

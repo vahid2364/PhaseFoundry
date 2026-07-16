@@ -38,10 +38,10 @@ import numpy as np
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
 
-from calphad_pf.thermodynamics.storage     import load_table
-from calphad_pf.thermodynamics.interpolant import build_interpolant
-from calphad_pf.phasefield.solver          import solve_cahn_hilliard, stable_dt
-from calphad_pf.phasefield.visualize       import save_slices_2d, save_pyvista_3d
+from phasefoundry.thermodynamics.storage     import load_table
+from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.phasefield.solver          import solve_cahn_hilliard, stable_dt
+from phasefoundry.phasefield.visualize       import save_slices_2d, save_pyvista_3d
 
 
 # ── parameters ────────────────────────────────────────────────────────────────

@@ -438,27 +438,27 @@ Table~\ref{tab:elastic_comparison} compares the full set of model predictions ag
 Hf partitioning is reversed between the CALPHAD model and experiment.
 An~et~al.\ demonstrate via HAADF-STEM Z-contrast that Hf ($Z = 72$, the heaviest constituent) enriches the precipitate phase ($\beta^*$), co-segregating with V.
 The ORB-MLIP CALPHAD model assigns Hf to the matrix alongside Nb and Ti (\Cref{tab:quaternary_tieline}).
-The most probable explanation is non-equilibrium partitioning during rapid solidification: the experimental alloy was drop-cast, so decomposition occurred on cooling from the melt rather than at \SI{500}{\celsius}.
-Database inaccuracies in the ORB-MLIP model for heavy-element BCC alloys cannot be excluded, but the thermal-history explanation is supported by the low equilibrium diffusivity of Hf, which makes kinetic trapping plausible.
+The most probable explanation is non-equilibrium partitioning during rapid solidification: the experimental alloy was drop-cast, so the system may not have reached the \SI{500}{\celsius} equilibrium partitioning predicted by CALPHAD, and instead retains a composition field set during or shortly after solidification.
+Database inaccuracies in the ORB-MLIP model for heavy-element BCC alloys cannot be excluded; the low equilibrium diffusivity of Hf supports the view that the system has not yet relaxed to thermodynamic equilibrium, making non-equilibrium trapping of the as-cast partitioning plausible.
 
 The coherency misfit is overestimated, directly tracing to the Hf partitioning error.
-An~et~al.\ report a lattice misfit of $-1.6\%$ from XRD peak separation and $+0.54\%$ from TEM atomic-column measurements, both substantially smaller than the $-8.7\%$ predicted by the quaternary CALPHAD tie-line.
+An~et~al.\ report lattice misfits of $1.6\%$ (XRD peak separation) and $0.54\%$ (TEM atomic-column measurements), both substantially smaller in magnitude than the $8.7\%$ predicted by the quaternary CALPHAD tie-line.
 If Hf (large atomic radius, $a_{\rm Hf}^{\rm BCC} \approx \SI{3.62}{\angstrom}$) co-partitions with V (small radius, $a_{\rm V}^{\rm BCC} \approx \SI{3.03}{\angstrom}$) into the precipitate, their opposing contributions to the precipitate lattice parameter partially cancel, yielding a net misfit consistent with experiment.
-This internal consistency supports the thermal-history origin of the discrepancy; the binary NbV misfit of $-5.5\%$ is similarly overestimated, though less severely.
+This internal consistency supports the thermal-history origin of the discrepancy; the binary NbV misfit of $-5.5\%$ (\Cref{tab:binary_tieline}) is similarly overestimated relative to available experimental NbV lattice data~\cite{}, though less severely.
 
 The quaternary elastic anisotropy does not correctly predict the observed $\langle 110 \rangle$ spinodal modulation direction.
 The SAED pattern in An~et~al.\ (Fig.~1(c) inset, $[001]$ zone axis) shows diffraction spots along $\langle 110 \rangle$, and the $\beta^*$ lamellae visible in the HAADF-STEM image are elongated along $\langle 110 \rangle$, identifying this as the experimental modulation direction.
 The quaternary CALPHAD model gives $A_Z^{\rm mat} = 1.52 > 1$, which predicts $\langle 100 \rangle$ modulation, inconsistent with the observed $\langle 110 \rangle$.
-The binary NbV and ternary NbHfV models ($A_Z < 1$) correctly predict $\langle 110 \rangle$, though for the wrong physical reason (dilute chemistry rather than the full quaternary matrix composition).
+The binary NbV and ternary NbHfV models ($A_Z < 1$) also predict $\langle 110 \rangle$, but this agreement is coincidental: these compositions lie in a V-rich regime where $A_Z < 1$ regardless of Ti content, and they do not capture the elastic behavior of the actual quaternary matrix.
 Interpolating the SQS/ORB-MLIP elastic constants along a compositional path from the ternary matrix (Nb$_{70}$Hf$_{10}$V$_{20}$, $A_Z = 0.37$) to the quaternary matrix (Nb$_{30}$Hf$_{37}$Ti$_{31}$V$_{2}$, $A_Z = 1.52$) reveals that $A_Z$ crosses unity at $x_{\rm V} \approx 0.37$ (equivalently $x_{\rm Ti} \approx 0.13$), identifying Ti addition as the element responsible for flipping the predicted modulation direction from $\langle 110 \rangle$ to $\langle 100 \rangle$ (Figure~\ref{fig:az_vs_ti}).
-Ti has a high $C_{44}/C'$ ratio in BCC that preferentially stiffens the relevant shear mode, driving $A_Z$ above unity as its concentration increases and V is replaced by Ti.
+Ti in the BCC phase exhibits a high $C_{44}/C'$ ratio that preferentially stiffens the relevant shear mode, driving $A_Z$ above unity as its concentration increases~\cite{}; note that BCC Ti is metastable at ambient conditions and requires DFT or MLIP calculations to characterize its elastic tensor.
 This discrepancy may reflect the as-cast, non-equilibrium character of the experimental microstructure, where kinetics and thermal history rather than the equilibrium elastic anisotropy govern the early-stage modulation direction.
 
 Despite these discrepancies, the model correctly predicts a phase fraction of $\approx 1/3$ and a modulation wavelength of ${\approx}50$--\SI{100}{\nano\metre}, both in close agreement with the experimental observations of An~et~al.
 
 The quantitative discrepancies observed in the quaternary system point primarily to limitations of the current MLIP description.
 The SQS/ORB-MLIP elastic constants are 0~K static estimates that have not been validated against DFT or experimental measurements for the specific quaternary compositions predicted by the CALPHAD tie-line; errors in these values propagate directly into both the coherency misfit and the $A_Z$ prediction.
-Moreover, the 0~K static approximation does not capture finite-temperature lattice softening or the effect of short-range chemical order on the shear moduli, both of which are significant in multicomponent BCC alloys near a miscibility gap.
+Moreover, the 0~K static approximation does not capture finite-temperature lattice softening or the effect of short-range chemical order on the shear moduli; both effects are known to be significant in BCC refractory alloys at elevated temperatures~\cite{}.
 Non-equilibrium solidification in the as-cast specimen may contribute to the Hf partitioning discrepancy, but the systematic nature of the elastic errors suggests that dedicated DFT validation of the quaternary elastic constants and an improved finite-temperature MLIP description are the most impactful paths toward quantitative agreement with experiment.
 }
 

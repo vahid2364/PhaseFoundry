@@ -46,7 +46,7 @@ PhaseForge TDB
 
 ```
 PhaseFoundry/
-├── src/calphad_pf/              installable Python package
+├── src/phasefoundry/              installable Python package
 │   ├── thermodynamics/          Hessian, spinodal, Jansson derivatives, surrogate
 │   ├── phasefield/              Cahn–Hilliard solver, Eyre stabilization, FFT ops
 │   └── elasticity/              eigenstrain models, SQS interpolant, Lippmann–Schwinger solver

@@ -65,9 +65,10 @@ def make_figure(npz_path: pathlib.Path) -> plt.Figure:
                    vmin=xv.min(), vmax=xv.max(),
                    extent=extent, interpolation='bilinear')
 
-    ax_main.text(0.02, 0.97, 'V', transform=ax_main.transAxes,
+    ax_main.text(0.02, 0.87, 'V', transform=ax_main.transAxes,
                  color='black', fontsize=18.6, fontweight='bold',
-                 va='top', ha='left', zorder=6)
+                 va='top', ha='left', zorder=6,
+                 bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1.5))
 
     rect_x = col0 * px_to_nm
     rect_y = row0 * px_to_nm
@@ -112,7 +113,8 @@ def make_figure(npz_path: pathlib.Path) -> plt.Figure:
         ax_ins.axis('off')
         ax_ins.text(0.08, 0.97, label, transform=ax_ins.transAxes,
                     color='black', fontsize=11.4, fontweight='bold',
-                    va='top', ha='left')
+                    va='top', ha='left',
+                    bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=1.5))
 
     inset_right = inset_left + n_insets * inset_w + (n_insets - 1) * inset_gap
     inset_top   = inset_bot + inset_h

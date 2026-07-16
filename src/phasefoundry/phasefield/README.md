@@ -38,7 +38,7 @@ Use `dt=None` to let `stable_dt()` select the time step automatically.
 ### Double-well benchmark (no thermodynamic data required)
 
 ```python
-from calphad_pf.phasefield import solve_cahn_hilliard_binary, plot_result
+from phasefoundry.phasefield import solve_cahn_hilliard_binary, plot_result
 
 result = solve_cahn_hilliard_binary(
     free_energy = 'double_well',
@@ -51,8 +51,8 @@ plot_result(result)
 ### CALPHAD-coupled (Nb-V at 500 °C)
 
 ```python
-from calphad_pf.thermodynamics.fitting import build_gm_spline_surrogate
-from calphad_pf.phasefield import solve_cahn_hilliard_binary, plot_free_energy_history
+from phasefoundry.thermodynamics.fitting import build_gm_spline_surrogate
+from phasefoundry.phasefield import solve_cahn_hilliard_binary, plot_free_energy_history
 
 fit = build_gm_spline_surrogate(['data/nb_v/fine/nb_v_bcc_500C.h5'])
 

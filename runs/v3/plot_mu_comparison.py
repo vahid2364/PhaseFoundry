@@ -24,8 +24,8 @@ from matplotlib.gridspec import GridSpec
 _ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from calphad_pf.elasticity import solve_elasticity, build_isotropic_stiffness
-from calphad_pf.elasticity.elastic_potential import compute_mu_el_from_result
+from phasefoundry.elasticity import solve_elasticity, build_isotropic_stiffness
+from phasefoundry.elasticity.elastic_potential import compute_mu_el_from_result
 
 # ── parameters ────────────────────────────────────────────────────────────────
 N        = 128

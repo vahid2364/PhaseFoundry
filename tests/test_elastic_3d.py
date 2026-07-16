@@ -11,7 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from calphad_pf.elasticity.fft_solver import (
+from phasefoundry.elasticity.fft_solver import (
     build_cubic_stiffness,
     build_isotropic_stiffness,
     solve_elasticity,
@@ -152,8 +152,8 @@ class TestElastic3DIntegration:
     def test_ch_elastic_3d_no_nan(self):
         """100-step 3D CH+elastic run using a synthetic double-well free energy."""
         from dataclasses import dataclass, field as dc_field
-        from calphad_pf.phasefield.solver import solve_cahn_hilliard
-        from calphad_pf.elasticity import build_vegard_tensor
+        from phasefoundry.phasefield.solver import solve_cahn_hilliard
+        from phasefoundry.elasticity import build_vegard_tensor
 
         @dataclass
         class _FakeInterp3D:
