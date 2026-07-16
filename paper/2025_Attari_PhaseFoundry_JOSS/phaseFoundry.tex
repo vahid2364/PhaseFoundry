@@ -1,0 +1,276 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% RSC Digital Discovery — LaTeX submission template
+%% PhaseFoundry paper — Attari & Arróyave, 2025
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\documentclass[twoside,twocolumn]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{helvet}           % RSC uses sans-serif headings
+\usepackage{times}            % Times body text
+\usepackage[margin=2cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage[numbers,super,sort&compress]{natbib}
+\usepackage{caption}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{abstract}
+\usepackage{titlesec}
+\usepackage{siunitx}
+
+%% ── RSC-style heading formatting ─────────────────────────────────
+\titleformat{\section}{\sffamily\bfseries\large}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\sffamily\bfseries\normalsize}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\sffamily\itshape\normalsize}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{10pt}{4pt}
+\titlespacing*{\subsection}{0pt}{8pt}{3pt}
+
+%% ── Caption style ────────────────────────────────────────────────
+\captionsetup{font=small, labelfont=bf, labelsep=period}
+
+%% ── Code listings ────────────────────────────────────────────────
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{gray!8},
+  frame=single,
+  framerule=0.4pt,
+  breaklines=true,
+  columns=flexible,
+}
+
+%% ── Header / footer ──────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\small\thepage}
+\fancyhead[RE]{\small\itshape Digital Discovery}
+\fancyhead[LO]{\small\itshape Attari \& Arr\'oyave}
+\renewcommand{\headrulewidth}{0.4pt}
+
+%% ─────────────────────────────────────────────────────────────────
+\begin{document}
+
+%% ── Title block ──────────────────────────────────────────────────
+\twocolumn[{%
+\begin{@twocolumnfalse}
+
+\vspace*{4pt}
+{\noindent\small\textsf{Digital Discovery} $|$ \textit{Paper}}
+\vspace{6pt}
+
+{\noindent\LARGE\sffamily\bfseries
+PhaseFoundry: An Open-Source CALPHAD-Coupled Phase-Field Framework\\
+for Spinodal Microstructure Design in Multicomponent Alloys}
+
+\vspace{12pt}
+
+{\noindent\large
+Vahid Attari$^{a}$ and Raymundo Arr\'oyave$^{a,b,c}$}
+
+\vspace{6pt}
+
+{\noindent\small
+$^{a}$Department of Materials Science and Engineering, Texas A\&M University,
+College Station, TX~77843, USA\\
+$^{b}$J.\ Mike Walker~'66 Department of Mechanical Engineering, Texas A\&M University,
+College Station, TX~77843, USA\\
+$^{c}$Wm Michael Barnes~'64 Department of Industrial and Systems Engineering,
+Texas A\&M University, College Station, TX~77843, USA\\[3pt]
+Correspondence: \href{mailto:vattari@tamu.edu}{vattari@tamu.edu}}
+
+\vspace{10pt}
+
+%% ── Abstract ─────────────────────────────────────────────────────
+\noindent\rule{\linewidth}{1pt}
+\vspace{4pt}
+
+\noindent\textbf{Abstract.}\quad
+Predicting how a multicomponent alloy decomposes into a nanoscale two-phase microstructure requires connecting thermodynamic databases, which encode where a solid solution is unstable, to phase-field simulations, which resolve how that instability evolves in space and time. In practice this connection is the weakest link in the integrated computational materials engineering (ICME) toolchain: free energy models are hand-transcribed into solver source code, chemical potentials are approximated by finite differences, and coherency strain effects are either neglected or parameterized \textit{ad hoc}. We present \texttt{PhaseFoundry}, an open-source Python framework that closes this gap for spinodal microstructure design. Starting from a CALPHAD thermodynamic database---including databases generated from machine-learned interatomic potentials (MLIPs) via \texttt{PhaseForge}---the framework evaluates exact Gibbs energy Hessians and chemical potentials using analytic Jansson derivatives in \texttt{pycalphad}, maps spinodal instability regions through gauge-invariant eigenanalysis, and evolves the resulting instabilities with an unconditionally stable pseudo-spectral Cahn--Hilliard solver that optionally includes coherency strain via a Moulinec--Suquet spectral micromechanics solver with MLIP-derived, composition-dependent elastic constants. Binary, ternary, and quaternary alloy systems are specified entirely through YAML configuration files, with no code changes. \texttt{PhaseFoundry} is available under the MIT license at \url{https://github.com/vahid2364/PhaseFoundry}.
+
+\vspace{4pt}
+\noindent\rule{\linewidth}{1pt}
+\vspace{10pt}
+
+\end{@twocolumnfalse}
+}]
+
+%% ── 1. Introduction ──────────────────────────────────────────────
+\section{Introduction}
+
+Spinodal decomposition, the barrierless unmixing of a supersaturated solid solution into compositionally modulated domains by uphill diffusion, has been understood thermodynamically since Gibbs\cite{gibbs1878equilibrium} and given its modern continuum formulation by Cahn and Hilliard.\cite{cahn1958free,cahn1961spinodal} It has recently reemerged as a deliberate microstructure design strategy. Depending on the alloy, the transformation can be harmful, embrittling otherwise ductile solid solutions\cite{wang2023spinodal} or providing a pathway for deleterious ordered phases,\cite{dasari2023crystallographic} or it can be exploited: in refractory and 3d-transition-metal high-entropy alloys (HEAs), spinodally modulated solid solutions have been shown to overcome the strength-ductility trade-off,\cite{an2021spinodal,zhang2022refinement,lee2025spinodal} tailor magnetic properties,\cite{rao2021beyond,dong2024cooperative} and improve thermoelectric performance.\cite{duan2025spinodal} Either way, the designer must first locate the spinodal region within a vast, high-dimensional composition space, and then predict the morphology, length scale, and phase compositions of the resulting microstructure.
+
+The thermodynamic half of the problem is well served by mature tools. CALPHAD databases encode assessed Gibbs energy models for multicomponent phases, and both commercial engines such as Pandat\cite{cao2009pandat} and open-source engines such as \texttt{pycalphad}\cite{otis2017pycalphad} make these models programmatically accessible, with ESPEI providing automated database development and uncertainty quantification.\cite{bocklund2019espei} Where classical assessments do not exist, MLIP-based workflows such as \texttt{PhaseForge}\cite{sariturk2025phaseforge,zhu2025accelerating,zhu2025machine} can now generate CALPHAD-compatible TDB files for arbitrary alloy systems at a fraction of the cost of density functional theory.\cite{kunselman2025construction} The stability analysis needed to locate spinodal regions has a long lineage, from de Fontaine's coherent stability criteria\cite{de1967computer,de1972analysis} through Gibbs energy Hessian analysis for HEAs\cite{morral2021stability} and high-throughput CALPHAD-based spinodal screening.\cite{koneru2022high,kadirvel2022exploration} The kinetic half is likewise well served by general-purpose phase-field frameworks such as MOOSE,\cite{permann2020moose} PRISMS-PF,\cite{dewitt2020prisms} and FiPy.\cite{guyer2009fipy}
+
+The difficulty lies in the coupling. A quantitative spinodal simulation needs the derivatives of the CALPHAD molar Gibbs energy evaluated millions of times per run. General-purpose frameworks require users to supply free energy functions explicitly, which for multicomponent phases means either hand-fitting polynomial surrogates that drift from the database or numerically differentiating equilibrium calculations---an approach sensitive to stencil size in high-dimensional composition spaces.\cite{kunselman2024analytically} Coherency strain, which shrinks the effective spinodal region\cite{cahn1961spinodal,de1972analysis} and selects decomposition morphology, adds a further layer of parameterization. To our knowledge, no open-source tool provides an end-to-end pipeline from a CALPHAD TDB to a running elasto-chemical phase-field simulation for multicomponent alloys.
+
+\texttt{PhaseFoundry} provides that pipeline. Its central design decisions are:
+
+\begin{enumerate}[leftmargin=*,label=\arabic*.]
+\item \textbf{Analytic thermodynamic derivatives.} Chemical potentials and Gibbs energy Hessians are computed with the Jansson derivative method,\cite{kunselman2024analytically} eliminating finite-difference error and stencil-size sensitivity.
+\item \textbf{Gauge-invariant stability analysis.} Spinodal regions are identified from eigenvalues of the Hessian in a Cartesian basis,\cite{kadirvel2022exploration,morral2021stability} visualized with affine projections.\cite{vela2025visualizing}
+\item \textbf{Unconditionally stable spectral solver.} The Cahn--Hilliard equations are advanced with semi-implicit Eyre convex splitting\cite{eyre1998unconditionally} with per-component stabilization constants.
+\item \textbf{MLIP-informed elasticity.} Coherency strain enters through a Vegard eigenstrain model solved with the Moulinec--Suquet spectral method,\cite{moulinec1998numerical} with elastic constants from SQS/MLIP calculations.\cite{zunger1990special}
+\item \textbf{Configuration over code.} A single YAML file specifies the entire run; binary, ternary, and quaternary systems in 2D or 3D share one code path.
+\end{enumerate}
+
+A companion paper\cite{kunselman2025spinodal} presents the scientific application to the Hf--Nb--Ti--V refractory HEA system.
+
+%% ── 2. Framework overview ────────────────────────────────────────
+\section{Framework overview}
+
+\subsection{Pipeline}
+
+\texttt{PhaseFoundry} is organized as an installable Python package, \texttt{calphad\_pf}, driven by numbered workflow scripts sharing a single YAML configuration file per run (Fig.~\ref{fig:workflow}):
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Step~1} samples the CALPHAD TDB over a composition grid, evaluating $G_m^\alpha$, relative chemical potentials, and Jansson derivatives with \texttt{pycalphad}, storing results as HDF5 tables.
+\item \textbf{Step~1b} (elasto-chemical) tabulates SQS/MLIP elastic constants $C_{ij}$ and lattice parameters from \texttt{PhaseForge} CSV outputs.
+\item \textbf{Step~1c} (elasto-chemical) computes CALPHAD tie-line endpoint compositions at the simulation temperature.
+\item \textbf{Step~2} fits a scattered-data interpolant surrogate and computes spinodal boundaries from gauge-invariant Hessian eigenvalues.
+\item \textbf{Step~3} runs the pseudo-spectral Cahn--Hilliard simulation with optional elasto-chemical coupling and GPU execution.
+\item \textbf{Step~4} post-processes snapshots and extracts composition, stress, and strain fields.
+\item \textbf{Steps~5--6} are verification stages: Step~5 validates derivative methods against direct \texttt{pycalphad} evaluations; Step~6 compares chemical-only and elasto-chemical runs.
+\end{itemize}
+
+The full pipeline executes with a single command:
+\begin{lstlisting}[language=bash]
+python workflows/run_all.py \
+  --config configs/nb_hf_ti_v_elastic.yaml
+\end{lstlisting}
+
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figs/PhaseFoundry.pdf}
+  \caption{Workflow of \texttt{PhaseFoundry}. From a CALPHAD TDB (assessed or MLIP-generated via \texttt{PhaseForge}), SQS/MLIP elastic data, and a single YAML configuration file, \texttt{PhaseFoundry} samples the database with analytic Jansson derivatives, fits a free-energy surrogate, and maps spinodal regions through gauge-invariant Hessian eigenanalysis (pink, \texttt{PhaseFoundry.thermodynamics}). The pseudo-spectral Cahn--Hilliard solver (blue, \texttt{PhaseFoundry.phasefield}) evolves the instability with an Eyre-stabilized spectral update, optionally coupled to Moulinec--Suquet coherency strain (blue, \texttt{PhaseFoundry.elasticity}). Outputs include 2D and 3D spinodal microstructures, composition fields, stress/strain fields, and driving force maps (green). Verification stages (Steps~5--6) validate thermodynamic tables and derivatives against direct \texttt{pycalphad} calculations.}
+  \label{fig:workflow}
+\end{figure*}
+
+\subsection{Package architecture}
+
+Three subpackages separate concerns cleanly. \texttt{calphad\_pf.thermodynamics} handles TDB sampling, HDF5 storage, Hessian eigenanalysis, spinodal boundary extraction, and the interpolant surrogate. \texttt{calphad\_pf.phasefield} contains the Cahn--Hilliard solver, the Eyre-stabilized spectral update, FFT operations (NumPy/CuPy backend), and visualization utilities. \texttt{calphad\_pf.elasticity} implements the eigenstrain models, the SQS elastic-constant interpolant, and the Lippmann--Schwinger spectral solver. The dependency stack is deliberately shallow: NumPy, SciPy, h5py, scikit-learn, Matplotlib, and \texttt{pycalphad}, with CuPy as an optional GPU extra.
+
+Because the solver consumes only the surrogate interface, thermodynamic sampling and simulation are decoupled. A new alloy system requires only a new TDB and a new YAML file.
+
+%% ── 3. Numerical methods ─────────────────────────────────────────
+\section{Numerical methods and implementation}
+
+\subsection{CALPHAD thermodynamics with analytic derivatives}
+
+For an $n$-component phase $\alpha$ with the $n$-th component as the dependent variable, local stability is governed by the Hessian $H_{ij} = \partial^2 G_m^\alpha / \partial x_i \partial x_j$: the phase is spinodally unstable wherever at least one eigenvalue of $H$ is negative.\cite{cahn1961spinodal,morral2021stability} \texttt{PhaseFoundry} computes these derivatives analytically with the Jansson method\cite{kunselman2024analytically} as implemented in \texttt{pycalphad}. The \texttt{finite\_diff} and \texttt{hybrid} modes are selectable via the configuration file for validation and backward compatibility.
+
+The Hessian is transformed to a Cartesian basis before eigenanalysis to yield gauge-invariant eigenvalues independent of the choice of dependent component.\cite{kadirvel2022exploration} For quaternary and higher systems, instability maps are displayed with affine projections.\cite{vela2025visualizing} Step~2 wraps the HDF5 tables in a scattered-data interpolant surrogate---the only thermodynamic object accessed at run time---fit once per system and temperature.
+
+\subsection{Phase-field solver}
+
+The solver evolves $n-1$ independent composition fields $x_i(\mathbf{r},t)$ under the free energy functional
+\begin{equation}
+  \mathcal{F}[\mathbf{x}] = \int_\Omega \left[ G_m^\alpha(\mathbf{x}) + \sum_{i=1}^{n-1} \frac{\kappa_i}{2} |\nabla x_i|^2 \right] dV,
+\end{equation}
+via the coupled Cahn--Hilliard equations
+\begin{equation}
+  \frac{\partial x_i}{\partial t} = \nabla \cdot \sum_{j} M_{ij}(\mathbf{x})\, \nabla \mu_j^{\mathrm{tot}},
+\end{equation}
+with $\mu_j^{\mathrm{tot}} = \partial G_m^\alpha/\partial x_j - \kappa_j \nabla^2 x_j + \mu_j^{\mathrm{el}}$. The mobility is degenerate, $M_{ij} = \mathring{M}_{ij}\prod_k x_k$, and the bare matrix $\mathring{M}_{ij}$ is user-supplied, accommodating strongly asymmetric diffusivities across components.
+
+Following Eyre,\cite{eyre1998unconditionally} the molar Gibbs energy is split into convex and concave parts, with the convex quadratic part $\frac{A_i}{2}x_i^2$ treated implicitly. The Fourier-space update is
+\begin{equation}
+  \hat{x}_i^{\,n+1} = \frac{
+    \hat{x}_i^{\,n}
+    + \Delta t\,k^2 \sum_j M^{\mathrm{eff}}_{ij}\hat{\mu}_{j,\mathrm{bulk}}^{\,n}
+    - \Delta t\,k^2 M^{\mathrm{eff}}_{ii} A_i \hat{x}_i^{\,n}
+    - \Delta t\,k^4 \sum_{j \neq i} M^{\mathrm{eff}}_{ij}\kappa_j \hat{x}_j^{\,n}
+  }{
+    1 + \Delta t\,k^2 M^{\mathrm{eff}}_{ii} A_i + \Delta t\,k^4 M^{\mathrm{eff}}_{ii}\kappa_i
+  },
+  \label{eq:eyre_update}
+\end{equation}
+where $A_i \geq \max(0, -H_{ii}(\mathbf{x}_0))$ is the per-component stabilization constant. The denominator is strictly positive for any $\Delta t > 0$, making the scheme unconditionally stable. Setting \texttt{dt: null} activates automatic time-step estimation from the largest Hessian eigenvalue.
+
+The same code path runs in 2D and 3D. Setting \texttt{use\_gpu: true} moves all FFT and array operations to a CUDA device via CuPy. Long runs write incremental NPZ checkpoints.
+
+\subsection{Elasto-chemical coupling}
+
+When enabled, mechanical equilibrium is solved on the current composition field with the Moulinec--Suquet spectral scheme,\cite{moulinec1998numerical} iterating a Lippmann--Schwinger equation in Fourier space. The resulting stress field defines the elastic chemical potential $\mu_k^{\mathrm{el}}$ following Gururajan and Abinandanan.\cite{gururajan2007phase}
+
+Two eigenstrain models are implemented. The \texttt{fixed\_vegard} model uses Vegard coefficients and stiffness tensors fixed at the CALPHAD tie-line endpoints from Step~1c. The \texttt{local\_vegard} model evaluates the eigenstrain pointwise:
+\begin{equation}
+  \varepsilon^*(\mathbf{r}) = \frac{a(\mathbf{x}(\mathbf{r})) - a_0}{a_0},
+\end{equation}
+with $a(\mathbf{x})$ and $\mathbf{C}(\mathbf{x}(\mathbf{r}))$ interpolated from SQS/MLIP tables across the full composition space. This model has the physically correct property that the eigenstrain vanishes in the initial homogeneous alloy. Elastic constants from ORB-v2 and GRACE-2L are shipped as data tables; the CSV interface accommodates other potentials.
+
+The elastic solve runs every $n_{\mathrm{el}}$ time steps with warm starting, and the elastic potential is cached between solves.
+
+\subsection{Verification and validation tooling}
+
+Step~5 regenerates thermodynamic quantities directly from \texttt{pycalphad} at randomly sampled compositions and compares them to the surrogate, quantifying interpolation error and the discrepancy between derivative modes. Fig.~\ref{fig:validation} shows this comparison for the Nb--V system at \SI{500}{\degreeCelsius}, where all three derivative modes agree closely across the full composition range. Step~6 runs matched chemical-only and elasto-chemical simulations from identical initial conditions, isolating coherency strain effects on the decomposition path. A \texttt{pytest} suite covers thermodynamic sampling, surrogate fitting, spectral operators, and the elasticity solver.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figs/derivative_method_comparison.png}
+  \caption{Step~5 validation output for the Nb--V BCC\_A2 system at \SI{500}{\degreeCelsius}: (a)~molar Gibbs energy, (b)~relative chemical potential $\mu_{\mathrm{Nb}} - \mu_{\mathrm{V}}$, and (c)~Gibbs energy Hessian, each computed with finite-difference, direct Jansson, and hybrid derivative modes and overlaid on sampled CALPHAD data. The shaded band marks the spinodal region.}
+  \label{fig:validation}
+\end{figure}
+
+%% ── 4. Illustrative applications ─────────────────────────────────
+\section{Illustrative applications}
+
+\textbf{Binary Nb--V.} The Nb--V BCC\_A2 system serves as the reference case. Chemical-only simulations at \SI{500}{\degreeCelsius} across mean compositions $x_{\mathrm{Nb}} = 0.3$--$0.8$ show the expected progression from isolated to bicontinuous morphologies, in both 2D ($128^2$) and 3D ($128^3$) domains. Fig.~\ref{fig:nbv} shows a representative equiatomic microstructure. Adding elastic coupling refines and aligns the modulations, consistent with classical coherent spinodal theory.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figs/nbv_500C_micrograph.pdf}
+  \caption{Spinodally decomposed microstructure of equiatomic Nb$_{50}$V$_{50}$ at \SI{500}{\degreeCelsius}: Nb (left) and V (right) composition fields on a \SI{1}{\micro\metre} domain after $t = \SI{800}{\second}$, showing phase compositions consistent with the CALPHAD tie-line.}
+  \label{fig:nbv}
+\end{figure}
+
+\textbf{Ternary Nb--Hf--V.} With two independent composition fields, anisotropic mobilities (Hf roughly two orders of magnitude slower than Nb), and distinct gradient energy coefficients per field, the ternary configurations demonstrate multicomponent capabilities: the two fields decompose on different time scales, and the gauge-invariant stability analysis maps composition-dependent instability directions across the Gibbs triangle.
+
+\textbf{Quaternary Hf--Nb--Ti--V.} The equiatomic elasto-chemical configuration runs $3 \times 10^6$ time steps with three coupled fields, MLIP-derived composition-dependent stiffness, and tie-line endpoints informed by the experimental XRD phase compositions of An~\textit{et al.}\cite{an2021spinodal} Scientific analysis of the results appears in the companion paper.\cite{kunselman2025spinodal}
+
+Across all cases the practical point is uniformity: the same package, solver, and post-processing scripts handle every system; only the YAML file changes.
+
+%% ── 5. Relation to existing software ─────────────────────────────
+\section{Relation to existing software}
+
+\texttt{PhaseFoundry} is complementary to, not a replacement for, general-purpose phase-field frameworks. MOOSE\cite{permann2020moose} and PRISMS-PF\cite{dewitt2020prisms} offer massively parallel finite element infrastructure and broad multiphysics coverage, but leave multicomponent free energy construction and elastic parameterization to the user. FiPy\cite{guyer2009fipy} provides flexible PDE specification at a lower performance ceiling. Commercial couplings between CALPHAD engines and phase-field codes exist (e.g., MICRESS with Thermo-Calc) but are closed-source and not extensible to MLIP-generated databases. \texttt{PhaseFoundry} occupies the specific niche of open, reproducible, TDB-to-microstructure spinodal simulation, trading geometric and multiphysics generality for a fully automated and thermodynamically exact pipeline.
+
+%% ── 6. Limitations and future directions ─────────────────────────
+\section{Limitations and future directions}
+
+The current implementation assumes a single solid solution phase on periodic uniform grids under isothermal conditions. Nucleation of distinct crystal structures, polycrystalline domains, and non-conserved order parameters lie outside the model. The elastic solver neglects the stiffness-contrast energy correction and \texttt{local\_vegard} evaluates Vegard coefficients at the parent composition as a first-order approximation. Mobility matrices are user-supplied constants; coupling to CALPHAD kinetic databases is a natural next step. Planned developments include temperature-stepped annealing schedules, DICTRA-style mobility database ingestion, and extension of stability analysis to quinary systems.
+
+%% ── 7. Conclusions ───────────────────────────────────────────────
+\section{Conclusions}
+
+\texttt{PhaseFoundry} automates the path from a CALPHAD thermodynamic database to quantitative spinodal microstructure predictions in multicomponent alloys, combining analytic Jansson derivatives, gauge-invariant stability analysis, an unconditionally stable spectral Cahn--Hilliard solver, and MLIP-informed elasto-chemical coupling behind a single YAML configuration interface. Together with \texttt{PhaseForge}, it completes an open-source chain from machine-learned interatomic potentials to microstructure for HEA design.
+
+%% ── Data and code availability ───────────────────────────────────
+\section*{Data and code availability}
+
+\texttt{PhaseFoundry} is available under the MIT license at \url{https://github.com/vahid2364/PhaseFoundry}, including all YAML configurations, workflow scripts, SQS/MLIP elastic constant tables, and post-processing scripts. Thermodynamic databases were generated with \texttt{PhaseForge}\cite{sariturk2025phaseforge} (DOI:~10.5281/zenodo.15730911).
+
+%% ── Author contributions ─────────────────────────────────────────
+\section*{Author contributions}
+
+V.A.: conceptualization, software, methodology, validation, visualization, writing (original draft). R.A.: conceptualization, funding acquisition, supervision, writing (review and editing).
+
+%% ── Conflicts of interest ────────────────────────────────────────
+\section*{Conflicts of interest}
+
+There are no conflicts of interest to declare.
+
+%% ── Acknowledgements ─────────────────────────────────────────────
+\section*{Acknowledgements}
+
+The authors acknowledge support from the Army Research Office (Grant No.\ W911NF-22-2-0117) and the National Science Foundation. Simulations were carried out at the Texas A\&M High-Performance Research Computing (HPRC) Facility. The authors thank Courtney Kunselman, Do\u{g}uhan Sar{\i}t\"urk, and Siya Zhu for discussions and contributions to the companion scientific study.
+
+%% ── References ───────────────────────────────────────────────────
+\bibliographystyle{rsc}
+\bibliography{paper}
+
+\end{document}
