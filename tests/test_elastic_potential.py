@@ -1,7 +1,7 @@
 """
 tests/test_elastic_potential.py
 ================================
-Validates calphad_pf.elasticity.elastic_potential.elastic_potential(),
+Validates phasefoundry.elasticity.elastic_potential.elastic_potential(),
 the implementation of Eq. 36 in Gururajan & Abinandanan (2007):
 
     N_V * mu_el = 1/2 * alpha'(c) * ΔC_ijkl * eps_el_kl * eps_el_ij
@@ -34,7 +34,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from calphad_pf.elasticity import (
+from phasefoundry.elasticity import (
     solve_elasticity,
     build_isotropic_stiffness,
     elastic_potential,

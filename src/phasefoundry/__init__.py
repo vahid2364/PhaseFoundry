@@ -1,5 +1,5 @@
 """
-calphad_pf — Integrated CALPHAD / phase-field modelling toolkit.
+phasefoundry — Integrated CALPHAD / phase-field modelling toolkit.
 
 Subpackages
 -----------

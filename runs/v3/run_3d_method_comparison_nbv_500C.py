@@ -42,11 +42,11 @@ import numpy as np
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.config                     import load_config, apply_overrides, resolve_paths, summary
-from calphad_pf.thermodynamics.storage     import load_table
-from calphad_pf.thermodynamics.interpolant import build_interpolant
-from calphad_pf.phasefield.solver          import solve_cahn_hilliard, stable_dt
-from calphad_pf.phasefield.visualize       import save_pyvista_3d
+from phasefoundry.config                     import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.thermodynamics.storage     import load_table
+from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.phasefield.solver          import solve_cahn_hilliard, stable_dt
+from phasefoundry.phasefield.visualize       import save_pyvista_3d
 
 PAPER_FIGS = _ROOT / "paper" / "2025_Kunselman_Design_of_Spinodal_Microstructures_in_HEAs" / "figs"
 

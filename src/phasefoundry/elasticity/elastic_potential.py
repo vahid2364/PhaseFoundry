@@ -1,14 +1,14 @@
 """
-calphad_pf.elasticity.elastic_potential
+phasefoundry.elasticity.elastic_potential
 =========================================
 Elastic contribution to the chemical potential, μ_el (Eq. 36 in
 Gururajan & Abinandanan, 2007).
 
 This module computes ONLY the elastic term.  It knows nothing about the
 chemical (thermodynamic) potential μ_ch -- that is computed independently
-by ``GmInterpolant.mu(c)`` in ``calphad_pf.thermodynamics.interpolant``.
+by ``GmInterpolant.mu(c)`` in ``phasefoundry.thermodynamics.interpolant``.
 The two are summed by the caller (the Cahn-Hilliard timestep loop in
-``calphad_pf.phasefield.solver``):
+``phasefoundry.phasefield.solver``):
 
     mu_total = mu_ch + mu_el
 
@@ -239,7 +239,7 @@ def compute_mu_el_from_result(c: np.ndarray,
     ----------
     c : ndarray (N, N)
     result : dict
-        Output of ``calphad_pf.elasticity.solve_elasticity()``.
+        Output of ``phasefoundry.elasticity.solve_elasticity()``.
     C_mat, C_ppt : ndarray (3, 3, 3, 3)
     eigenstrain : ndarray (2, 2) or (3, 3)
     N_V : float

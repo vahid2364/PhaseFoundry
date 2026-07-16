@@ -1,5 +1,5 @@
 """
-calphad_pf.config — Configuration loader and override engine
+phasefoundry.config — Configuration loader and override engine
 =============================================================
 
 Loads a YAML config file and applies ``--set key.subkey=value``

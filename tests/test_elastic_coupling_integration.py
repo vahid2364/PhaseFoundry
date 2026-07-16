@@ -2,7 +2,7 @@
 tests/test_elastic_coupling_integration.py
 ============================================
 Integration validation for the elastic-chemical-potential coupling wired
-into ``calphad_pf.phasefield.solver.solve_cahn_hilliard`` (Eq. 2 with
+into ``phasefoundry.phasefield.solver.solve_cahn_hilliard`` (Eq. 2 with
 mu_total = mu_ch + mu_el).
 
 Uses a self-contained synthetic double-well "interpolant" (no pycalphad/TDB
@@ -36,8 +36,8 @@ import pytest
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from calphad_pf.phasefield.solver import solve_cahn_hilliard
-from calphad_pf.elasticity import build_vegard_tensor
+from phasefoundry.phasefield.solver import solve_cahn_hilliard
+from phasefoundry.elasticity import build_vegard_tensor
 
 
 # ── synthetic double-well "interpolant" (mimics GmInterpolant's API) ──────────

@@ -1,5 +1,5 @@
 """
-calphad_pf.elasticity.models
+phasefoundry.elasticity.models
 ==============================
 Eigenstrain and stiffness models for the FFT elastic solver.
 

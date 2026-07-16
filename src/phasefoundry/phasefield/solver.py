@@ -409,7 +409,7 @@ def solve_cahn_hilliard(
         Max iterations for the inner elastic solve (default 500).
     elastic_scheme : str
         Composition-interpolation scheme name (default "cubic", matches
-        the paper). See calphad_pf.elasticity.interpolation.get_scheme().
+        the paper). See phasefoundry.elasticity.interpolation.get_scheme().
     elastic_N_V : float
         Molar-volume-like normalization for mu_el, matching the convention
         used for mu_ch (default 1.0).

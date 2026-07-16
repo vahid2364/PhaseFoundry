@@ -1,5 +1,5 @@
 """
-calphad_pf.elasticity.sqs_interpolant
+phasefoundry.elasticity.sqs_interpolant
 =======================================
 Load SQS/DFT elastic constant CSV and build N-D interpolants for
 C11, C12, C44, and a_relaxed. Shared between workflow step 1b and

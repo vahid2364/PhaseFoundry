@@ -31,8 +31,8 @@ import pycalphad  # noqa: F401 — must be imported first
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
-from calphad_pf.thermodynamics import generate_table
+from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.thermodynamics import generate_table
 
 
 def _table_filename(cfg: dict, T_C: float) -> str:

@@ -43,8 +43,8 @@ import yaml
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
-from calphad_pf.config import load_config, apply_overrides, resolve_paths, summary
-from calphad_pf.elasticity.sqs_interpolant import (
+from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.elasticity.sqs_interpolant import (
     load_and_filter,
     build_interpolators,
     query_composition,

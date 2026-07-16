@@ -51,7 +51,7 @@ import matplotlib.pyplot as plt
 _ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from calphad_pf.elasticity import solve_elasticity, build_isotropic_stiffness
+from phasefoundry.elasticity import solve_elasticity, build_isotropic_stiffness
 
 
 # ── parameters ─────────────────────────────────────────────────────────────────
