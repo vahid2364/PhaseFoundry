@@ -50,9 +50,9 @@ comps_B    = np.column_stack([
     np.zeros(300),
 ])
 
-# Path C: Nb(50-x)Vx, x in at.% from 0 to 50  [xHf, xNb, xV, xTi]
-xv_at      = np.linspace(0, 50, 300)          # at.%
-xv_bin     = xv_at / 100.0                    # mole fractions for interpolator
+# Path C: Nb(50-x)Vx, x from 0 to 0.50 mole fraction  [xHf, xNb, xV, xTi]
+xv_bin     = np.linspace(0, 0.50, 300)        # mole fraction
+xv_at      = xv_bin * 100.0                   # at.% (kept for compatibility)
 comps_C    = np.column_stack([
     np.zeros(300),
     (50 - xv_at) / 100.0,
@@ -68,68 +68,60 @@ VERSIONS = {
     },
 }
 
-fig, axes = plt.subplots(1, 3, figsize=(10.5, 3.0))
-
-panels = [
-    (comps_C, xv_at,     r'$x_{\rm V}$  (at.\%)  in  Nb$_{50-x}$V$_{x}$',            '(a)', (-0.5,  51.0),  (0.2, 0.7)),
-    (comps_B, xv_range,  r'$x_{\rm V}$  in  Nb$_{50}$Hf$_{50-x}$V$_{x}$',           '(b)', (-0.01, 0.51), (0.2, 2.2)),
-    (comps_A, xti_range, r'$x_{\rm Ti}$  in  Nb$_{25}$Hf$_{25}$V$_{50-x}$Ti$_{x}$', '(c)', (-0.01, 0.51), (0.2, 2.2)),
-]
-
 def load_binary_points(csv_path):
-    """Return (xV_at%, A_Z) for NbV binary edge (Hf=Ti=0), limited to xV<=50 at%."""
+    """Return (xV mole fraction, A_Z) for NbV binary edge (Hf=Ti=0), xV<=0.50."""
     d = pd.read_csv(csv_path)
     d.columns = [c.lower() for c in d.columns]
     hf_col = 'x_hf' if 'x_hf' in d.columns else 'hf'
     ti_col = 'x_ti' if 'x_ti' in d.columns else 'ti'
     v_col  = 'x_v'  if 'x_v'  in d.columns else 'v'
     b = d[(d[hf_col] == 0) & (d[ti_col] == 0)].sort_values(v_col)
-    b = b[b[v_col] <= 0.50]   # Nb-rich half only
+    b = b[b[v_col] <= 0.50]
     AZ = b['c44_gpa'].values / ((b['c11_gpa'].values - b['c12_gpa'].values) / 2)
-    return b[v_col].values * 100, AZ   # return at.%
+    return b[v_col].values, AZ   # mole fraction
 
-for ax, (comps, x_range, xlabel, panel, xlim, ylim) in zip(axes, panels):
-    is_binary = panel == '(a)'
-    for label, cfg in VERSIONS.items():
+# ── Single combined figure ────────────────────────────────────────
+CURVES = [
+    # (comps, x_param, label, color, ls, is_binary)
+    (comps_C, xv_bin,     r'Nb$_{50-x}$V$_{x}$  ($x_{\rm V}$)',             '#2ca02c', '--',  True),
+    (comps_B, xv_range,   r'Nb$_{50}$Hf$_{50-x}$V$_{x}$  ($x_{\rm V}$)',   '#d62728', '-.',  False),
+    (comps_A, xti_range,  r'Nb$_{25}$Hf$_{25}$V$_{50-x}$Ti$_{x}$  ($x_{\rm Ti}$)', '#1f77b4', '-', False),
+]
+
+fig, ax = plt.subplots(figsize=(5.5, 4.0))
+
+for label, cfg in VERSIONS.items():
+    for comps, x_range, curve_label, color, ls, is_binary in CURVES:
         if is_binary:
             xv, AZ = load_binary_points(cfg['csv'])
-            # only use physically valid points (A_Z > 0)
             mask = AZ > 0
-            spl  = UnivariateSpline(xv[mask], AZ[mask], s=0.05, k=3)
+            spl = UnivariateSpline(xv[mask], AZ[mask], s=0.05, k=3)
             xv_dense = np.linspace(xv[mask].min(), xv[mask].max(), 300)
-            ax.plot(xv_dense, spl(xv_dense), color=cfg['color'], lw=1.8,
-                    ls=cfg['ls'], label=label)
+            ax.plot(xv_dense, spl(xv_dense), color=color, lw=1.8, ls=ls, label=curve_label)
         else:
             rbf = load_rbf(cfg['csv'])
             C11 = rbf['c11_gpa'](comps)
             C12 = rbf['c12_gpa'](comps)
             C44 = rbf['c44_gpa'](comps)
             AZ  = C44 / ((C11 - C12) / 2)
-            ax.plot(x_range, AZ, color=cfg['color'], lw=1.8, ls=cfg['ls'], label=label)
+            ax.plot(x_range, AZ, color=color, lw=1.8, ls=ls, label=curve_label)
             cross = np.where(np.diff(np.sign(AZ - 1)))[0]
             if len(cross):
                 xc = x_range[cross[0]]
-                ax.axvline(xc, color=cfg['color'], lw=0.7, ls=':', alpha=0.5)
+                ax.axvline(xc, color=color, lw=0.7, ls=':', alpha=0.6)
 
-    if is_binary:
-        ax.text(0.5, 0.92, r'$\langle 110\rangle$ favored throughout',
-                fontsize=7.5, ha='center', transform=ax.transAxes,
-                color='gray', style='italic')
-    else:
-        ax.axhline(1.0, color='black', lw=0.8, ls='--')
-        ax.text(0.02, 1.03, r'$\langle 100\rangle$ favored', fontsize=7.5,
-                transform=ax.get_yaxis_transform(), va='bottom')
-        ax.text(0.02, 0.96, r'$\langle 110\rangle$ favored', fontsize=7.5,
-                transform=ax.get_yaxis_transform(), va='top')
-    ax.set_xlabel(xlabel)
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
-    ax.text(0.04, 0.94, panel, transform=ax.transAxes,
-            fontsize=9, fontweight='bold', va='top')
-    ax.spines[['top', 'right']].set_visible(False)
+ax.axhline(1.0, color='black', lw=0.8, ls='--')
+ax.text(0.99, 1.02, r'$\langle 100\rangle$ favored', fontsize=7.5,
+        transform=ax.get_yaxis_transform(), va='bottom', ha='right')
+ax.text(0.99, 0.97, r'$\langle 110\rangle$ favored', fontsize=7.5,
+        transform=ax.get_yaxis_transform(), va='top', ha='right')
 
-for ax in axes:
-    ax.set_ylabel(r'Zener anisotropy $A_Z$')
+ax.set_xlabel(r'$x_{\rm V}$ or $x_{\rm Ti}$ (mole fraction)', fontsize=9)
+ax.set_ylabel(r'Zener anisotropy $A_Z = C_{44}/C\,^{\prime}$', fontsize=9)
+ax.set_xlim(-0.01, 0.51)
+ax.set_ylim(0.2, 2.2)
+ax.spines[['top', 'right']].set_visible(False)
+ax.legend(fontsize=7.5, frameon=False, loc='upper left')
 
 fig.tight_layout()
 
