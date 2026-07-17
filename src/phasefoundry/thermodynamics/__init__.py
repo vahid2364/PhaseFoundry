@@ -26,10 +26,16 @@ Quick start
 from .generate import compute_table
 from .grid import simplex_grid, grid_summary
 from .storage import load_table, save_table, table_info
-from .plot import plot_free_energy_vs_composition, plot_chemical_potential_vs_composition
+from .plot import (
+    plot_free_energy_vs_composition,
+    plot_chemical_potential_vs_composition,
+    plot_ternary_spinodal,
+    plot_as_umap,
+)
 from .spinodal import (
     spinodal_boundary_binary, spinodal_boundary_multi, plot_spinodal,
     binodal_boundary_binary, plot_phase_diagram, recommend_pfm_params,
+    compute_ternary_phase_regions, compute_phase_regions_multi,
 )
 from .fitting import fit_delta_mu, save_fits, load_fits, eval_delta_mu, build_spline_surrogate, build_gm_spline_surrogate
 from .interpolant import build_interpolant, GmInterpolant
@@ -47,6 +53,8 @@ def generate_table(
     output_path: str = "thermodynamic_table.h5",
     n_workers: int = 1,
     quantities: tuple[str, ...] = ("GM", "MU", "dMU"),
+    sampling: str = "grid",
+    seed: int = 42,
 ) -> dict:
     """
     Build a composition grid, evaluate pycalphad, and save to HDF5.
@@ -69,7 +77,8 @@ def generate_table(
         Dependent element. Its fraction is computed as
         x_ref = 1 - sum(others).
     n_points : int
-        Number of linspace points per element axis.
+        For sampling="grid": grid lines per axis.
+        For sampling="sobol"/"dirichlet": total valid points returned.
     temperature : float
         Temperature in Kelvin.
     pressure : float
@@ -80,13 +89,21 @@ def generate_table(
         Worker processes for parallel evaluation. Default 1 (serial).
     quantities : tuple[str]
         Subset of ('GM', 'MU', 'dMU') to compute.
+    sampling : {"grid", "sobol", "dirichlet"}
+        Composition sampling strategy.  "grid" (default) uses a Cartesian
+        linspace approach per element axis.  "sobol" gives quasi-random
+        uniform coverage of the constrained simplex.  "dirichlet" gives
+        pseudo-random uniform simplex samples.
+    seed : int
+        Random seed for "sobol" and "dirichlet" modes.  Default 42.
 
     Returns
     -------
     dict — same as load_table(output_path) after saving.
     """
     # 1. Build grid
-    grid = simplex_grid(elements, composition_ranges, reference_element, n_points)
+    grid = simplex_grid(elements, composition_ranges, reference_element,
+                        n_points, sampling=sampling, seed=seed)
     print(grid_summary(grid, elements))
 
     # Ensure reference element is last in the list (required by compute_table)
