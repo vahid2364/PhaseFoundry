@@ -12,9 +12,10 @@ eigenvalues of the Hessian matrix H_ij = ∂μ_i/∂x_j.  At least one
 negative eigenvalue means the composition is inside the spinodal.
 
 This module provides:
-    spinodal_boundary_binary()   — binary: find zero-crossings of d²G/dx²
-    spinodal_boundary_multi()    — multicomponent: eigenvalue analysis
-    plot_spinodal()              — composition-temperature phase diagram
+    spinodal_boundary_binary()       — binary: find zero-crossings of d²G/dx²
+    spinodal_boundary_multi()        — multicomponent: eigenvalue analysis
+    compute_ternary_phase_regions()  — lower convex hull → 1/2/3-phase labels
+    plot_spinodal()                  — composition-temperature phase diagram
 """
 
 from __future__ import annotations
@@ -153,6 +154,7 @@ def spinodal_boundary_binary(
     table_paths: list[str | Path],
     independent_element: str,
     temperatures_celsius: list[float] | None = None,
+    reference_element: str | None = None,
 ) -> dict:
     """
     Compute spinodal boundaries for a binary system at multiple temperatures.
@@ -197,7 +199,13 @@ def spinodal_boundary_binary(
 
         col = elements.index(independent_element)
         x = data["compositions"][:, col]
-        d2g = data["dMU"][key]          # ∂μ_i/∂x_i = d²G/dx²
+
+        # d²G/dx_i² = ∂(μ_i − μ_ref)/∂x_i = dMU[i_i] − dMU[ref_i]  (Gibbs-Duhem)
+        d2g = data["dMU"][key]
+        if reference_element is not None:
+            ref_key = f"{reference_element}_{independent_element}"
+            if ref_key in data["dMU"]:
+                d2g = d2g - data["dMU"][ref_key]
 
         # Sort by composition for clean interpolation
         order = np.argsort(x)
@@ -251,10 +259,11 @@ def spinodal_boundary_multi(
     table_paths: list[str | Path],
     independent_elements: list[str],
     temperatures_celsius: list[float] | None = None,
+    reference_element: str | None = None,
 ) -> dict:
     """
     Compute spinodal stability for a multicomponent system via eigenvalues
-    of the Gibbs Hessian H_ij = ∂μ_i/∂x_j.
+    of the Gibbs Hessian H_ij = ∂²G/∂c_i∂c_j.
 
     A point is inside the spinodal when the smallest eigenvalue of H < 0.
 
@@ -304,7 +313,13 @@ def spinodal_boundary_multi(
                     if "dMU" not in data or key not in data["dMU"]:
                         valid = False
                         break
-                    H[ri, ci] = data["dMU"][key][pt]
+                    # H_ij = ∂²G/∂c_i∂c_j = dMU[i_j] − dMU[ref_j]  (Gibbs-Duhem)
+                    val = data["dMU"][key][pt]
+                    if reference_element is not None:
+                        ref_key = f"{reference_element}_{el2}"
+                        if ref_key in data["dMU"]:
+                            val -= data["dMU"][ref_key][pt]
+                    H[ri, ci] = val
                 if not valid:
                     break
 
@@ -316,6 +331,378 @@ def spinodal_boundary_multi(
         results["is_spinodal"].append(min_eigs < 0)
 
     return results
+
+
+# ── ternary phase-region classification ──────────────────────────────────────
+
+def compute_ternary_phase_regions(
+    table_path: str | Path,
+    independent_elements: list[str],
+    n_fine: int = 150,
+    driving_force_tol_frac: float = 5e-4,
+    min_triangle_area: float = 0.05,
+) -> dict:
+    """
+    Classify ternary composition points into single-phase, two-phase, and
+    three-phase regions using the lower convex hull of the Gibbs energy surface.
+
+    The raw CALPHAD data (typically ~190 points) is first interpolated onto a
+    fine triangular grid so the convex hull can distinguish surface (stable)
+    points from interior (unstable) points.  The phase topology follows from
+    the lower convex hull geometry:
+
+    - Interior triangular facets far from the ternary edges → three-phase
+      tie-triangle.  Compositions inside the triangle are in the 3-phase region.
+    - Compositions above the hull but outside tie-triangles → two-phase.
+    - Compositions on or very near the hull → single-phase (stable).
+
+    Parameters
+    ----------
+    table_path : str or Path
+        HDF5 table produced by generate_table(), must contain GM.
+    independent_elements : list[str]
+        The two independent elements, e.g. ['NB', 'HF'] for Nb-Hf-V.
+    n_fine : int
+        Points per axis on the interpolated triangular grid.  Default 60
+        gives ~1800 points.
+    driving_force_tol_frac : float
+        Fraction of |G_m| range used as the single-phase threshold.
+        A point with driving_force < tol_frac * (G_m_max - G_m_min) is
+        treated as on the hull (single-phase).  Default 5e-4.
+    min_triangle_area : float
+        Minimum area (composition units²) for a hull facet to be classified
+        as a tie-triangle.  For a ternary miscibility gap the tie-triangle is
+        typically large (area > 0.05); small facets are numerical artifacts.
+        Default 0.05.
+
+    Returns
+    -------
+    dict with keys:
+        'compositions'      (N, n_el) float array — original compositions
+        'gm'                (N,)      float array — G_m [J/mol]
+        'driving_force'     (N,)      float array — G_m minus hull G_m [J/mol]
+        'region'            (N,)      str array   — 'single' | 'two' | 'three'
+        'tie_triangles'     list of (3, 2) float arrays — vertices (x_el0, x_el1)
+        'elements'          list[str]
+        'independent_elements' list[str]
+        'temperature_C'     float
+        'fine_grid'         dict with 'x0', 'x1', 'gm', 'region' on fine grid
+    """
+    from scipy.spatial import ConvexHull
+    from scipy.interpolate import LinearNDInterpolator
+
+    data = load_table(table_path)
+    elements = data["elements"]
+    comps = data["compositions"]
+    gm = data["GM"]
+    T_C = data["metadata"].get("temperature", 273.15) - 273.15
+
+    idx = [elements.index(el) for el in independent_elements]
+    x0_raw = comps[:, idx[0]]
+    x1_raw = comps[:, idx[1]]
+
+    # ── interpolate G_m onto a fine triangular grid ───────────────────────
+    # LinearNDInterpolator covers only the convex hull of the raw data.
+    # NearestNDInterpolator fills the rest so the full simplex (0→1 for every
+    # element) is always covered, even when composition_ranges don't reach 0 or 1.
+    from scipy.interpolate import NearestNDInterpolator
+    raw_pts   = list(zip(x0_raw, x1_raw))
+    gm_interp_lin = LinearNDInterpolator(raw_pts, gm)
+    gm_interp_nn  = NearestNDInterpolator(raw_pts, gm)
+
+    fine_pts = []
+    for i in range(n_fine + 1):
+        for j in range(n_fine + 1 - i):
+            xa = i / n_fine
+            xb = j / n_fine
+            if xa + xb <= 1.0:
+                fine_pts.append((xa, xb))
+    fine_pts = np.array(fine_pts)
+    gm_fine  = gm_interp_lin(fine_pts[:, 0], fine_pts[:, 1])
+
+    # Fill NaN (outside data hull) with nearest-neighbor extrapolation so the
+    # phase map extends to all simplex edges and corners.
+    nan_mask = np.isnan(gm_fine)
+    if nan_mask.any():
+        gm_fine[nan_mask] = gm_interp_nn(fine_pts[nan_mask, 0],
+                                         fine_pts[nan_mask, 1])
+
+    valid   = ~np.isnan(gm_fine)   # should now be all True
+    fine_pts = fine_pts[valid]
+    gm_fine  = gm_fine[valid]
+    x0_fine  = fine_pts[:, 0]
+    x1_fine  = fine_pts[:, 1]
+
+    # ── lower convex hull on the fine grid ───────────────────────────────
+    pts_3d = np.column_stack([x0_fine, x1_fine, gm_fine])
+    hull = ConvexHull(pts_3d)
+
+    lower_mask = hull.equations[:, 2] < 0
+    lower_eqs = hull.equations[lower_mask]
+    lower_simplices = hull.simplices[lower_mask]
+
+    # Hull G_m at each fine-grid point
+    gm_hull_fine = np.full(len(x0_fine), -np.inf)
+    for eq in lower_eqs:
+        nx, ny, nz, d = eq
+        z_plane = -(nx * x0_fine + ny * x1_fine + d) / nz
+        gm_hull_fine = np.maximum(gm_hull_fine, z_plane)
+
+    gm_range = float(np.nanmax(gm_fine) - np.nanmin(gm_fine))
+    df_tol = driving_force_tol_frac * max(abs(gm_range), 1.0)
+    df_fine = gm_fine - gm_hull_fine
+
+    # ── identify tie-triangles ────────────────────────────────────────────
+    # In a ternary single-phase miscibility gap the three-phase tie-triangle
+    # appears as the largest flat facet(s) of the lower convex hull.
+    # Small facets (area < min_triangle_area) are discretization artifacts.
+    tie_triangles = []
+    for s in lower_simplices:
+        v0 = x0_fine[s]
+        v1 = x1_fine[s]
+        area = 0.5 * abs(
+            (v0[1] - v0[0]) * (v1[2] - v1[0])
+            - (v0[2] - v0[0]) * (v1[1] - v1[0])
+        )
+        if area >= min_triangle_area:
+            tie_triangles.append(np.column_stack([v0, v1]))
+
+    # ── classify fine-grid points ─────────────────────────────────────────
+    region_fine = np.where(df_fine < df_tol, "single", "two")
+    for tt in tie_triangles:
+        inside = _points_in_triangle(x0_fine, x1_fine, tt)
+        region_fine[inside] = "three"
+
+    # ── project classification back to original raw data points ──────────
+    # Encode region as int for NearestNDInterpolator (strings not supported)
+    _enc = {"single": 0, "two": 1, "three": 2}
+    _dec = {0: "single", 1: "two", 2: "three"}
+    region_enc = np.array([_enc[r] for r in region_fine])
+
+    from scipy.interpolate import NearestNDInterpolator
+    region_nn = NearestNDInterpolator(list(zip(x0_fine, x1_fine)), region_enc)
+
+    # Also compute driving force at raw data locations via hull planes
+    gm_hull_raw = np.full(len(x0_raw), -np.inf)
+    for eq in lower_eqs:
+        nx, ny, nz, d = eq
+        z_plane = -(nx * x0_raw + ny * x1_raw + d) / nz
+        gm_hull_raw = np.maximum(gm_hull_raw, z_plane)
+    df_raw = gm - gm_hull_raw
+
+    region_raw = np.array([_dec[int(v)] for v in region_nn(x0_raw, x1_raw)])
+
+    return {
+        "compositions":         comps,
+        "gm":                   gm,
+        "driving_force":        df_raw,
+        "region":               region_raw,
+        "tie_triangles":        tie_triangles,
+        "elements":             elements,
+        "independent_elements": independent_elements,
+        "temperature_C":        T_C,
+        "fine_grid": {
+            "x0":            x0_fine,
+            "x1":            x1_fine,
+            "gm":            gm_fine,
+            "driving_force": df_fine,
+            "region":        region_fine,
+        },
+    }
+
+
+# ── generalized n-component phase-region classification ───────────────────────
+
+def compute_phase_regions_multi(
+    table_path: str | Path,
+    independent_elements: list[str],
+    reference_element: str | None = None,
+    driving_force_tol_frac: float = 5e-4,
+    min_simplex_vol: float = 0.001,
+) -> dict:
+    """
+    Classify compositions into phase regions for any n-component system (n≥3).
+
+    Uses the lower convex hull of the Gibbs energy surface in
+    (n_independent + 1)-dimensional space.  Works for ternary, quaternary,
+    pentenary, and beyond.
+
+    Phase labels
+    ------------
+    single   — driving force < tol (on or near the lower hull)
+    two      — above hull, not inside a large tie-simplex
+    three    — inside a large triangular hull facet (tie-triangle)
+    four     — inside a large tetrahedral hull facet (tie-tetrahedron)
+    multi    — inside a larger multi-phase simplex
+    spinodal — subset of two/multi-phase; min eigenvalue of Hessian < 0
+
+    Parameters
+    ----------
+    table_path : str or Path
+        HDF5 table from generate_table(), must contain GM and (optionally) dMU.
+    independent_elements : list[str]
+        All elements except the reference element.
+    reference_element : str, optional
+        Reference element for Gibbs-Duhem Hessian correction.
+    driving_force_tol_frac : float
+        Fraction of G_m range used as single-phase threshold (default 5e-4).
+    min_simplex_vol : float
+        Minimum k-simplex volume (in composition units) for a hull facet to
+        be classified as a multi-phase region.  Default 0.001.
+
+    Returns
+    -------
+    dict with keys:
+        compositions          (n_pts, n_el) float array
+        gm                    (n_pts,) float array
+        driving_force         (n_pts,) float array
+        region                (n_pts,) str array — 'single'|'two'|'three'|'four'|'multi'
+        spinodal              (n_pts,) bool array
+        elements              list[str]
+        independent_elements  list[str]
+        temperature_C         float
+    """
+    from math import factorial
+    from scipy.spatial import ConvexHull
+
+    data = load_table(table_path)
+    elements = data["elements"]
+    comps    = data["compositions"]
+    gm       = data["GM"]
+    T_C      = data["metadata"].get("temperature", 273.15) - 273.15
+
+    n_ind = len(independent_elements)
+    idx   = [elements.index(el) for el in independent_elements]
+    x_ind = comps[:, idx]  # (n_pts, n_ind)
+
+    # ── lower convex hull in (n_ind+1)-dimensional space ─────────────────
+    pts_nd = np.column_stack([x_ind, gm])
+
+    _fallback = dict(
+        compositions=comps, gm=gm, driving_force=np.zeros(len(gm)),
+        region=np.full(len(gm), "single"), spinodal=np.zeros(len(gm), dtype=bool),
+        elements=elements, independent_elements=independent_elements, temperature_C=T_C,
+    )
+    try:
+        hull = ConvexHull(pts_nd)
+    except Exception:
+        return _fallback
+
+    # Lower facets: normal component in the Gm axis (index n_ind, i.e. -2) < 0
+    lower_mask    = hull.equations[:, n_ind] < 0
+    lower_eqs     = hull.equations[lower_mask]
+    lower_simps   = hull.simplices[lower_mask]
+
+    # Hull G_m at each composition point
+    gm_hull = np.full(len(gm), -np.inf)
+    for eq in lower_eqs:
+        n_x = eq[:n_ind]      # composition-axis normals
+        n_g = eq[n_ind]       # G_m-axis normal
+        d   = eq[-1]          # offset
+        z_plane = -(x_ind @ n_x + d) / n_g
+        gm_hull = np.maximum(gm_hull, z_plane)
+
+    gm_range = float(np.nanmax(gm) - np.nanmin(gm))
+    df_tol   = driving_force_tol_frac * max(abs(gm_range), 1.0)
+    df       = gm - gm_hull
+    region   = np.where(df < df_tol, "single", "two").astype(object)
+
+    # Identify large hull simplices = multi-phase tie-regions
+    for s in lower_simps:
+        verts = x_ind[s]           # (k+1, n_ind) in composition space
+        k     = len(verts) - 1
+        if k < 2:
+            continue
+        edges = verts[1:] - verts[0]      # (k, n_ind)
+        G     = edges @ edges.T            # (k, k) Gram matrix
+        vol   = float(np.sqrt(max(np.linalg.det(G), 0.0))) / factorial(k)
+        if vol >= min_simplex_vol:
+            inside = _points_in_simplex_nd(x_ind, verts)
+            label  = {2: "two", 3: "three", 4: "four"}.get(k + 1, "multi")
+            region[inside] = label
+
+    # ── spinodal: min eigenvalue of Hessian < 0 ──────────────────────────
+    n_pts      = len(gm)
+    is_spinodal = np.zeros(n_pts, dtype=bool)
+    if "dMU" in data:
+        for pt in range(n_pts):
+            H, valid = np.zeros((n_ind, n_ind)), True
+            for ri, el1 in enumerate(independent_elements):
+                for ci, el2 in enumerate(independent_elements):
+                    key = f"{el1}_{el2}"
+                    if key not in data["dMU"]:
+                        valid = False; break
+                    val = data["dMU"][key][pt]
+                    if reference_element is not None:
+                        ref_key = f"{reference_element}_{el2}"
+                        if ref_key in data["dMU"]:
+                            val -= data["dMU"][ref_key][pt]
+                    H[ri, ci] = val
+                if not valid:
+                    break
+            if valid and not np.any(np.isnan(H)):
+                is_spinodal[pt] = np.linalg.eigvalsh(H).min() < 0
+
+    return dict(
+        compositions=comps, gm=gm, driving_force=df,
+        region=region, spinodal=is_spinodal,
+        elements=elements, independent_elements=independent_elements,
+        temperature_C=T_C,
+    )
+
+
+def _points_in_simplex_nd(
+    points: np.ndarray,
+    simplex_verts: np.ndarray,
+) -> np.ndarray:
+    """
+    Return bool mask: True where points[i] lie inside the n-d simplex.
+
+    Uses barycentric coordinates via least-squares; works for any dimension.
+    simplex_verts : (k+1, n_dim) array of vertex coordinates.
+    points        : (n_pts, n_dim) array of query points.
+    """
+    n_pts = len(points)
+    T     = (simplex_verts[1:] - simplex_verts[0]).T   # (n_dim, k)
+    rhs   = (points - simplex_verts[0]).T               # (n_dim, n_pts)
+    try:
+        bary, _, _, _ = np.linalg.lstsq(T, rhs, rcond=None)  # (k, n_pts)
+    except Exception:
+        return np.zeros(n_pts, dtype=bool)
+    bary_last = 1.0 - bary.sum(axis=0)
+    all_bary  = np.vstack([bary, bary_last])            # (k+1, n_pts)
+    return np.all(all_bary >= -1e-9, axis=0)
+
+
+def _points_in_triangle(
+    px: np.ndarray,
+    py: np.ndarray,
+    triangle: np.ndarray,
+) -> np.ndarray:
+    """
+    Return boolean mask: True where (px[i], py[i]) lies inside ``triangle``.
+
+    Uses barycentric coordinates.  Points exactly on the boundary are
+    considered inside.
+
+    Parameters
+    ----------
+    px, py : (N,) float arrays
+    triangle : (3, 2) float array — rows are vertices, columns are (x, y)
+    """
+    ax, ay = triangle[0]
+    bx, by = triangle[1]
+    cx, cy = triangle[2]
+
+    denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+    if abs(denom) < 1e-15:
+        return np.zeros(len(px), dtype=bool)
+
+    w1 = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denom
+    w2 = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denom
+    w3 = 1.0 - w1 - w2
+
+    return (w1 >= -1e-9) & (w2 >= -1e-9) & (w3 >= -1e-9)
 
 
 # ── PFM parameter recommendation ─────────────────────────────────────────────
@@ -425,26 +812,32 @@ def recommend_pfm_params(
     lambda_star = 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)   # at κ=1 (scale below)
     lambda_crit = 2.0 * np.pi * np.sqrt(2.0 / d2G_c0_safe)
 
-    # Choose κ_min such that δ = delta_over_dx × (Lx/N) and N is power-of-2
-    # Iterative: start with N=256, compute dx, then δ, then κ, then λ*, then Lx, then N
+    # Choose κ_min such that δ = delta_over_dx × (Lx/N) and N is power-of-2.
+    # Self-consistent iteration: κ depends on δ=dx*delta_over_dx, dx=Lx/N, and
+    # Lx itself depends on κ via λ* = 4π√(κ/d2G_c0). Seed with κ=1, iterate to
+    # convergence (typically 3–5 steps).
     N_guess = 256
-    for _ in range(10):
-        Lx_guess = n_interfaces * 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)
+    kappa_min = 1.0
+    for _ in range(20):
+        Lx_guess = n_interfaces * 4.0 * np.pi * np.sqrt(kappa_min / d2G_c0_safe)
         dx_guess = Lx_guess / N_guess
         delta_guess = delta_over_dx * dx_guess
-        kappa_min = delta_guess ** 2 * d2G_max_safe
-        lambda_star = 4.0 * np.pi * np.sqrt(kappa_min / d2G_c0_safe)
-        lambda_crit = 2.0 * np.pi * np.sqrt(2.0 * kappa_min / d2G_c0_safe)
+        kappa_new = delta_guess ** 2 * d2G_max_safe
+        lambda_star = 4.0 * np.pi * np.sqrt(kappa_new / d2G_c0_safe)
+        lambda_crit = 2.0 * np.pi * np.sqrt(2.0 * kappa_new / d2G_c0_safe)
         Lx_min = n_interfaces * lambda_star
-        dx = delta_guess / delta_over_dx
+        dx = Lx_min / N_guess
         N_raw = Lx_min / dx
         # Round up to next power of 2
         N_min = int(2 ** np.ceil(np.log2(N_raw)))
-        if abs(N_min - N_guess) < 2:
+        if abs(kappa_new - kappa_min) / max(abs(kappa_min), 1e-30) < 1e-6:
+            kappa_min = kappa_new
             break
+        kappa_min = kappa_new
         N_guess = N_min
 
-    delta = delta_guess
+    dx = Lx_min / N_min
+    delta = delta_over_dx * dx
 
     dt_stable = None
     if M is not None:
@@ -708,7 +1101,7 @@ def plot_phase_diagram(
     all_temps = list(temps_b) + list(temps_s)
     if all_temps:
         ax.set_ylim(bottom=None, top=max(all_temps) + 200)
-    ax.legend(fontsize=10, loc="lower center")
+    ax.legend(fontsize=10, loc="upper right")
     ax.grid(False)
     plt.tight_layout()
 

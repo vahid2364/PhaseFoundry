@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline integration test — Nb-V binary, chemical-only
+# Simulation at 500 °C (x_NB = 0.50); thermodynamic tables at 100–1500 °C
+# for spinodal/binodal phase diagram generation.
+#
+# Uses PhaseForge v2 TDB (temperature-dependent).
+# All outputs go to data/pipeline_test/NbV and results/pipeline_test/NbV
+# so this run is fully isolated from production data.
+#
+# Run the full pipeline in order:
+#
+#   pf-generate    --config configs/nb_v_pipeline_test.yaml
+#   pf-surrogate   --config configs/nb_v_pipeline_test.yaml
+#   pf-simulate    --config configs/nb_v_pipeline_test.yaml
+#   pf-postprocess --config configs/nb_v_pipeline_test.yaml
+#   pf-validate    --config configs/nb_v_pipeline_test.yaml
+#
+# Or all at once:
+#   pf-run-all     --config configs/nb_v_pipeline_test.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_v_test
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.0, 1.0]
+  n_points:        100                 # grid points along the x_NB axis
+  sampling:        grid                # grid is optimal for binary (1-D linspace)
+  seed:            42
+  temperatures_C:  [100, 200, 300, 400, 500, 600, 700, 800, 900, 950, 980, 990,
+                    1000, 1002]
+  phase_map_style: ternary             # ternary | umap | both  (binary: not applicable)
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            5.0e-7              # 500 nm domain
+
+  kappa:         1.0e-12             # [J·m²/mol]
+  M:             5.0e-21             # [m⁵/(J·s)]
+
+  c0:            0.50               # mean x_NB; x_V = 0.50
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.1
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:        20000
+  save_every:      5000
+
+output:
+  data_dir:    data/pipeline_test/NbV
+  results_dir: results/pipeline_test/NbV
+  run_name:    auto

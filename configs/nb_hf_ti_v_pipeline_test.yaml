@@ -1,0 +1,60 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline integration test — Nb-Hf-Ti-V quaternary, chemical-only, 500 °C
+# Composition: x_NB=0.25, x_HF=0.25, x_TI=0.25, x_V=0.25
+#
+# Run the full pipeline in order:
+#
+#   pf-generate    --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   pf-phase-map   --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   pf-surrogate   --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   pf-simulate    --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   pf-postprocess --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   pf-validate    --config configs/nb_hf_ti_v_pipeline_test.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_ti_v_test
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, TI, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.0, 1.0]
+    HF: [0.0, 1.0]
+    TI: [0.0, 1.0]
+  n_points:        45                  # simplex lattice: C(14,3)=364 pts before filtering
+  sampling:        grid
+  seed:            42
+  temperatures_C:  [500]
+  phase_map_style: both                # ternary | umap | both
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             64
+  Lx:            5.0e-7              # 500 nm domain
+
+  kappa:         [1.0e-12, 1.0e-12, 1.0e-12]
+
+  M:
+    - [5.0e-21, 0.0,     0.0    ]
+    - [0.0,     5.0e-21, 0.0    ]
+    - [0.0,     0.0,     5.0e-21]
+
+  c0:            [0.25, 0.25, 0.25]  # x_NB, x_HF, x_TI; x_V = 0.25
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.1
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:        20000
+  save_every:      5000
+
+output:
+  data_dir:    data/pipeline_test/NbHfTiV
+  results_dir: results/pipeline_test/NbHfTiV
+  run_name:    auto

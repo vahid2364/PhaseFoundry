@@ -1,0 +1,66 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pipeline integration test — Nb-Hf-V ternary, chemical-only, 500 °C
+# Composition: x_NB = 0.45, x_HF = 0.20, x_V = 0.35
+#
+# Uses PhaseForge v3 TDB (latest).
+# All outputs go to data/pipeline_test/ and results/pipeline_test/ so this
+# run is fully isolated from production data.
+#
+# Run the full pipeline in order:
+#
+#   pf-generate    --config configs/nb_hf_v_pipeline_test.yaml
+#   pf-surrogate   --config configs/nb_hf_v_pipeline_test.yaml
+#   pf-simulate    --config configs/nb_hf_v_pipeline_test.yaml
+#   pf-postprocess --config configs/nb_hf_v_pipeline_test.yaml
+#   pf-validate    --config configs/nb_hf_v_pipeline_test.yaml
+#
+# Or all at once:
+#   pf-run-all     --config configs/nb_hf_v_pipeline_test.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_v_test
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]      # V is reference; NB and HF are independent
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.0, 1]
+    HF: [0.0, 1]
+  n_points:        50                  # total simplex samples (sobol/dirichlet) or pts/axis (grid)
+  sampling:        grid                # grid | sobol | dirichlet
+  seed:            42                  # reproducibility for sobol/dirichlet
+  temperatures_C:  [500]
+  phase_map_style: ternary             # ternary | umap | both
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128                 # small grid for fast test run
+  Lx:            5.0e-7              # 500 nm domain
+
+  # Gradient energy [J·m²/mol] — one per independent field
+  kappa:         [1.0e-12, 7.0e-12]  # κ_NB, κ_HF
+
+  # Mobility matrix [m⁵/(J·s)]
+  M:
+    - [5.0e-21, 0.0    ]             # M_NbNb, M_NbHf
+    - [0.0,     5.0e-23]             # M_HfNb, M_HfHf
+
+  c0:            [0.45, 0.20]        # [x_NB, x_HF]; x_V = 1 - 0.45 - 0.20 = 0.35
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.1            # auto from max|H_ii|
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:        20000               # short run — just enough to see phase separation
+  save_every:      5000
+
+output:
+  data_dir:    data/pipeline_test/NbHfV
+  results_dir: results/pipeline_test/NbHfV
+  run_name:    auto
