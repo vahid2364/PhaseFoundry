@@ -49,3 +49,6 @@ archive/
 
 # ── Pipelines legacy output ───────────────────────────────────────────────────
 pipelines/output/
+
+# ── Paper drafts / manuscripts (not part of the code package) ─────────────────
+paper/
