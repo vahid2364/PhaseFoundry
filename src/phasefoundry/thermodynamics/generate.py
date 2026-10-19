@@ -50,7 +50,7 @@ def _eval_point(
     from pycalphad.property_framework import IsolatedPhase
 
     cond = {v.T: temperature, v.P: pressure}
-    # Provide N-1 independent composition conditions (omit last element)
+    # pycalphad takes N - 1 composition conditions; the last element is dependent
     for el, xi in zip(elements[:-1], comp_row[:-1], strict=True):
         cond[v.X(el)] = float(xi)
 
@@ -79,7 +79,7 @@ def _eval_point(
         if "dMU" in quantities:
             dmus = {}
             for el1 in elements:
-                for el2 in elements[:-1]:  # derivatives w.r.t. independent elements only
+                for el2 in elements[:-1]:
                     dmu = wks.get(ip(f"MU({el1}).X({el2})")).squeeze()  # ty: ignore[invalid-argument-type]
                     dmus[f"{el1}_{el2}"] = float(dmu) if np.isfinite(dmu) else np.nan
             result["dMU"] = dmus
@@ -148,7 +148,7 @@ def compute_table(
     if n_failed > 0:
         warnings.warn(f"{n_failed}/{n_pts} grid points failed and were skipped.", stacklevel=2)
 
-    # Collect into arrays (preserve original grid order)
+    # Parallel results arrive out of order; sort to restore the grid order
     valid_indices = sorted(results_by_idx.keys())
     out: dict = {
         "compositions": np.array([results_by_idx[i]["composition"] for i in valid_indices]),

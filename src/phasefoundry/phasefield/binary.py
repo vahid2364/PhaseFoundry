@@ -91,16 +91,15 @@ def stable_dt(
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
     T_K = stored_T[idx]
 
-    # Sample d²G/dx² over [0,1] using the available surrogate
     x = np.linspace(0.01, 0.99, 1000)
     el = list(calphad_fit["fits"][T_K]["models"].keys())[0]
     mdl = calphad_fit["fits"][T_K]["models"][el]
 
-    if "spline_dfdx" in mdl:  # G_m spline: analytic 2nd derivative
+    if "spline_dfdx" in mdl:
         d2G = mdl["spline_dfdx"].derivative()(x)
-    elif "spline" in mdl:  # Δμ spline: analytic derivative = d²G/dx²
+    elif "spline" in mdl:
         d2G = mdl["spline"].derivative()(x)
-    else:  # polynomial: 2nd difference of the Δμ polynomial = d³G/dx³, not d²G/dx²
+    else:
         h = 1e-5
 
         def mu(v):
@@ -109,10 +108,7 @@ def stable_dt(
         d2G = (mu(x + h) - 2 * mu(x) + mu(x - h)) / h**2
 
     d2G_max = float(np.max(np.abs(d2G)))
-    # With degenerate mobility M(c) = M₀·c·(1−c), the effective mobility at
-    # the mean composition c0 gives the tightest stability bound.
-    # We use c0 = 0.5 (worst case) so the estimate is conservative.
-    M_eff_max = M * 0.25  # M·c·(1-c) peaks at c=0.5 with value M/4
+    M_eff_max = M * 0.25
     dt_max = safety * dx**2 / (M_eff_max * d2G_max)
     return dt_max
 
@@ -192,23 +188,19 @@ def write_simulation_params(
         gm_arr = None
 
     d2G_max = float(np.max(np.abs(d2G_arr)))
-    # most negative d²G → most unstable spinodal point
     d2G_c0 = float(np.abs(d2G_arr[np.argmin(d2G_arr)]))
 
-    # interface energy: σ = ∫ sqrt(2κ · ΔG_mix) dc  (common-tangent reference)
     sigma = float("nan")
     if gm_arr is not None:
         try:
             spinodal_mask = d2G_arr < 0
             if spinodal_mask.any():
-                # common-tangent approximation: linear fit between spinodal edges
                 idx_lo = int(np.argmax(spinodal_mask))
                 idx_hi = int(len(spinodal_mask) - 1 - np.argmax(spinodal_mask[::-1]))
                 x_lo, x_hi = x[idx_lo], x[idx_hi]
                 gm_lo, gm_hi = gm_arr[idx_lo], gm_arr[idx_hi]
                 tangent = gm_lo + (gm_hi - gm_lo) / (x_hi - x_lo) * (x - x_lo)
-                dG_mix = gm_arr - tangent  # excess above common tangent
-                # integrate only where dG_mix >= 0 (inside spinodal)
+                dG_mix = gm_arr - tangent
                 mask = (x >= x_lo) & (x <= x_hi) & (dG_mix >= 0)
                 if mask.sum() > 2:
                     from scipy.integrate import trapezoid
@@ -221,7 +213,6 @@ def write_simulation_params(
     lambda_star = 4.0 * np.pi * np.sqrt(kappa / max(d2G_c0, 1e-30))
     lambda_crit = 2.0 * np.pi * np.sqrt(2.0 * kappa / max(d2G_c0, 1e-30))
     t_total = dt * n_steps
-    # Stability ratio with degenerate mobility: effective M peaks at c=0.5 → M/4
     M_eff_max = M * 0.25
     stability_ratio = M_eff_max * d2G_max * dt / dx**2
 
@@ -327,14 +318,12 @@ def solve_cahn_hilliard_binary(
     c0: float = 0.4,
     noise: float = 0.01,
     seed: int = 0,
-    dt: float | None = None,  # None → auto-select from stability criterion
-    dt_scale: float = 1.0,  # multiply auto dt by this factor (e.g. 1e-3 for testing)
+    dt: float | None = None,
+    dt_scale: float = 1.0,
     n_steps: int = 2000,
-    # double-well parameters (used when free_energy='double_well')
     rho_s: float = 5.0,
     c_a: float = 0.3,
     c_b: float = 0.7,
-    # CALPHAD parameters (used when free_energy is 'calphad', 'calphad_spline' or 'calphad_gm_spline')
     calphad_fit: dict | None = None,
     temperature_K: float | None = None,
     save_every: int = 100,
@@ -464,7 +453,6 @@ def solve_cahn_hilliard_binary(
         else:
             dt = 0.1 * dt_scale
             print(f"  auto dt = {dt:.4e} s  (double-well default × dt_scale={dt_scale:.3g})")
-    # Warn if user-supplied dt violates stability for CALPHAD models
     elif free_energy in ("calphad", "calphad_spline", "calphad_gm_spline"):
         dt_stable_val = stable_dt(M=M, dx=dx, calphad_fit=fit, temperature_K=T_K, safety=0.5)
         if dt > dt_stable_val:
@@ -493,18 +481,13 @@ def solve_cahn_hilliard_binary(
             dt_stable=dt_stable_val,
         )
 
-    k2 = laplacian_operator(N, Lx)  # ∇²  in Fourier space (N×N, negative)
-    k4 = k2**2  # ∇⁴  in Fourier space (positive)
-    # denom is recomputed each step when degenerate mobility is used
+    k2 = laplacian_operator(N, Lx)
+    k4 = k2**2
 
     rng = np.random.default_rng(seed)
     c = c0 + noise * (rng.random((N, N)) - 0.5)
     c = np.clip(c, 0.0, 1.0)
 
-    # degenerate mobility M(c) = M₀ · c · (1 − c)
-    # Ensures diffusion vanishes in pure phases (c→0 or c→1), preserving
-    # mass conservation and preventing unphysical fluxes at boundaries.
-    # The effective mobility field is recomputed each step from current c.
     def mobility(c: np.ndarray) -> float:
         """Spatially averaged degenerate mobility M(c) = M₀·c·(1−c)."""
         return float(np.mean(M * c * (1.0 - c)))
@@ -517,7 +500,7 @@ def solve_cahn_hilliard_binary(
         def bulk_f(c: np.ndarray) -> float:
             return float(np.mean(double_well_f(c, rho_s=rho_s, c_a=c_a, c_b=c_b)))
 
-        bulk_gm = None  # ΔG_mix not available for double-well
+        bulk_gm = None
 
     elif free_energy == "calphad":
 
@@ -539,7 +522,7 @@ def solve_cahn_hilliard_binary(
 
         bulk_gm = None
 
-    else:  # calphad_gm_spline
+    else:
 
         def bulk_mu(c: np.ndarray) -> np.ndarray:
             return calphad_df_dc_gm_spline(c, gm_spline_fit=fit, temperature_K=T_K)
@@ -547,7 +530,6 @@ def solve_cahn_hilliard_binary(
         def bulk_f(c: np.ndarray) -> float:
             return float(np.mean(calphad_f_gm_spline(c, gm_spline_fit=fit, temperature_K=T_K)))
 
-        # G_m spline — build mechanical mixture (linear) reference for ΔG_mix
         stored_T = np.array(fit["temperatures_K"])
         T_K_idx = int(np.argmin(np.abs(stored_T - T_K)))
         T_K_key = stored_T[T_K_idx]
@@ -576,7 +558,6 @@ def solve_cahn_hilliard_binary(
         t_phys = step * dt
         F_bulk = bulk_f(c)
 
-        # Gradient energy: F_grad = κ/2 ∫|∇c|²dV  (via Parseval's theorem)
         c_hat = fft2(c)
         F_grad = float(kappa / 2.0 * np.mean((-k2) * np.abs(c_hat) ** 2) / (N**2))
         F_tot = F_bulk + F_grad
@@ -587,7 +568,6 @@ def solve_cahn_hilliard_binary(
         bulk_energy_history.append(F_bulk)
         grad_energy_history.append(F_grad)
 
-        # ΔG_mix = mean(G_m(c) − linear_ref(c))  [only for G_m spline model]
         if bulk_gm is not None:
             dG = float(np.mean(bulk_gm(c) - linear_ref(c)))
             mix_energy_history.append(dG)
@@ -599,22 +579,16 @@ def solve_cahn_hilliard_binary(
     t_start = time.perf_counter()
 
     for step in tqdm(range(1, n_steps + 1), desc=f"C-H ({free_energy})", unit="step"):
-        # Degenerate mobility: M_eff(c) = M₀·⟨c·(1−c)⟩  (spatially averaged)
-        # Vanishes in pure phases → no artificial mass injection at c=0 or c=1.
-        # Recomputed every step so it tracks the evolving composition field.
         M_eff = float(np.mean(M * c * (1.0 - c)))
-        denom = 1.0 + M_eff * kappa * dt * k4  # implicit denominator (≥ 0)
+        denom = 1.0 + M_eff * kappa * dt * k4
 
         mu_bulk = bulk_mu(c)
         mu_hat = fft2(mu_bulk)
         c_hat = fft2(c)
 
-        # Semi-implicit update: gradient energy implicit, bulk explicit
-        #   ĉⁿ⁺¹ = (ĉⁿ + M_eff Δt k² μ̂_bulk) / (1 + M_eff κ Δt k⁴)
         c_hat_new = (c_hat + M_eff * dt * k2 * mu_hat) / denom
         c = np.real(ifft2(c_hat_new))
-        # No hard clip — degenerate mobility naturally suppresses fluxes in
-        # pure phases; clipping would inject/remove mass and break conservation.
+        # no clipping: it would break mass conservation
 
         if step % save_every == 0 or step == n_steps:
             _snapshot(c, step)
@@ -633,7 +607,6 @@ def solve_cahn_hilliard_binary(
             save_every=save_every,
             dt=dt,
         )
-        # plot will be generated after CHResult is constructed — call separately
 
     params = {
         "free_energy": free_energy,
@@ -977,7 +950,6 @@ def plot_gm_with_pfm(
     gm = spl_gm(x)
     d2G = spl_dfdx.derivative()(x)
 
-    # Mechanical mixture (linear) reference
     gm_0 = float(spl_gm(0.0))
     gm_1 = float(spl_gm(1.0))
     linear_ref = gm_0 * (1.0 - x) + gm_1 * x
@@ -994,7 +966,6 @@ def plot_gm_with_pfm(
     ax.plot(x, gm, color="#1f77b4", lw=2.2, label="$G_m(x)$  CALPHAD spline")
     ax.plot(x, linear_ref, color="gray", lw=1.2, ls="--", label="Mechanical mixture (ref)")
 
-    # ΔG_mix = G_m - linear_ref shaded where negative
     dGmix = gm - linear_ref
     ax.fill_between(
         x, gm, linear_ref, where=(dGmix < 0), alpha=0.15, color="#d62728", label="$\\Delta G_{mix} < 0$  (driving force)"

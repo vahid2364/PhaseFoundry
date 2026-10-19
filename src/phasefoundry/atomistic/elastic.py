@@ -265,7 +265,7 @@ def build_elastic_table(
                 crystal_structure=crystal_structure,
                 supercell=supercell,
             )
-        except Exception as exc:  # noqa: BLE001 — one bad composition must not stop the sweep
+        except Exception as exc:  # noqa: BLE001
             failed.append(x)
             warnings.warn(f"Composition {dict(zip(symbols, x.round(4), strict=True))} failed: {exc}", stacklevel=1)
             continue

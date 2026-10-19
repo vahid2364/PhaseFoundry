@@ -33,7 +33,6 @@ ArrayFn = Callable[[np.ndarray], np.ndarray]
 """Function from a composition array to an array of the same shape."""
 
 
-# cubic (G&A 2007, Eq. 47-48)
 def cubic_h(c: np.ndarray) -> np.ndarray:
     """Return h(c) = c³(10 − 15c + 6c²), which rises from h(0) = 0 to h(1) = 1."""
     return c**3 * (10.0 - 15.0 * c + 6.0 * c**2)
@@ -64,7 +63,6 @@ def cubic_dbeta(c: np.ndarray) -> np.ndarray:
     return cubic_dh(c)
 
 
-# linear (ablation / sanity-check alternative)
 def linear_h(c: np.ndarray) -> np.ndarray:
     """Return h(c) = c."""
     return c
@@ -95,7 +93,6 @@ def linear_dbeta(c: np.ndarray) -> np.ndarray:
     return np.ones_like(c)
 
 
-# sharp step (for sharp-interface benchmarks only)
 def step_h(c: np.ndarray) -> np.ndarray:
     """Return 1 where c ≥ 0.5 and 0 elsewhere, like a binary phase mask."""
     return (c >= 0.5).astype(c.dtype)

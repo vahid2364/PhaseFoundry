@@ -55,7 +55,6 @@ if TYPE_CHECKING:
     from ..elasticity.models import EigenstrainModel
     from ..thermodynamics.interpolant import GmInterpolant
 
-# Optional GPU backend via CuPy.  Falls back to NumPy transparently.
 try:
     import cupy as _cp
     from cupy.fft import fftn as _cp_fftn
@@ -133,7 +132,6 @@ class SimResult:
     stress_history: list = field(default_factory=list)
     strain_history: list = field(default_factory=list)
 
-    # convenience: min/max across all fields
     @property
     def c_min(self) -> float:
         """Smallest value in the final composition fields."""
@@ -184,13 +182,13 @@ def _hessian_scan(
         axes_1d.append(np.linspace(lo, hi, n_scan))
 
     grids = np.meshgrid(*axes_1d, indexing="ij")
-    pts = np.stack([g.ravel() for g in grids], axis=0)  # (N_ind, n_pts)
+    pts = np.stack([g.ravel() for g in grids], axis=0)
     c_sum = pts.sum(axis=0)
     valid = (c_sum < 0.99) & np.all(pts > 0.001, axis=0)
     pts = pts[:, valid]
     if pts.shape[1] == 0:
         pts = np.full((N_ind, 1), 1.0 / (N_ind + 1))
-    return interpolant.d2g(pts)  # (N_ind, N_ind, n_valid_pts)
+    return interpolant.d2g(pts)
 
 
 def stable_dt(
@@ -239,7 +237,7 @@ def stable_dt(
             continue
 
     if eig_max == 0.0:
-        eig_max = 1.0  # fallback
+        eig_max = 1.0
 
     return safety * dx**2 / (M_max * eig_max)
 
@@ -294,19 +292,12 @@ def solve_cahn_hilliard(
     ndim: int = 2,
     use_gpu: bool = False,
     elastic_enabled: bool = False,
-    # Model-based interface: supply a pre-built EigenstrainModel.
-    # Controls how eps_star, mu_el, C_eff, and C_field are computed.
-    # When None, falls back to FixedVegardModel built from Lambda/C_mat/C_ppt.
     elastic_model: EigenstrainModel | None = None,
-    # pre-built stiffness tensors (from run.py)
     elastic_C_mat: np.ndarray | None = None,
     elastic_C_ppt: np.ndarray | None = None,
-    # isotropic fallback (used only when elastic_C_mat/C_ppt are None)
     elastic_G_matrix: float | None = None,
     elastic_delta: float = 1.0,
     elastic_nu: float = 0.3,
-    # Vegard tensor Λ, shape (N_ind, ndim, ndim) — built by run.py from alpha values
-    # Replaces scalar elastic_eps_T: eps*(x) = einsum('kxy,kij->xyij', c, Lambda)
     elastic_Lambda: np.ndarray | None = None,
     elastic_sigma_applied: np.ndarray | None = None,
     elastic_solve_every: int = 1,
@@ -437,7 +428,7 @@ def solve_cahn_hilliard(
                 "Build it with build_vegard_tensor(alpha, ind_elements, ndim) "
                 "using alpha values from elastic_params.yaml (step 1b output)."
             )
-        _Lambda = elastic_Lambda  # (N_ind, ndim, ndim)
+        _Lambda = elastic_Lambda
 
         if elastic_model is not None:
             _model = elastic_model
@@ -459,14 +450,14 @@ def solve_cahn_hilliard(
                 print(f"    α_{el} = {_Lambda[k, 0, 0]:.5f}")
     else:
         _C_mat = _C_ppt = _Lambda = None
-    _mu_el_cache = None  # (N_ind, N, N), reused across elastic_solve_every steps
-    _elastic_u_prev = None  # warm-start displacement from last solve
-    _elastic_result = None  # last full elastic solve result (for save_fields)
+    _mu_el_cache = None
+    _elastic_u_prev = None
+    _elastic_result = None
 
-    M = _to_matrix(M, N_ind)  # (N_ind, N_ind)
-    kappa = _to_vector(kappa, N_ind)  # (N_ind,)
-    c0 = _to_vector(c0, N_ind)  # (N_ind,)
-    M_diag = np.diag(M)  # (N_ind,)
+    M = _to_matrix(M, N_ind)
+    kappa = _to_vector(kappa, N_ind)
+    c0 = _to_vector(c0, N_ind)
+    M_diag = np.diag(M)
 
     dt_stable = stable_dt(M_diag, dx, interpolant, c0=c0)
     if dt is None:
@@ -479,29 +470,14 @@ def solve_cahn_hilliard(
     dt_hi = dt_max if dt_max is not None else dt * 20.0
     if adaptive_dt:
         print(f"  Adaptive dt ENABLED  dc_tol = [{dc_tol_lo:.1e}, {dc_tol_hi:.1e}]  dt bounds = [{dt_lo:.3e}, {dt_hi:.3e}] s")
-    # track total physical end-time so adaptive mode still reaches t_final
     t_final = dt * n_steps
 
-    # per-component stabilization A_i (Eyre convex-splitting)
-    # Each field i gets its own stabilization constant A_i ≥ |H_ii(c0)|.
-    # This is tighter than the global scalar (which uses λ_min of the full
-    # Hessian) and gives each component exactly the damping it needs:
-    #   - Strongly unstable elements (large |H_ii|) get large A_i → heavy damping
-    #   - Weakly unstable elements get small A_i → less artificial drag
-    # Scheme per field i:
-    #   c_i_new·(1 + dt·k²·M_ii·(A_i + κ_i·k²)) = c_i_old + dt·k²·M_ii·(A_i·c_i_old - μ_i_old)
     if stabilization is None:
-        # Scan the same composition neighbourhood used by stable_dt so that
-        # A_i = max_{c in scan} max(0, -H_ii(c)).
-        # Using only c0 is insufficient: H_ii can be significantly more
-        # negative at compositions the simulation will visit during
-        # decomposition (e.g. in NbV at 500C, H_NB reaches -19840 J/mol
-        # at x_NB~0.75 vs -7239 J/mol at x_NB=0.50).
+        # Scan around c0, not only c0: H_ii is more negative at compositions reached during decomposition.
         try:
             H_scan = _hessian_scan(interpolant, c0, c0_window=0.3, n_scan=10)
             A_stab = np.array([max(0.0, float(np.nanmax(-H_scan[i, i, :]))) for i in range(N_ind)])
         except Exception:
-            # fallback: single-point evaluation at c0
             c0_field = c0[:, None, None] * np.ones((N_ind, 1, 1))
             try:
                 H = interpolant.d2g(c0_field)
@@ -510,7 +486,6 @@ def solve_cahn_hilliard(
             except Exception:
                 A_stab = np.zeros(N_ind)
     else:
-        # scalar broadcast to every component
         A_stab = np.broadcast_to(np.atleast_1d(float(stabilization)), (N_ind,)).copy()
 
     for i, el in enumerate(interpolant.ind_elements):
@@ -520,10 +495,9 @@ def solve_cahn_hilliard(
             print(f"  Stabilization A_{el} = 0  (convex at c0)")
 
     grid_shape = (N,) * ndim
-    k2 = laplacian_operator(N, Lx, ndim=ndim)  # (N,N) or (N,N,N), real-negative
-    k4 = k2**2  # real-positive
+    k2 = laplacian_operator(N, Lx, ndim=ndim)
+    k4 = k2**2
 
-    # Parseval normalization factor: 1/N^ndim
     parseval_norm = N**ndim
 
     print(
@@ -555,14 +529,12 @@ def solve_cahn_hilliard(
     F_hist = []
     Fb_hist = []
     Fg_hist = []
-    # per-element histories of c_min, c_mean, c_max (one dict each)
     all_elements = interpolant.ind_elements + [interpolant.reference_element]
     cmin_hist = {el: [] for el in all_elements}
     cmean_hist = {el: [] for el in all_elements}
     cmax_hist = {el: [] for el in all_elements}
     t_phys = 0.0
 
-    # elastic field snapshots (populated only when elastic_save_fields=True)
     mu_ch_hist: list[np.ndarray] = []
     mu_el_hist: list[np.ndarray] = []
     stress_hist: list[np.ndarray] = []
@@ -579,20 +551,7 @@ def solve_cahn_hilliard(
         time_hist.append(t_phys)
 
         Fb = float(np.mean(interpolant.gm(c_arr)))
-        # Gradient energy — Parseval derivation (verified against analytic sinusoid):
-        #
-        #   F_grad = κ/2 · mean_x(|∇c|²)
-        #
-        # numpy DFT convention:  ĉ(k) = Σ_x c(x) e^{-2πi k·x/N}
-        # Parseval:               Σ_x |c|²  = (1/N^d) Σ_k |ĉ|²
-        # Gradient in k-space:   ∇ → i·(2πk/Lx), so |∇c|² ↔ (-k2)|ĉ|²
-        # Combining:
-        #   mean_x(|∇c|²) = (1/N^d) Σ_x |∇c|²
-        #                  = (1/N^d)·(1/N^d) Σ_k (-k2)|ĉ|²
-        #                  = mean_k((-k2)|ĉ|²) / N^d
-        #
-        # Therefore:
-        #   F_grad = κ/2 · mean_k((-k2)|ĉ|²) / parseval_norm    ✓
+        # numpy's FFT is unnormalized, so mean_x |grad c|^2 = mean_k((-k2) |c_hat|^2) / N^ndim (Parseval).
         Fg = 0.0
         for i in range(N_ind):
             c_hat = _fftn(c_arr[i])
@@ -601,7 +560,6 @@ def solve_cahn_hilliard(
         Fb_hist.append(Fb)
         Fg_hist.append(Fg)
 
-        # per-element composition statistics
         c_ref_arr = 1.0 - c_arr.sum(axis=0)
         for i, el in enumerate(interpolant.ind_elements):
             cmin_hist[el].append(float(c_arr[i].min()))
@@ -635,8 +593,8 @@ def solve_cahn_hilliard(
     t_start = time.perf_counter()
 
     step = 0
-    dt_change_count = 0  # number of adaptive dt adjustments (for logging)
-    snap_interval = t_final / max(1, n_steps // save_every)  # adaptive snap cadence
+    dt_change_count = 0
+    snap_interval = t_final / max(1, n_steps // save_every)
     next_snap_t = snap_interval
     pbar = tqdm(total=n_steps, desc="C-H (general)", unit="step")
 
@@ -644,42 +602,31 @@ def solve_cahn_hilliard(
         if adaptive_dt:
             if t_phys >= t_final:
                 break
-            # shrink last step so we land exactly on t_final
             dt = min(dt, t_final - t_phys)
         elif step >= n_steps:
             break
 
         step += 1
 
-        # degenerate mobility scalar: product of ALL compositions
-        c_ref = 1.0 - c.sum(axis=0)  # (*spatial,)
-        deg = np.prod(c, axis=0) * np.clip(c_ref, 1e-8, 1)  # (*spatial,)
+        c_ref = 1.0 - c.sum(axis=0)
+        deg = np.prod(c, axis=0) * np.clip(c_ref, 1e-8, 1)
         deg_mean = float(np.mean(deg))
 
-        # spatially-averaged effective mobility matrix
-        M_eff = M * deg_mean  # (N_ind, N_ind)
-        M_eff_diag = np.diag(M_eff)  # (N_ind,)
+        M_eff = M * deg_mean
+        M_eff_diag = np.diag(M_eff)
 
-        # chemical potentials from interpolant
-        # Clamp only for interpolant evaluation to avoid NaN from out-of-bounds
-        # queries when any pixel overshoots the table boundary.  The stored
-        # composition field c is never modified, so mass is exactly conserved.
+        # Clamp only the interpolant input; c itself is never modified, so mass is conserved.
         eps = 1e-4
         c_clamp = np.clip(c, eps, 1.0 - eps)
-        # also enforce simplex: last component must be positive
         c_ref_clamp = 1.0 - c_clamp.sum(axis=0)
         scale = np.where(c_ref_clamp < eps, (1.0 - eps * (interpolant.N_ind + 1)) / np.maximum(c_clamp.sum(axis=0), 1e-10), 1.0)
         c_eval = c_clamp * scale[np.newaxis]
-        mu_bulk = interpolant.mu(c_eval)  # (N_ind, *spatial)
+        mu_bulk = interpolant.mu(c_eval)
 
-        # Clamp composition to the physical simplex before passing to the
-        # elastic model — the SQS interpolant (local_vegard) falls back to
-        # nearest-neighbour outside [0,1], which can amplify overshoot.
-        # Mass conservation is unaffected: the stored field c is never modified.
+        # Clamp c for the elastic model: the SQS interpolant extrapolates by nearest neighbour outside [0, 1].
         if elastic_enabled and (step % elastic_solve_every == 0 or _mu_el_cache is None):
             assert _model is not None and _C_mat is not None and _C_ppt is not None
             c_el = np.clip(c, 0.0, 1.0)
-            # re-normalise so rows still sum to ≤ 1 on the simplex
             row_sum = c_el.sum(axis=0, keepdims=True)
             c_el = np.where(row_sum > 1.0, c_el / row_sum, c_el)
             eps_star = _model.eps_star_field(c_el, ndim)
@@ -709,22 +656,18 @@ def solve_cahn_hilliard(
                     "sharp interface). Try: increase tol, increase max_iter, "
                     "increase solve_every, or reduce dt."
                 )
-            _mu_el_cache = _mu_el_new  # shape (N_ind, *spatial)
+            _mu_el_cache = _mu_el_new
         if elastic_enabled:
-            mu_bulk = mu_bulk + _mu_el_cache  # both (N_ind, *spatial)
+            mu_bulk = mu_bulk + _mu_el_cache
 
         c_hat = [_fftn(c[i]) for i in range(N_ind)]
         mu_hat = [_fftn(mu_bulk[i]) for i in range(N_ind)]
 
-        # update each field (stabilized semi-implicit / Eyre convex-splitting)
         c_new = xp.empty_like(c)
         for i in range(N_ind):
-            # explicit cross-terms from off-diagonal mobility
             cross_bulk = sum(M_eff[i, j] * mu_hat[j] for j in range(N_ind) if j != i)
             cross_grad = sum(M_eff[i, j] * kappa[j] * k4 * c_hat[j] for j in range(N_ind) if j != i)
 
-            # per-component stabilization: A_i treated implicitly
-            # denom gains +dt·(-k²)·M_ii·A_i; numerator subtracts A_i·c_hat_i
             Ai = A_stab[i]
             denom = 1.0 + M_eff_diag[i] * dt * (-k2) * Ai + M_eff_diag[i] * kappa[i] * dt * k4
 
@@ -872,15 +815,13 @@ def _save_frame(
         reference_element: Reference element, shown as 1 − Σ cᵢ. ``None`` leaves it out.
     """
     N_ind = c.shape[0]
-    ndim = c.ndim - 1  # spatial dims = total dims minus element axis
+    ndim = c.ndim - 1
 
-    # build list of (data, label) — independent fields + reference if available
     fields = [(c[i], elements[i]) for i in range(N_ind)]
     if reference_element is not None:
         c_ref = 1.0 - c.sum(axis=0)
         fields.append((c_ref, reference_element))
 
-    # for 3-D take mid-plane z-slice; label the slice in the title
     slice_label = ""
     if ndim == 3:
         mid = c.shape[1] // 2
@@ -923,7 +864,6 @@ def _save_log(
     which is the true step only for fixed-step snapshots on multiples of ``save_every``.
     """
     path = out_dir / "free_energy_log.txt"
-    # header: fixed columns + per-element triplet (min, mean, max)
     el_cols = "  ".join(f"{'x' + el + '_min':>12}  {'x' + el + '_mean':>12}  {'x' + el + '_max':>12}" for el in elements)
     header = f"{'step':>10}  {'time_s':>14}  {'F_total':>16}  {'F_bulk':>16}  {'F_grad':>16}  {el_cols}"
     with path.open("w") as fh:
@@ -960,7 +900,6 @@ def _plot_energy(
     F_arr = np.array(F_hist)
     Fb_arr = np.array(Fb_hist)
     Fg_arr = np.array(Fg_hist)
-    # use absolute values; gradient energy is always positive
     ax.plot(t, np.abs(F_arr), label="|$F_{\\rm total}$|", linewidth=2, color="#1f77b4")
     ax.plot(t, np.abs(Fb_arr), label="|$F_{\\rm bulk}$|", linewidth=1.5, linestyle="--", color="#ff7f0e")
     ax.plot(t, np.abs(Fg_arr), label="$F_{\\rm gradient}$", linewidth=1.5, linestyle=":", color="#2ca02c")
@@ -1057,24 +996,22 @@ def _write_params(
     t_total = dt * n_steps
 
     c0_col = c0.reshape(N_ind, 1)
-    H_c0 = interp.d2g(c0_col)[:, :, 0]  # (N_ind, N_ind)
-    eigs = np.linalg.eigvalsh(H_c0)  # ascending
-    lam_min = float(eigs[0])  # most negative
+    H_c0 = interp.d2g(c0_col)[:, :, 0]
+    eigs = np.linalg.eigvalsh(H_c0)
+    lam_min = float(eigs[0])
     lam_max_abs = float(np.abs(eigs).max())
 
-    # Hessian diagonal elements (per-field self-interaction)
     H_diag = np.array([H_c0[i, i] for i in range(N_ind)])
 
-    # Use |λ_min| (most negative eigenvalue) as the relevant driving force
-    # for interface width and spinodal wavelengths; this is the worst case.
-    f2_eff = max(abs(lam_min), 1e-30)  # effective |d²G|
+    # |lambda_min| is the worst case for the interface width and spinodal wavelengths.
+    f2_eff = max(abs(lam_min), 1e-30)
 
     delta = [float(np.sqrt(kappa[i] / f2_eff)) for i in range(N_ind)]
     lambda_star = [4.0 * np.pi * np.sqrt(kappa[i] / f2_eff) for i in range(N_ind)]
     lambda_crit = [2.0 * np.pi * np.sqrt(2.0 * kappa[i] / f2_eff) for i in range(N_ind)]
-    kappa_min = [f2_eff * (5.0 * dx) ** 2 for _ in range(N_ind)]  # for δ = 5·dx
+    kappa_min = [f2_eff * (5.0 * dx) ** 2 for _ in range(N_ind)]
 
-    # Effective M peaks at c=0.5 for each field (degenerate mobility)
+    # 0.25 bounds the degenerate mobility factor; it is the binary maximum.
     stab = [float(M[i, i] * 0.25 * lam_max_abs * dt / dx**2) for i in range(N_ind)]
 
     lines = [

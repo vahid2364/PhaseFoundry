@@ -87,8 +87,8 @@ def elastic_strain(
     """
     if isinstance(scheme, str):
         scheme = get_scheme(scheme)
-    beta = scheme.beta(c)  # (N, N)
-    es2 = eigenstrain[:2, :2]  # (2, 2)
+    beta = scheme.beta(c)
+    es2 = eigenstrain[:2, :2]
     return strain - beta[..., None, None] * es2[None, None]
 
 
@@ -140,16 +140,16 @@ def elastic_potential(
     if isinstance(scheme, str):
         scheme = get_scheme(scheme)
 
-    eps_el = elastic_strain(strain, c, eigenstrain, scheme)  # (N, N, 2, 2)
+    eps_el = elastic_strain(strain, c, eigenstrain, scheme)
 
-    dC = (C_ppt - C_mat)[:2, :2, :2, :2]  # (2,2,2,2)
-    es2 = eigenstrain[:2, :2]  # (2,2)
+    dC = (C_ppt - C_mat)[:2, :2, :2, :2]
+    es2 = eigenstrain[:2, :2]
 
-    dalpha = scheme.dalpha(c)  # (N, N)
-    dbeta = scheme.dbeta(c)  # (N, N)
+    dalpha = scheme.dalpha(c)
+    dbeta = scheme.dbeta(c)
 
-    term1 = 0.5 * dalpha * np.einsum("xyij,ijkl,xykl->xy", eps_el, dC, eps_el)  # (N, N)
-    term2 = dbeta * np.einsum("ij,xyij->xy", es2, stress)  # (N, N)
+    term1 = 0.5 * dalpha * np.einsum("xyij,ijkl,xykl->xy", eps_el, dC, eps_el)
+    term2 = dbeta * np.einsum("ij,xyij->xy", es2, stress)
 
     return (term1 - term2) / N_V
 

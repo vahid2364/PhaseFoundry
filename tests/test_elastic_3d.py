@@ -38,7 +38,6 @@ class TestHomogeneousEigenstrain:
         """Mean σ_11 equals C : (−ε*), the stress at zero total strain, with ε* passed as ``eps_star_field``."""
         C = _cubic()
         eps_T = 0.01
-        # Uniform eigenstrain field: eps*(x) = eps_T * I for every grid point
         es = eps_T * np.eye(ndim)
         eps_star_field = np.broadcast_to(es, (*(N,) * ndim, ndim, ndim)).copy()
 
@@ -54,7 +53,6 @@ class TestHomogeneousEigenstrain:
         )
         stress = result["stress"]
 
-        # Expected: sigma_ij = C_ijkl * (-eps_T * delta_kl)  (summed over k,l)
         expected_sigma_11 = sum(-C[0, 0, k_, l_] * eps_T * (k_ == l_) for k_ in range(ndim) for l_ in range(ndim))
         sigma_11_mean = float(stress[..., 0, 0].mean())
         assert abs(sigma_11_mean - expected_sigma_11) < 1e6, (
@@ -81,7 +79,6 @@ class TestHomogeneousEigenstrain:
             max_iter=500,
         )
         stress = result["stress"]
-        # Spatial variance of stress should be negligible
         for i in range(ndim):
             for j in range(ndim):
                 std = float(stress[..., i, j].std())

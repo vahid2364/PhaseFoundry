@@ -89,20 +89,17 @@ def build_interpolant(
         raise ValueError("No table paths provided.")
 
     data = load_table(best_path)
-    comps = data["compositions"]  # (n_valid, N_el)
-    GM = data["GM"]  # (n_valid,)
+    comps = data["compositions"]
+    GM = data["GM"]
 
     ind_elements = [e for e in elements if e != reference_element]
     N_ind = len(ind_elements)
     el_list = list(data["elements"]) if "elements" in data else elements
 
-    # Column indices of independent elements in the stored composition array
     col_idx = [el_list.index(e) for e in ind_elements]
 
-    # build G_m interpolant (always needed)
     gm_interp = _build_1d(comps, GM, col_idx[0]) if N_ind == 1 else _build_nd(comps, GM, col_idx, N_ind)
 
-    # extract data bounds (per independent element axis)
     if N_ind == 1:
         x_col = comps[:, col_idx[0]]
         bounds = [(float(x_col.min()), float(x_col.max()))]
@@ -111,8 +108,8 @@ def build_interpolant(
         if bounds is None:
             bounds = [(float(comps[:, c].min()), float(comps[:, c].max())) for c in col_idx]
 
-    mu_interps = None  # list[interp]  length N_ind
-    dmu_interps = None  # dict[(i,j)] → interp
+    mu_interps = None
+    dmu_interps = None
 
     if derivative_method in ("jansson", "hybrid"):
         mu_interps = _build_mu_interps(
@@ -175,7 +172,7 @@ def _build_mu_interps(
             "or use derivative_method='fd'."
         )
 
-    mu_ref = data["MU"][reference_element]  # (n_valid,)
+    mu_ref = data["MU"][reference_element]
     interps = []
 
     print(f"  Building Jansson μ interpolants for {ind_elements} …", flush=True)
@@ -274,7 +271,7 @@ def _build_nd(
     exact at the data points, with a nearest-neighbour fallback. Three or more use the
     RBF-on-a-grid interpolant from ``_build_rbf``.
     """
-    pts = comps[:, col_idx]  # (n_valid, N_ind)
+    pts = comps[:, col_idx]
 
     if N_ind == 2:
         return _build_ct2d(pts, GM)
@@ -348,10 +345,9 @@ def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20, label: str = "
     )
 
     axes = [np.linspace(float(pts[:, i].min()), float(pts[:, i].max()), n_grid) for i in range(N_ind)]
-    grids = np.meshgrid(*axes, indexing="ij")  # N_ind arrays
-    all_pts = np.stack([g.ravel() for g in grids], axis=1)  # (n_grid^N, N_ind)
+    grids = np.meshgrid(*axes, indexing="ij")
+    all_pts = np.stack([g.ravel() for g in grids], axis=1)
 
-    # keep only simplex-valid points (sum of independent comps < 1)
     simplex_valid = all_pts.sum(axis=1) < 0.999
 
     y_grid_flat = np.full(n_grid**N_ind, np.nan)
@@ -360,7 +356,6 @@ def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20, label: str = "
 
     y_grid = y_grid_flat.reshape([n_grid] * N_ind)
 
-    # fill NaN (simplex-invalid corners) with nearest valid value
     valid_mask = ~np.isnan(y_grid_flat)
     if valid_mask.any():
         nn = NearestNDInterpolator(all_pts[valid_mask], y_grid_flat[valid_mask])
@@ -373,7 +368,7 @@ def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20, label: str = "
         y_grid,
         method="linear",
         bounds_error=False,
-        fill_value=None,  # extrapolate at boundary rather than NaN
+        fill_value=None,  # None extrapolates instead of returning NaN
     )
     rgi._grid_bounds = [(float(a.min()), float(a.max())) for a in axes]  # ty: ignore[unresolved-attribute]
 
@@ -440,9 +435,8 @@ class GmInterpolant:
         self._col_idx = col_idx
         self.grid_bounds: list[tuple[float, float]] | None = grid_bounds
         self.derivative_method = derivative_method
-        # Jansson interpolants (None in "fd" mode)
-        self._mu_interps = mu_interps  # list[interp], length N_ind
-        self._dmu_interps = dmu_interps  # dict[(i,j)] → interp
+        self._mu_interps = mu_interps
+        self._dmu_interps = dmu_interps
 
     def _eval_flat(self, c_flat: np.ndarray) -> np.ndarray:
         """Evaluate G_m at compositions of shape ``(n_pts, n_ind)``; returns shape ``(n_pts,)``."""
@@ -467,15 +461,10 @@ class GmInterpolant:
 
         Binary input without the leading axis gets one; see the class docstring.
         """
-        if self.N_ind == 1 and c.ndim == 1:
-            # binary convenience: (n_pts,) → treat as (1, n_pts)
-            c = c[np.newaxis]
-        elif self.N_ind == 1 and c.ndim >= 2 and c.shape[0] != 1:
-            # binary convenience: (N, N) spatial field → treat as (1, N, N)
+        if self.N_ind == 1 and (c.ndim == 1 or (c.ndim >= 2 and c.shape[0] != 1)):
             c = c[np.newaxis]
         spatial_shape = c.shape[1:]
         n_pts = int(np.prod(spatial_shape))
-        # c_flat: (n_pts, N_ind) — columns = independent elements
         c_flat = c.reshape(self.N_ind, n_pts).T.copy()
         return c_flat, spatial_shape
 
@@ -507,7 +496,6 @@ class GmInterpolant:
         c_flat, shape = self._unpack(c)
 
         if self._mu_interps is not None:
-            # Jansson / hybrid: direct interpolation of μᵢ − μ_ref
             n_pts = c_flat.shape[0]
             mu_out = np.empty((self.N_ind, n_pts))
             for i, interp_i in enumerate(self._mu_interps):
@@ -515,7 +503,6 @@ class GmInterpolant:
             return mu_out.reshape((self.N_ind,) + shape)
 
         else:
-            # FD: central differences on G_m
             n_pts = c_flat.shape[0]
             eps = self._eps
             mu_out = np.empty((self.N_ind, n_pts))
@@ -544,7 +531,6 @@ class GmInterpolant:
         n_pts = c_flat.shape[0]
 
         if self._dmu_interps is not None:
-            # Jansson: direct interpolation of Hᵢⱼ
             H = np.empty((self.N_ind, self.N_ind, n_pts))
             for i in range(self.N_ind):
                 for j in range(self.N_ind):
@@ -552,7 +538,6 @@ class GmInterpolant:
             return H.reshape((self.N_ind, self.N_ind) + shape)
 
         else:
-            # FD: second-order finite differences on G_m
             eps = self._eps
             H = np.empty((self.N_ind, self.N_ind, n_pts))
             g0 = self._eval_flat(c_flat)
@@ -598,7 +583,7 @@ class GmInterpolant:
             Smallest eigenvalue in J/mol, shape ``(*spatial,)``, or a float if ``c`` has no
             spatial axes.
         """
-        H = self.d2g(c)  # (N_ind, N_ind, *spatial)
+        H = self.d2g(c)
         shape = H.shape[2:]
         n_pts = int(np.prod(shape)) if shape else 1
         H_flat = H.reshape(self.N_ind, self.N_ind, n_pts)

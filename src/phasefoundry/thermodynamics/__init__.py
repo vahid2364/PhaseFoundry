@@ -89,7 +89,6 @@ def generate_table(
     grid = simplex_grid(elements, composition_ranges, reference_element, n_points)
     print(grid_summary(grid, elements))
 
-    # Ensure reference element is last in the list (required by compute_table)
     ordered = [e for e in elements if e != reference_element] + [reference_element]
 
     orig_idx = {el: elements.index(el) for el in elements}

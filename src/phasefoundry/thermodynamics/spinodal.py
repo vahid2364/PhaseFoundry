@@ -60,7 +60,6 @@ def binodal_boundary_binary(
     Raises:
         KeyError: If a table has no ``MU`` data.
     """
-    # Initial guesses: pairs (x_lo, x_hi) spanning the two-phase region
     _INIT_GUESSES = [
         (0.05, 0.95),
         (0.10, 0.90),
@@ -95,7 +94,6 @@ def binodal_boundary_binary(
         order = np.argsort(x)
         x, mu_A, mu_B = x[order], mu_A[order], mu_B[order]
 
-        # Cubic-spline interpolants for smooth root-finding
         f_A = interp1d(x, mu_A, kind="cubic", fill_value="extrapolate")
         f_B = interp1d(x, mu_B, kind="cubic", fill_value="extrapolate")
 
@@ -113,11 +111,11 @@ def binodal_boundary_binary(
                 resid = (res[0] ** 2 + res[1] ** 2) ** 0.5
 
                 if (
-                    ier == 1  # solver converged
-                    and resid < residual_tol  # accurate equilibrium
-                    and xa < xb  # ordered pair
-                    and xb - xa >= min_separation  # two distinct phases
-                    and 0.001 < xa < 0.999  # inside composition range
+                    ier == 1
+                    and resid < residual_tol
+                    and xa < xb
+                    and xb - xa >= min_separation
+                    and 0.001 < xa < 0.999
                     and 0.001 < xb < 0.999
                 ):
                     found_lo = xa
@@ -186,14 +184,12 @@ def spinodal_boundary_binary(
         col = elements.index(independent_element)
         x = data["compositions"][:, col]
 
-        # d²G/dx_i² = ∂(μ_i − μ_ref)/∂x_i = dMU[i_i] − dMU[ref_i]  (Gibbs-Duhem)
         d2g = data["dMU"][key]
         if reference_element is not None:
             ref_key = f"{reference_element}_{independent_element}"
             if ref_key in data["dMU"]:
                 d2g = d2g - data["dMU"][ref_key]
 
-        # Sort by composition for clean interpolation
         order = np.argsort(x)
         x, d2g = x[order], d2g[order]
 
@@ -204,13 +200,11 @@ def spinodal_boundary_binary(
         all_x.append(x)
         all_d2g.append(d2g)
 
-        # Find zero-crossings (sign changes) of d²G/dx²
         sign = np.sign(d2g)
         crossings = np.where(np.diff(sign) != 0)[0]
 
         boundaries = []
         for idx in crossings:
-            # Linear interpolation between idx and idx+1
             x0, x1 = x[idx], x[idx + 1]
             f0, f1 = d2g[idx], d2g[idx + 1]
             if f1 != f0:
@@ -294,7 +288,6 @@ def spinodal_boundary_multi(
                     if "dMU" not in data or key not in data["dMU"]:
                         valid = False
                         break
-                    # H_ij = ∂²G/∂c_i∂c_j = dMU[i_j] − dMU[ref_j]  (Gibbs-Duhem)
                     val = data["dMU"][key][pt]
                     if reference_element is not None:
                         ref_key = f"{reference_element}_{el2}"
@@ -372,9 +365,7 @@ def compute_ternary_phase_regions(
     x0_raw = comps[:, idx[0]]
     x1_raw = comps[:, idx[1]]
 
-    # LinearNDInterpolator covers only the convex hull of the raw data.
-    # NearestNDInterpolator fills the rest so the full simplex (0→1 for every
-    # element) is always covered, even when composition_ranges don't reach 0 or 1.
+    # LinearNDInterpolator is NaN outside the data hull; nearest-neighbour fills the rest of the simplex
     from scipy.interpolate import NearestNDInterpolator
 
     raw_pts = list(zip(x0_raw, x1_raw, strict=True))
@@ -391,13 +382,11 @@ def compute_ternary_phase_regions(
     fine_pts = np.array(fine_pts)
     gm_fine = gm_interp_lin(fine_pts[:, 0], fine_pts[:, 1])
 
-    # Fill NaN (outside data hull) with nearest-neighbor extrapolation so the
-    # phase map extends to all simplex edges and corners.
     nan_mask = np.isnan(gm_fine)
     if nan_mask.any():
         gm_fine[nan_mask] = gm_interp_nn(fine_pts[nan_mask, 0], fine_pts[nan_mask, 1])
 
-    valid = ~np.isnan(gm_fine)  # should now be all True
+    valid = ~np.isnan(gm_fine)
     fine_pts = fine_pts[valid]
     gm_fine = gm_fine[valid]
     x0_fine = fine_pts[:, 0]
@@ -410,7 +399,6 @@ def compute_ternary_phase_regions(
     lower_eqs = hull.equations[lower_mask]
     lower_simplices = hull.simplices[lower_mask]
 
-    # Hull G_m at each fine-grid point
     gm_hull_fine = np.full(len(x0_fine), -np.inf)
     for eq in lower_eqs:
         nx, ny, nz, d = eq
@@ -421,9 +409,7 @@ def compute_ternary_phase_regions(
     df_tol = driving_force_tol_frac * max(abs(gm_range), 1.0)
     df_fine = gm_fine - gm_hull_fine
 
-    # In a ternary single-phase miscibility gap the three-phase tie-triangle
-    # appears as the largest flat facet(s) of the lower convex hull.
-    # Small facets (area < min_triangle_area) are discretization artifacts.
+    # Three-phase tie-triangles are the large lower-hull facets; small ones are discretization artifacts
     tie_triangles = []
     for s in lower_simplices:
         v0 = x0_fine[s]
@@ -437,7 +423,7 @@ def compute_ternary_phase_regions(
         inside = _points_in_triangle(x0_fine, x1_fine, tt)
         region_fine[inside] = "three"
 
-    # Encode region as int for NearestNDInterpolator (strings not supported)
+    # NearestNDInterpolator needs numeric values
     _enc = {"single": 0, "two": 1, "three": 2}
     _dec = {0: "single", 1: "two", 2: "three"}
     region_enc = np.array([_enc[r] for r in region_fine])
@@ -446,7 +432,6 @@ def compute_ternary_phase_regions(
 
     region_nn = NearestNDInterpolator(list(zip(x0_fine, x1_fine, strict=True)), region_enc)
 
-    # Also compute driving force at raw data locations via hull planes
     gm_hull_raw = np.full(len(x0_raw), -np.inf)
     for eq in lower_eqs:
         nx, ny, nz, d = eq
@@ -522,7 +507,7 @@ def compute_phase_regions_multi(
 
     n_ind = len(independent_elements)
     idx = [elements.index(el) for el in independent_elements]
-    x_ind = comps[:, idx]  # (n_pts, n_ind)
+    x_ind = comps[:, idx]
 
     pts_nd = np.column_stack([x_ind, gm])
 
@@ -541,17 +526,16 @@ def compute_phase_regions_multi(
     except Exception:
         return _fallback
 
-    # Lower facets: normal component in the Gm axis (index n_ind, i.e. -2) < 0
+    # Lower facets have an outward normal pointing down the G_m axis
     lower_mask = hull.equations[:, n_ind] < 0
     lower_eqs = hull.equations[lower_mask]
     lower_simps = hull.simplices[lower_mask]
 
-    # Hull G_m at each composition point
     gm_hull = np.full(len(gm), -np.inf)
     for eq in lower_eqs:
-        n_x = eq[:n_ind]  # composition-axis normals
-        n_g = eq[n_ind]  # G_m-axis normal
-        d = eq[-1]  # offset
+        n_x = eq[:n_ind]
+        n_g = eq[n_ind]
+        d = eq[-1]
         z_plane = -(x_ind @ n_x + d) / n_g
         gm_hull = np.maximum(gm_hull, z_plane)
 
@@ -560,14 +544,13 @@ def compute_phase_regions_multi(
     df = gm - gm_hull
     region = np.where(df < df_tol, "single", "two").astype(object)
 
-    # Identify large hull simplices = multi-phase tie-regions
     for s in lower_simps:
-        verts = x_ind[s]  # (k+1, n_ind) in composition space
+        verts = x_ind[s]
         k = len(verts) - 1
         if k < 2:
             continue
-        edges = verts[1:] - verts[0]  # (k, n_ind)
-        G = edges @ edges.T  # (k, k) Gram matrix
+        edges = verts[1:] - verts[0]
+        G = edges @ edges.T
         vol = float(np.sqrt(max(np.linalg.det(G), 0.0))) / factorial(k)
         if vol >= min_simplex_vol:
             inside = _points_in_simplex_nd(x_ind, verts)
@@ -625,14 +608,14 @@ def _points_in_simplex_nd(
         Boolean mask, shape ``(n_pts,)``; all ``False`` if the solve fails.
     """
     n_pts = len(points)
-    T = (simplex_verts[1:] - simplex_verts[0]).T  # (n_dim, k)
-    rhs = (points - simplex_verts[0]).T  # (n_dim, n_pts)
+    T = (simplex_verts[1:] - simplex_verts[0]).T
+    rhs = (points - simplex_verts[0]).T
     try:
-        bary, _, _, _ = np.linalg.lstsq(T, rhs, rcond=None)  # (k, n_pts)
+        bary, _, _, _ = np.linalg.lstsq(T, rhs, rcond=None)
     except Exception:
         return np.zeros(n_pts, dtype=bool)
     bary_last = 1.0 - bary.sum(axis=0)
-    all_bary = np.vstack([bary, bary_last])  # (k+1, n_pts)
+    all_bary = np.vstack([bary, bary_last])
     return np.all(all_bary >= -1e-9, axis=0)
 
 
@@ -732,7 +715,6 @@ def recommend_pfm_params(
     d2G_max = float(np.max(np.abs(d2G)))
     d2G_c0 = float(abs(float(spl_dfdx.derivative()(c0))))
 
-    # Spinodal boundaries: zero-crossings of d²G/dx²
     sign = np.sign(d2G)
     crossings = np.where(np.diff(sign) != 0)[0]
     boundaries = []
@@ -745,24 +727,12 @@ def recommend_pfm_params(
     sp_hi = max(boundaries) if len(boundaries) >= 2 else None
     c0_in_spinodal = sp_lo is not None and sp_hi is not None and sp_lo < c0 < sp_hi
 
-    # κ_min: interface spans delta_over_dx grid points
-
-    # We want: δ = delta_over_dx × dx  and  Lx = n_interfaces × λ*
-    # From δ = sqrt(κ/d2G_max): κ = δ² × d2G_max
-    # From λ* = 4π sqrt(κ/d2G_c0): λ* = 4π × δ × sqrt(d2G_max/d2G_c0)
-    # which fixes the grid spacing at δ / delta_over_dx
-    # N = Lx / dx = n_interfaces × λ* / dx
-
     d2G_c0_safe = max(d2G_c0, 1e-10)
     d2G_max_safe = max(d2G_max, 1e-10)
 
-    lambda_star = 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)  # at κ=1 (scale below)
+    lambda_star = 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)
     lambda_crit = 2.0 * np.pi * np.sqrt(2.0 / d2G_c0_safe)
 
-    # Choose κ_min such that δ = delta_over_dx × (Lx/N) and N is power-of-2.
-    # Self-consistent iteration: κ depends on δ=dx*delta_over_dx, dx=Lx/N, and
-    # Lx itself depends on κ via λ* = 4π√(κ/d2G_c0). Seed with κ=1, iterate to
-    # convergence (typically 3–5 steps).
     N_guess = 256
     kappa_min = 1.0
     for _ in range(20):
@@ -775,7 +745,6 @@ def recommend_pfm_params(
         Lx_min = n_interfaces * lambda_star
         dx = Lx_min / N_guess
         N_raw = Lx_min / dx
-        # Round up to next power of 2
         N_min = int(2 ** np.ceil(np.log2(N_raw)))
         if abs(kappa_new - kappa_min) / max(abs(kappa_min), 1e-30) < 1e-6:
             kappa_min = kappa_new
@@ -788,7 +757,7 @@ def recommend_pfm_params(
 
     dt_stable = None
     if M is not None:
-        M_eff_max = M * 0.25  # degenerate mobility peak at c=0.5
+        M_eff_max = M * 0.25  # c(1 - c) peaks at 0.25
         dt_stable = safety * dx**2 / (M_eff_max * d2G_max_safe)
 
     return {
@@ -845,7 +814,6 @@ def plot_spinodal(
 
     temps = np.array(spinodal_data["temperatures_celsius"])
 
-    # binary path
     if "x_spinodal_low" in spinodal_data:
         x_lo = spinodal_data["x_spinodal_low"]
         x_hi = spinodal_data["x_spinodal_high"]
@@ -868,7 +836,6 @@ def plot_spinodal(
         ax.scatter(lo_v, T_v, color=fill_color, s=30, zorder=4)
         ax.scatter(hi_v, T_v, color=fill_color, s=30, zorder=4)
 
-    # multicomponent path (project onto one element)
     elif "min_eigenvalue" in spinodal_data:
         for T, comps, is_sp in zip(
             spinodal_data["temperatures_celsius"],
@@ -879,7 +846,7 @@ def plot_spinodal(
             sp_comps = comps[is_sp]
             if len(sp_comps) > 0:
                 ax.scatter(
-                    sp_comps[:, 0],  # first element — caller should pass correct x_element
+                    sp_comps[:, 0],
                     np.full(len(sp_comps), T),
                     color=fill_color,
                     alpha=0.4,
@@ -944,7 +911,7 @@ def plot_phase_diagram(
 
     valid_b = sorted(
         [(T, lo, hi) for T, lo, hi in zip(temps_b, b_lo, b_hi, strict=True) if lo is not None and hi is not None],
-        key=lambda v: v[0],  # sort by temperature
+        key=lambda v: v[0],
     )
     if valid_b:
         T_b, lo_b, hi_b = zip(*valid_b, strict=True)
@@ -952,13 +919,12 @@ def plot_phase_diagram(
         lo_b = np.array(lo_b)
         hi_b = np.array(hi_b)
 
-        # Remove duplicate temperatures before spline fitting
+        # make_interp_spline needs strictly increasing x
         _, unique_idx = np.unique(T_b, return_index=True)
         T_b = T_b[unique_idx]
         lo_b = lo_b[unique_idx]
         hi_b = hi_b[unique_idx]
 
-        # Smooth curves through data points
         from scipy.interpolate import make_interp_spline
 
         T_fine = np.linspace(T_b.min(), T_b.max(), 400)
@@ -977,7 +943,7 @@ def plot_phase_diagram(
 
     valid_s = sorted(
         [(T, lo, hi) for T, lo, hi in zip(temps_s, s_lo, s_hi, strict=True) if lo is not None and hi is not None],
-        key=lambda v: v[0],  # sort by temperature
+        key=lambda v: v[0],
     )
     if valid_s:
         T_s, lo_s, hi_s = zip(*valid_s, strict=True)
@@ -985,13 +951,12 @@ def plot_phase_diagram(
         lo_s = np.array(lo_s)
         hi_s = np.array(hi_s)
 
-        # Remove duplicate temperatures before spline fitting
+        # make_interp_spline needs strictly increasing x
         _, unique_idx = np.unique(T_s, return_index=True)
         T_s = T_s[unique_idx]
         lo_s = lo_s[unique_idx]
         hi_s = hi_s[unique_idx]
 
-        # Smooth curves through data points
         T_fine_s = np.linspace(T_s.min(), T_s.max(), 400)
         lo_s_sm = make_interp_spline(T_s, lo_s, k=min(3, len(T_s) - 1))(T_fine_s)
         hi_s_sm = make_interp_spline(T_s, hi_s, k=min(3, len(T_s) - 1))(T_fine_s)
@@ -1002,9 +967,8 @@ def plot_phase_diagram(
         ax.scatter(lo_s, T_s, color="#d62728", s=30, zorder=5)
         ax.scatter(hi_s, T_s, color="#d62728", s=30, zorder=5)
 
-    # critical point: apex of spinodal (highest T where spinodal exists)
     if valid_s:
-        T_s_arr = T_s  # already np.array, sorted
+        T_s_arr = T_s
         lo_s_arr = lo_s
         hi_s_arr = hi_s
         idx_crit = int(np.argmax(T_s_arr))

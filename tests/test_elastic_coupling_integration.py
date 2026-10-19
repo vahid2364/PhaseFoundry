@@ -44,7 +44,6 @@ class _FakeInterpolant:
 
     def d2g(self, c):
         """Return d²g/dc², shape ``(1, 1, n_pts)``."""
-        # c: (N_ind, n_pts) -> Hessian (N_ind, N_ind, n_pts)
         c0 = c[0]
         d2 = self.A_b * (2 * (1 - c0) ** 2 - 8 * c0 * (1 - c0) + 2 * c0**2)
         return d2.reshape(1, 1, -1)
@@ -97,7 +96,7 @@ def test_off_switch_matches_pre_existing_path():
     """``elastic_enabled=False`` gives bit-identical compositions to the default call."""
     kwargs = _common_kwargs()
     result_explicit_off = solve_cahn_hilliard(elastic_enabled=False, **kwargs)
-    result_default = solve_cahn_hilliard(**kwargs)  # elastic_enabled defaults to False
+    result_default = solve_cahn_hilliard(**kwargs)
 
     assert np.array_equal(result_explicit_off.compositions, result_default.compositions), (
         "elastic_enabled=False should be bit-identical to the default (no elastic kwarg) path"
@@ -117,8 +116,8 @@ def test_degenerate_elastic_coupling_equals_off():
     result_degenerate = solve_cahn_hilliard(
         elastic_enabled=True,
         elastic_G_matrix=1.0,
-        elastic_delta=1.0,  # no modulus mismatch
-        elastic_Lambda=Lambda_zero,  # zero eigenstrain → mu_el = 0
+        elastic_delta=1.0,
+        elastic_Lambda=Lambda_zero,
         elastic_N_V=1.0,
         elastic_max_iter=200,
         **kwargs,

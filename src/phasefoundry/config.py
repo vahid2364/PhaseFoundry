@@ -88,7 +88,6 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
         keys = key_path.strip().split(".")
         value = _coerce(raw_value.strip())
 
-        # Walk to the parent node
         node = cfg
         for k in keys[:-1]:
             if k not in node:
@@ -128,8 +127,6 @@ def build_run_name(cfg: dict) -> str:
 
     ndim = int(sim.get("dimensions", 2))
 
-    # composition tag: always includes element symbol to avoid ambiguity
-    # binary: c60Nb  |  ternary: c60Nb05Hf
     c0 = sim["c0"]
     if not isinstance(c0, list):
         c0 = [c0]
@@ -138,20 +135,16 @@ def build_run_name(cfg: dict) -> str:
         parts.append(f"{round(xi * 100):02d}{el.capitalize()}")
     comp_tag = "c" + "".join(parts)
 
-    # kappa tag: 1e-12 → kappa1e12
     kappa = sim["kappa"]
     if isinstance(kappa, list):
         kappa = kappa[0]
     kappa_tag = "kappa" + _sci_tag(kappa)
 
-    # mobility tag: 5e-21 → M5e21
     M = sim["M"]
     if isinstance(M, list):
         M = M[0][0] if isinstance(M[0], list) else M[0]
     M_tag = "M" + _sci_tag(M)
 
-    # TDB version tag: HfNbTiV_BCC_PhaseForge_v3.tdb      → tdbv3
-    #                  HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb → tdbv2
     import re
 
     tdb_tag = "tdb"

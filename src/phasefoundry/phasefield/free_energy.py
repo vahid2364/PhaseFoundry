@@ -94,7 +94,7 @@ def calphad_df_dc(
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
     T_match = stored_T[idx]
 
-    tol = 1.0  # K
+    tol = 1.0
     if abs(T_match - temperature_K) > tol:
         raise ValueError(
             f"Temperature {temperature_K} K not found in fit file. "
@@ -103,15 +103,13 @@ def calphad_df_dc(
         )
 
     T_fit = fit["fits"][T_match]
-    # Binary: only one independent element
     el = list(T_fit["models"].keys())[0]
     model = T_fit["models"][el]
-    coeffs = model["coefficients"]  # (n_features,)
-    powers = model["feature_powers"]  # (n_features, 1) for binary
+    coeffs = model["coefficients"]
+    powers = model["feature_powers"]
 
-    c_flat = c.ravel()[:, np.newaxis]  # (N*N, 1)
+    c_flat = c.ravel()[:, np.newaxis]
 
-    # Evaluate polynomial: Δμ = Σ_k coeff_k · c^power[k,0]
     n_features = len(coeffs)
     terms = np.ones((len(c_flat), n_features))
     for k in range(n_features):
@@ -306,14 +304,11 @@ def calphad_f(
 
     c_flat = c.ravel()
 
-    # Antiderivative of Δμ(x) = Σ aₖ x^pₖ  →  Σ aₖ/(pₖ+1) · x^{pₖ+1}
-    # G_m = +∫ Δμ dx  (dG_m/dx_NB = +Δμ, polynomial fitted in x_NB)
     gm = np.zeros_like(c_flat, dtype=float)
     for k in range(len(coeffs)):
         p = int(powers[k, 0])
         gm += coeffs[k] / (p + 1) * c_flat ** (p + 1)
 
-    # Intercept term: ∫ intercept dx = intercept · x
     gm += model["intercept"] * c_flat
 
     return gm.reshape(c.shape)

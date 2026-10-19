@@ -33,7 +33,6 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 ORB_CSV = _ROOT / "data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv"
 
-# Representative BCC bond lengths [Å] for Hf, Nb, V (order matters below)
 BONDS = np.array(
     [
         [3.10, 2.98, 2.85],
@@ -64,7 +63,6 @@ def test_bond_model_formula(bond_model):
     x = np.array([0.2, 0.5, 0.3])
     expected = 2.0 / np.sqrt(3.0) * sum(x[i] * x[j] * BONDS[i, j] for i in range(3) for j in range(3))
     assert bond_model.a(x) == pytest.approx(expected, rel=1e-12)
-    # pure element: a = d_ii · 2/√3
     assert bond_model.a([0, 1, 0]) == pytest.approx(2.86 * 2 / np.sqrt(3))
 
 
@@ -130,10 +128,8 @@ def test_mlip_settings_override():
     config without a calculator raises ValueError.
     """
     cfg = {"mlip": {"calculator": "orb", "params": {"model": "orb-v2", "device": "cuda"}}}
-    # same calculator: params merge
     s = mlip_settings(cfg, {"params": {"device": "cpu"}})
     assert s == {"calculator": "orb", "params": {"model": "orb-v2", "device": "cpu"}}
-    # different calculator: top-level params are not inherited
     s = mlip_settings(cfg, {"calculator": "grace", "params": {"model": "GRACE-2L-OMAT"}})
     assert s == {"calculator": "grace", "params": {"model": "GRACE-2L-OMAT"}}
     assert mlip_label(s) == "GRACE-2L-OMAT"
@@ -202,7 +198,6 @@ def test_local_vegard_uses_bond_model(bond_model):
     assert model._a_ref == pytest.approx(a0 * 1e-10, rel=1e-12)
     alpha = bond_model.grad_a_ind(c0[None, :], ind, ref)[0] / a0
     np.testing.assert_allclose(model._alpha_c0, alpha, rtol=1e-9)
-    # eigenstrain vanishes for the uniform parent composition
     c_uniform = np.broadcast_to(c0[:, None, None], (2, 4, 4)).copy()
     np.testing.assert_allclose(model.eps_star_field(c_uniform, 2), 0.0, atol=1e-14)
 
@@ -256,11 +251,10 @@ def test_elastic_table_emt(emt_calculator, tmp_path, monkeypatch):
     assert len(df) == 3
     cu = df[df.x_Cu == 1.0].iloc[0]
     assert cu.m_Cu == 32 and cu.m_Ni == 0
-    assert cu.a_relaxed_A == pytest.approx(3.59, abs=0.02)  # EMT Cu
+    assert cu.a_relaxed_A == pytest.approx(3.59, abs=0.02)
     assert cu.C11_GPa > cu.C12_GPa > 0 and cu.C44_GPa > 0
     assert cu.biaxial_modulus_M_GPa == pytest.approx(cu.youngs_modulus_GPa / (1 - cu.poisson_ratio))
 
-    # resume: a finer grid only computes the new points
     computed = []
     real = el._compute_point
     monkeypatch.setattr(el, "_compute_point", lambda *a, **k: computed.append(1) or real(*a, **k))
@@ -268,7 +262,6 @@ def test_elastic_table_emt(emt_calculator, tmp_path, monkeypatch):
     df = el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **finer)
     assert len(computed) == 2 and len(df) == 5
 
-    # different settings → refuse to extend
     bigger: dict[str, Any] = {**kw, "supercell": (3, 3, 3)}
     with pytest.raises(ValueError, match="different settings"):
         el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **bigger)
@@ -284,7 +277,6 @@ def test_bond_table_emt(emt_calculator, tmp_path):
 
     model = compute_bond_table(["CU", "NI"], tmp_path / "bonds.csv", EMT_SETTINGS, structure="fcc", calculator=emt_calculator)
     assert (tmp_path / "bonds.meta.yaml").exists()
-    # pure FCC: d = a / √2 with EMT a_Cu ≈ 3.59 Å, a_Ni ≈ 3.49 Å
     assert model.a([1, 0]) == pytest.approx(3.59, abs=0.02)
     assert model.a([0, 1]) == pytest.approx(3.49, abs=0.02)
     assert model.a([1, 0]) > model.a([0.5, 0.5]) > model.a([0, 1])

@@ -120,7 +120,6 @@ def build_interpolators(df: pd.DataFrame, ind_elements: list[str]) -> dict:
     return interps
 
 
-# batch interpolators (used by LocalVegardModel for field evaluation)
 class BatchInterp:
     """Vectorized interpolant of one property over many compositions.
 
@@ -163,7 +162,7 @@ class BatchInterp:
         x = np.asarray(x, dtype=float)
         if self._near is None:
             return self._lin(x[:, 0])
-        v = self._lin(x)  # (n_pts,) — NaN outside hull
+        v = self._lin(x)
         nan_mask = np.isnan(v)
         if nan_mask.any():
             v[nan_mask] = self._near(x[nan_mask])

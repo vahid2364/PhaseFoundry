@@ -44,7 +44,7 @@ def test_trivial_case_zero_mismatch():
     N, Lx, R = 48, 1.0, 0.15
     c = _make_circle(N, R, Lx)
     C_mat = build_isotropic_stiffness(GM, NU)
-    C_ppt = build_isotropic_stiffness(GM, NU)  # delta = 1
+    C_ppt = build_isotropic_stiffness(GM, NU)
 
     result = solve_elasticity(c, C_mat, C_ppt, np.zeros((3, 3)), Lx=Lx, tol=1e-9, verbose=False)
     mu_el = compute_mu_el_from_result(c, result, C_mat, C_ppt, np.zeros((3, 3)))
@@ -57,7 +57,7 @@ def test_bulk_vanishing():
     N, Lx, R = 48, 1.0, 0.15
     c = _make_circle(N, R, Lx)
     C_mat = build_isotropic_stiffness(GM, NU)
-    C_ppt = build_isotropic_stiffness(0.5 * GM, NU)  # delta = 0.5
+    C_ppt = build_isotropic_stiffness(0.5 * GM, NU)
 
     result = solve_elasticity(c, C_mat, C_ppt, EIGENSTRAIN, Lx=Lx, tol=1e-9, verbose=False)
     mu_el = compute_mu_el_from_result(c, result, C_mat, C_ppt, EIGENSTRAIN)
@@ -67,7 +67,6 @@ def test_bulk_vanishing():
     assert np.abs(mu_el[bulk_mask]).max() < 1e-10, (
         f"Expected mu_el=0 in bulk, got max|mu_el|={np.abs(mu_el[bulk_mask]).max():.3e}"
     )
-    # sanity: it should be genuinely nonzero at the interface
     assert np.abs(mu_el).max() > 1e-6
 
 
@@ -94,7 +93,6 @@ def test_finite_difference_consistency(delta):
     result0 = solve_elasticity(c, C_mat, C_ppt, EIGENSTRAIN, Lx=Lx, tol=1e-10, max_iter=5000, verbose=False)
     mu_el = elastic_potential(c, result0["strain"], result0["stress"], C_mat, C_ppt, EIGENSTRAIN)
 
-    # pick the interfacial pixel with the largest |mu_el| (most sensitive test)
     iy, ix = np.unravel_index(np.argmax(np.abs(mu_el)), mu_el.shape)
 
     dV = (Lx / N) ** 2
@@ -124,7 +122,6 @@ def test_radial_symmetry():
     result = solve_elasticity(c, C_mat, C_ppt, EIGENSTRAIN, Lx=Lx, tol=1e-9, verbose=False)
     mu_el = compute_mu_el_from_result(c, result, C_mat, C_ppt, EIGENSTRAIN)
 
-    # Compare mu_el at four symmetric points around the interface ring
     dx = Lx / N
     r_interface_idx = int(round(R / dx))
     i0 = N // 2

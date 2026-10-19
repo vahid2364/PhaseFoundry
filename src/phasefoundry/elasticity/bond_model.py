@@ -174,7 +174,7 @@ class BondLatticeModel:
             Gradient, shape ``(n_pts, n_ind)``.
         """
         x = self._full_composition(x_ind, ind_elements, reference_element)
-        Dx = x @ self.bonds  # (n_pts, n_el)
+        Dx = x @ self.bonds
         r = self._idx(reference_element)
         cols = [self._idx(el) for el in ind_elements]
         return 2.0 * self.K * (Dx[:, cols] - Dx[:, [r]])

@@ -87,13 +87,12 @@ def fit_delta_mu(
         x_vars = [el for el in elements if el != reference_element]
         col_indices = [elements.index(el) for el in x_vars]
 
-        X = data["compositions"][:, col_indices]  # (n_pts, n_vars)
-        mu_ref = data["MU"][reference_element]  # (n_pts,)
+        X = data["compositions"][:, col_indices]
+        mu_ref = data["MU"][reference_element]
 
-        # Build polynomial features (shared transformer for all elements)
         poly = PolynomialFeatures(degree=poly_degree, include_bias=True)
         X_poly = poly.fit_transform(X)
-        feature_powers = poly.powers_.astype(np.int32)  # (n_features, n_vars)
+        feature_powers = poly.powers_.astype(np.int32)
 
         models = {}
         fitted_elements = [el for el in elements if el != reference_element]
@@ -102,16 +101,15 @@ def fit_delta_mu(
             delta_mu = data["MU"][el] - mu_ref
 
             valid = np.isfinite(delta_mu)
-            reg = LinearRegression(fit_intercept=False)  # bias included in poly features
+            reg = LinearRegression(fit_intercept=False)  # the bias column comes from PolynomialFeatures
             reg.fit(X_poly[valid], delta_mu[valid])
 
             y_pred = reg.predict(X_poly[valid])
             rmse = float(np.sqrt(mean_squared_error(delta_mu[valid], y_pred)))
             r2 = float(r2_score(delta_mu[valid], y_pred))
 
-            # Coefficients align 1-to-1 with feature_powers rows
             coeffs = reg.coef_.copy()
-            intercept = 0.0  # absorbed into bias term (first feature = 1^0)
+            intercept = 0.0
 
             desc = _describe_poly(el, reference_element, x_vars, coeffs, feature_powers, poly_degree)
 
@@ -200,14 +198,14 @@ def build_spline_surrogate(
             x, dmu = x[order], dmu[order]
 
             spl = CubicSpline(x, dmu, extrapolate=True)
-            spl_intg = spl.antiderivative()  # PPoly — analytic ∫Δμ dx
+            spl_intg = spl.antiderivative()
 
             models[el] = {
                 "spline": spl,
                 "spline_antideriv": spl_intg,
                 "x_data": x,
                 "dmu_data": dmu,
-                "rmse": 0.0,  # interpolating — exact
+                "rmse": 0.0,  # the spline interpolates the data
                 "r2": 1.0,
             }
 
@@ -291,7 +289,7 @@ def build_gm_spline_surrogate(
         x_V, GM = x_V[order], GM[order]
 
         spl_gm = CubicSpline(x_V, GM, extrapolate=True)
-        spl_dfdx = spl_gm.derivative()  # dG_m/dx_V  (analytic)
+        spl_dfdx = spl_gm.derivative()
 
         fits[T_K] = {
             "models": {
@@ -456,10 +454,9 @@ def eval_delta_mu(
     """
     results = {}
     for el, m in fit["models"].items():
-        coeffs = m["coefficients"]  # (n_features,)
-        powers = m["feature_powers"]  # (n_features, n_vars)
+        coeffs = m["coefficients"]
+        powers = m["feature_powers"]
 
-        # Compute each polynomial term: Π_j x_j^power[k,j]
         n_pts = compositions.shape[0]
         n_features = len(coeffs)
         terms = np.ones((n_pts, n_features))
@@ -482,7 +479,6 @@ def _describe_poly(
     n_terms: int = 5,
 ) -> str:
     """Write the ``n_terms`` largest-magnitude terms of a fitted polynomial on one line."""
-    # Sort by absolute coefficient magnitude, show top n_terms
     order = np.argsort(-np.abs(coeffs))
     terms = []
     for k in order[:n_terms]:

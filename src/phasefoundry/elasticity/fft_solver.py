@@ -87,8 +87,8 @@ def _interp_stiffness(c: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, schem
     Returns:
         Stiffness field, shape ``(*c.shape, 3, 3, 3, 3)``.
     """
-    h = scheme.h(c)  # shape (*spatial,)
-    dC = C_ppt - C_mat  # (3,3,3,3)
+    h = scheme.h(c)
+    dC = C_ppt - C_mat
     return C_mat + h[..., None, None, None, None] * dC
 
 
@@ -107,23 +107,19 @@ def _build_green_operator(C_eff: np.ndarray, shape: tuple[int, ...], Lx: float) 
         Green's operator, shape ``(*shape, d, d)`` with ``d = len(shape)``.
     """
     d = len(shape)
-    # Build wave-vector arrays for each axis
     kv_axes = [2.0 * np.pi * np.fft.fftfreq(shape[ax], d=Lx / shape[ax]) for ax in range(d)]
-    grids = np.meshgrid(*kv_axes, indexing="ij")  # d arrays, each (*shape,)
-    k = np.stack(grids, axis=-1)  # (*shape, d)
+    grids = np.meshgrid(*kv_axes, indexing="ij")
+    k = np.stack(grids, axis=-1)
 
-    # Acoustic tensor  A_ik = C^eff_{ijkl} k_j k_l   (i,k in 0..d-1)
-    C_eff_d = C_eff[:d, :d, :d, :d]  # (d,d,d,d)
-    A = np.einsum("...j,...l,ijkl->...ik", k, k, C_eff_d)  # (*shape, d, d)
+    C_eff_d = C_eff[:d, :d, :d, :d]
+    A = np.einsum("...j,...l,ijkl->...ik", k, k, C_eff_d)
 
-    # Invert pointwise via np.linalg.inv (works for any batch shape)
     A_flat = A.reshape(-1, d, d)
-    k2 = np.sum(k**2, axis=-1).reshape(-1)  # |k|^2 at each grid point
+    k2 = np.sum(k**2, axis=-1).reshape(-1)
     G_flat = np.zeros_like(A_flat)
     nonzero = k2 > 1e-30
     if nonzero.any():
         G_flat[nonzero] = np.linalg.inv(A_flat[nonzero])
-    # k=0 mode remains zero
     return G_flat.reshape(*shape, d, d)
 
 
@@ -214,8 +210,8 @@ def solve_elasticity(
     Raises:
         ValueError: If neither ``eigenstrain`` nor ``eps_star_field`` is given.
     """
-    spatial_shape = c.shape  # (N,N) or (N,N,N)
-    d = c.ndim  # 2 or 3
+    spatial_shape = c.shape
+    d = c.ndim
     fft_axes = tuple(range(d))
 
     if isinstance(scheme, str):
@@ -224,39 +220,31 @@ def solve_elasticity(
     if sigma_applied is None:
         sigma_applied = np.zeros((d, d), dtype=np.float64)
 
-    # Reference (effective) stiffness — override from model or default Voigt average
     C_eff = C_eff_override if C_eff_override is not None else 0.5 * (C_mat + C_ppt)
 
-    # Spatially varying stiffness  C(x)  — override from model or h(c) blend
     C_field = C_field_override if C_field_override is not None else _interp_stiffness(c, C_mat, C_ppt, scheme)
-    # Restrict to in-plane/in-volume d×d×d×d block
-    C_d = C_field[..., :d, :d, :d, :d]  # (*spatial, d, d, d, d)
-    C_eff_d = C_eff[:d, :d, :d, :d]  # (d, d, d, d)
+    C_d = C_field[..., :d, :d, :d, :d]
+    C_eff_d = C_eff[:d, :d, :d, :d]
 
-    # Eigenstrain field ε*(x)
     if eps_star_field is not None:
-        eps_star = eps_star_field[..., :d, :d]  # (*spatial, d, d)
+        eps_star = eps_star_field[..., :d, :d]
     else:
         if eigenstrain is None:
             raise ValueError("solve_elasticity: provide either 'eigenstrain' (d,d) or 'eps_star_field' (*spatial,d,d).")
-        h = scheme.h(c)  # (*spatial,)
-        es = eigenstrain[:d, :d]  # (d, d)
-        eps_star = h[..., None, None] * es[None, ...]  # (*spatial, d, d)
+        h = scheme.h(c)
+        es = eigenstrain[:d, :d]
+        eps_star = h[..., None, None] * es[None, ...]
 
-    # Green's operator in Fourier space — (*spatial, d, d)
     G = _build_green_operator(C_eff_d, spatial_shape, Lx)
 
-    # Wave-vector grid — (*spatial, d)
     kv_axes = [2.0 * np.pi * np.fft.fftfreq(spatial_shape[ax], d=Lx / spatial_shape[ax]) for ax in range(d)]
     grids = np.meshgrid(*kv_axes, indexing="ij")
-    k = np.stack(grids, axis=-1)  # (*spatial, d)
+    k = np.stack(grids, axis=-1)
 
-    # Coordinate grid for macroscopic displacement  u_macro_i = E_ij x_j
     x_axes = [np.linspace(0.0, Lx, spatial_shape[ax], endpoint=False) for ax in range(d)]
     x_grids = np.meshgrid(*x_axes, indexing="ij")
-    x_coord = np.stack(x_grids, axis=-1)  # (*spatial, d)
+    x_coord = np.stack(x_grids, axis=-1)
 
-    # Voigt helpers for macroscopic strain update
     _, tensor_to_voigt, voigt_to_tensor = _voigt_setup(d)
     pairs_list = [(0, 0), (1, 1), (0, 1)] if d == 2 else [(0, 0), (1, 1), (2, 2), (1, 2), (0, 2), (0, 1)]
     C_eff_V = np.array(
@@ -288,32 +276,26 @@ def solve_elasticity(
     for iteration in range(max_iter):
         eps_old = eps.copy()
 
-        # stress  σ_ij = C_ijkl(x) [ε_kl - ε*_kl(x)]
         eps_el = eps - eps_star
         sigma = np.einsum("...ijkl,...kl->...ij", C_d, eps_el)
 
-        # polarisation stress  τ_ij = σ_ij - C^eff_ijkl ε_kl
         sigma_eff = np.einsum("ijkl,...kl->...ij", C_eff_d, eps)
         tau = sigma - sigma_eff
 
         tau_hat = np.fft.fftn(tau, axes=fft_axes)
 
-        # displacement correction in Fourier space
         b_hat = 1j * np.einsum("...l,...il->...i", k, tau_hat)
         u_hat_corr = np.einsum("...ij,...j->...i", G, b_hat)
 
         u_fluct = np.real(np.fft.ifftn(u_hat_corr, axes=fft_axes))
 
-        # total displacement = fluctuation + macroscopic (E · x)
         u = u_fluct + np.einsum("ij,...j->...i", E, x_coord)
 
-        # strain from fluctuation displacement gradient (spectral)
         u_hat_full = np.fft.fftn(u_fluct, axes=fft_axes)
         eps_fluct_hat = 0.5j * (np.einsum("...j,...i->...ij", k, u_hat_full) + np.einsum("...i,...j->...ij", k, u_hat_full))
         eps_fluct = np.real(np.fft.ifftn(eps_fluct_hat, axes=fft_axes))
         eps = eps_fluct + E[None, ...]
 
-        # update macroscopic strain from <σ> = σ^A
         tau_mean = tau.mean(axis=tuple(range(d)))
         E = voigt_to_tensor(S_eff_V @ tensor_to_voigt(sigma_applied - tau_mean))
 

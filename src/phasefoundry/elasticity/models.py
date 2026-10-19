@@ -138,7 +138,7 @@ class FixedVegardModel:
 
     def eps_star_field(self, c_all: np.ndarray, ndim: int) -> np.ndarray:
         """Return ε*(x) = Σ_k Λ_k c_k(x), shape ``(*spatial, ndim, ndim)``."""
-        Lam = self.Lambda[:, :ndim, :ndim]  # (N_ind, d, d)
+        Lam = self.Lambda[:, :ndim, :ndim]
         return np.einsum("k...,kij->...ij", c_all, Lam)
 
     def mu_el(self, sigma: np.ndarray, c_all: np.ndarray, N_V: float) -> np.ndarray:
@@ -154,7 +154,6 @@ class FixedVegardModel:
     def C_field(self, c_all: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, scheme_name: str = "cubic") -> np.ndarray:
         """Blend ``C_mat`` and ``C_ppt`` by h of the reference element's fraction, 1 − Σ_k c_k."""
         scheme = get_scheme(scheme_name)
-        # order parameter = reference element fraction
         c_ref = np.clip(1.0 - c_all.sum(axis=0), 0.0, 1.0)
         return _interp_stiffness(c_ref, C_mat, C_ppt, scheme)
 
@@ -191,30 +190,27 @@ class LocalVegardModel:
         self._N_ind = len(ind_elements)
         self._c0 = np.asarray(c0, dtype=float)
 
-        # a_ref = a(c₀)
         c0_q = self._c0.reshape(1, -1)
-        self._a_ref = float(batch_interps["a_relaxed_A"](c0_q)[0]) * 1e-10  # → m
+        self._a_ref = float(batch_interps["a_relaxed_A"](c0_q)[0]) * 1e-10
 
-        # α_k at c₀: (∂a/∂c_k)(c₀) / a(c₀)  via central FD
         self._alpha_c0 = self._compute_alpha_at(self._c0, delta_fd)
 
-        # C_eff = C(c₀)
         self._C_eff_cache = self._build_C_at(self._c0)
 
     def _eval_a_field(self, c_all: np.ndarray) -> np.ndarray:
         """Return a(c(x)) in metres, shape ``(*spatial,)``."""
         spatial_shape = c_all.shape[1:]
-        x_ind = c_all.reshape(self._N_ind, -1).T  # (n_pts, N_ind)
-        a_flat = self._interps["a_relaxed_A"](x_ind)  # (n_pts,) in Å
-        return a_flat.reshape(spatial_shape) * 1e-10  # → m
+        x_ind = c_all.reshape(self._N_ind, -1).T
+        a_flat = self._interps["a_relaxed_A"](x_ind)
+        return a_flat.reshape(spatial_shape) * 1e-10
 
     def _eval_C_field(self, c_all: np.ndarray) -> np.ndarray:
         """Return the cubic stiffness field C(x) in Pa, shape ``(*spatial, 3, 3, 3, 3)``."""
         spatial_shape = c_all.shape[1:]
         n_pts = int(np.prod(spatial_shape))
-        x_ind = c_all.reshape(self._N_ind, -1).T  # (n_pts, N_ind)
+        x_ind = c_all.reshape(self._N_ind, -1).T
 
-        C11 = self._interps["C11_GPa"](x_ind) * 1e9  # (n_pts,) Pa
+        C11 = self._interps["C11_GPa"](x_ind) * 1e9
         C12 = self._interps["C12_GPa"](x_ind) * 1e9
         C44 = self._interps["C44_GPa"](x_ind) * 1e9
 
@@ -263,16 +259,15 @@ class LocalVegardModel:
 
     def eps_star_field(self, c_all: np.ndarray, ndim: int) -> np.ndarray:
         """Return ε*(x) = [a(c(x)) − a(c₀)] / a(c₀) I, shape ``(*spatial, ndim, ndim)``."""
-        a_field = self._eval_a_field(c_all)  # (*spatial,) in m
-        eps_T = (a_field - self._a_ref) / self._a_ref  # (*spatial,)
+        a_field = self._eval_a_field(c_all)
+        eps_T = (a_field - self._a_ref) / self._a_ref
         identity = np.eye(ndim)
-        return eps_T[..., None, None] * identity  # (*spatial, d, d)
+        return eps_T[..., None, None] * identity
 
     def mu_el(self, sigma: np.ndarray, c_all: np.ndarray, N_V: float) -> np.ndarray:
         """Return μ_el,k = −α_k(c₀) tr(σ) / N_V, shape ``(n_ind, *spatial)``."""
-        tr_sigma = np.einsum("...ii->...", sigma)  # (*spatial,)
-        # α_k at c₀ (fixed) — shape (N_ind, 1, ..., 1) for broadcasting
-        alpha = self._alpha_c0  # (N_ind,)
+        tr_sigma = np.einsum("...ii->...", sigma)
+        alpha = self._alpha_c0
         n_extra = tr_sigma.ndim
         alpha_bc = alpha.reshape(self._N_ind, *([1] * n_extra))
         return -alpha_bc * tr_sigma[None, ...] / N_V
@@ -338,7 +333,7 @@ def build_eigenstrain_model(
             ``C_mat`` and ``C_ppt``, or ``lattice_model`` is given without
             ``reference_element``.
     """
-    c0 = np.atleast_1d(np.asarray(c0, dtype=float))  # binary configs give a scalar c0
+    c0 = np.atleast_1d(np.asarray(c0, dtype=float))
 
     if model_name in ("fixed_vegard", "uniform", "fixed"):
         if Lambda is None or C_mat is None or C_ppt is None:
@@ -353,8 +348,6 @@ def build_eigenstrain_model(
                 f"(elastic.elastic_csv, or step 1b with elastic.source: mlip).  "
                 f"Not found: {csv_path}"
             )
-        # Determine which elements define the active subspace for CSV filtering.
-        # Priority: all_elements arg > elastic_params meta > ind_elements + ref hint
         meta_sys = elastic_params.get("meta", {}).get("system", None)
         if all_elements is not None:
             csv_elements = [e.upper() for e in all_elements]

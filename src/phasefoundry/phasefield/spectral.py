@@ -27,7 +27,7 @@ def wavenumbers(N: int, L: float) -> np.ndarray:
     m = np.concatenate(
         (
             np.arange(0, N // 2),
-            [0],  # Nyquist → 0
+            [0],
             np.arange(-N // 2 + 1, 0),
         )
     )
@@ -65,11 +65,11 @@ def laplacian_operator(
 
     if ndim == 2:
         KX, KY = np.meshgrid(kx, ky, indexing="ij")
-        return np.real(KX**2 + KY**2)  # (N, N)
+        return np.real(KX**2 + KY**2)
 
     if ndim == 3:
         kz = wavenumbers(N, Lz)
         KX, KY, KZ = np.meshgrid(kx, ky, kz, indexing="ij")
-        return np.real(KX**2 + KY**2 + KZ**2)  # (N, N, N)
+        return np.real(KX**2 + KY**2 + KZ**2)
 
     raise ValueError(f"ndim must be 2 or 3, got {ndim}.")
