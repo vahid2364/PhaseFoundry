@@ -1279,10 +1279,13 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pycalphad" },
+    { name = "python-ternary" },
+    { name = "pyvista" },
     { name = "pyyaml" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "tqdm" },
+    { name = "umap-learn" },
 ]
 
 [package.optional-dependencies]
@@ -1291,11 +1294,6 @@ gpu = [
 ]
 mlip = [
     { name = "materialsframework", extra = ["calphad", "sqsgen"] },
-]
-plot = [
-    { name = "python-ternary" },
-    { name = "pyvista" },
-    { name = "umap-learn" },
 ]
 
 [package.dev-dependencies]
@@ -1315,15 +1313,15 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "pandas", specifier = ">=2.1" },
     { name = "pycalphad", specifier = ">=0.11" },
-    { name = "python-ternary", marker = "extra == 'plot'", specifier = ">=1.0.8" },
-    { name = "pyvista", marker = "extra == 'plot'", specifier = ">=0.40" },
+    { name = "python-ternary", specifier = ">=1.0.8" },
+    { name = "pyvista", specifier = ">=0.40" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "scikit-learn", specifier = ">=1.3" },
     { name = "scipy", specifier = ">=1.11" },
     { name = "tqdm", specifier = ">=4.65" },
-    { name = "umap-learn", marker = "extra == 'plot'", specifier = ">=0.5" },
+    { name = "umap-learn", specifier = ">=0.5" },
 ]
-provides-extras = ["mlip", "plot", "gpu"]
+provides-extras = ["mlip", "gpu"]
 
 [package.metadata.requires-dev]
 dev = [

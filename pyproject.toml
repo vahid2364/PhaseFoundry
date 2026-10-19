@@ -21,19 +21,17 @@ dependencies = [
     "numpy>=1.26",
     "pandas>=2.1",
     "pycalphad>=0.11",
+    "python-ternary>=1.0.8",
+    "pyvista>=0.40",
     "pyyaml>=6.0",
     "scikit-learn>=1.3",
     "scipy>=1.11",
     "tqdm>=4.65",
+    "umap-learn>=0.5",
 ]
 
 [project.optional-dependencies]
 mlip = ["materialsframework[sqsgen,calphad]>=1.0.0"]
-plot = [
-    "python-ternary>=1.0.8",
-    "pyvista>=0.40",
-    "umap-learn>=0.5",
-]
 gpu = ["cupy-cuda12x>=13.0; sys_platform != 'darwin'"]
 
 [dependency-groups]
