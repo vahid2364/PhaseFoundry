@@ -1,20 +1,14 @@
-"""Spinodal decomposition boundary calculation.
+"""Spinodal and binodal boundaries, phase-region maps and phase-field parameter estimates.
 
-A composition is inside the spinodal region when the Gibbs free energy
-is concave with respect to composition, i.e. d²G/dx² < 0.
+A composition is inside the spinodal when the Gibbs energy is concave in composition. For
+a binary A-B system with B as the reference element the condition is d²G/dx_A² < 0, with
+d²G/dx_A² = dMU[A_A] − dMU[B_A] from the stored Jansson derivatives. For a multicomponent
+system the condition is that the Hessian H_ij = dMU[i_j] − dMU[ref_j] = ∂²G/∂c_i∂c_j has
+at least one negative eigenvalue.
 
-For a binary A-B system (B = reference element):
-    d²G/dx_A² = ∂μ_A/∂x_A  (Jansson derivative, stored as dMU/A_A)
-
-For a multicomponent system the spinodal condition generalises to the
-eigenvalues of the Hessian matrix H_ij = ∂μ_i/∂x_j.  At least one
-negative eigenvalue means the composition is inside the spinodal.
-
-This module provides:
-    spinodal_boundary_binary()       — binary: find zero-crossings of d²G/dx²
-    spinodal_boundary_multi()        — multicomponent: eigenvalue analysis
-    compute_ternary_phase_regions()  — lower convex hull → 1/2/3-phase labels
-    plot_spinodal()                  — composition-temperature phase diagram
+The binodal follows from equal chemical potentials in the two phases, and the phase-region
+maps from the lower convex hull of G_m. All functions read HDF5 tables written by
+``generate_table``; the tables store temperatures in K, and the results report them in °C.
 """
 
 from __future__ import annotations
@@ -37,36 +31,31 @@ def binodal_boundary_binary(
     residual_tol: float = 500.0,
     min_separation: float = 0.15,
 ) -> dict:
-    """Compute binodal (equilibrium / solvus) boundaries for a binary system.
+    """Compute the binodal (solvus) compositions of a binary system at each temperature.
 
-    Uses the equal chemical potential condition — two phases α and β are in
-    equilibrium when:
+    Two phases α and β are in equilibrium when μ_A(x_α) = μ_A(x_β) and
+    μ_B(x_α) = μ_B(x_β). The function solves these with ``scipy.optimize.fsolve`` on cubic
+    interpolants of the tabulated chemical potentials, trying a fixed list of starting pairs
+    on both sides of the two-phase region. The first solution is kept for which ``fsolve``
+    converges, the residual norm is below ``residual_tol``, the two compositions are at
+    least ``min_separation`` apart, and both lie in (0.001, 0.999).
 
-        μ_A(x_α) = μ_A(x_β)   and   μ_B(x_α) = μ_B(x_β)
-
-    Solved numerically via ``scipy.optimize.fsolve`` with cubic-spline
-    interpolants of the pycalphad chemical potential data.  Multiple initial
-    guesses bracket the solution from both sides of the two-phase region.
-
-    Parameters
-    ----------
-    table_paths : list of str or Path
-        HDF5 tables (one per temperature) produced by generate_table().
-        Must contain 'MU' datasets.
-    independent_element : str
-        e.g. 'NB'.  The complementary element is inferred from the table's elements.
-    temperatures_celsius : list of float, optional
-    residual_tol : float
-        Maximum allowed |residual| in J/mol for a solution to be accepted.
-    min_separation : float
-        Minimum composition gap between the two equilibrium phases.
+    Args:
+        table_paths: HDF5 tables, one per temperature, with ``MU`` data.
+        independent_element: Element whose mole fraction is the composition axis, e.g.
+            ``"NB"``. The other element is the first table element that differs from it.
+        temperatures_celsius: Temperature labels in °C, one per table. Defaults to the table
+            temperatures.
+        residual_tol: Largest accepted norm of the two residuals, in J/mol.
+        min_separation: Smallest accepted gap between the two compositions, in mole fraction.
 
     Returns:
-    -------
-    dict with keys:
-        'temperatures_celsius'   list[float]
-        'x_binodal_low'          list[float | None]
-        'x_binodal_high'         list[float | None]
+        A dict with ``"temperatures_celsius"``, ``"x_binodal_low"`` and
+        ``"x_binodal_high"``, each with one entry per table. The compositions are mole
+        fractions of ``independent_element``, or ``None`` where no solution was accepted.
+
+    Raises:
+        KeyError: If a table has no ``MU`` data.
     """
     # Initial guesses: pairs (x_lo, x_hi) spanning the two-phase region
     _INIT_GUESSES = [
@@ -150,31 +139,35 @@ def spinodal_boundary_binary(
     temperatures_celsius: list[float] | None = None,
     reference_element: str | None = None,
 ) -> dict:
-    """Compute spinodal boundaries for a binary system at multiple temperatures.
+    """Compute the spinodal compositions of a binary system at each temperature.
 
-    For each temperature, finds the two compositions (low, high) where
-    d²G/dx² = 0 — the spinodal limits.  Compositions between them are
-    unstable to spinodal decomposition.
+    The spinodal limits are the zero crossings of d²G/dx², found by linear interpolation
+    between neighbouring table points. Compositions between the two limits are unstable to
+    spinodal decomposition. With more than two crossings the outermost two are used; with
+    exactly one, the upper limit is ``None`` and a warning is issued.
 
-    Parameters
-    ----------
-    table_paths : list of str or Path
-        HDF5 tables (one per temperature) produced by generate_table().
-        Must contain the 'dMU' dataset.
-    independent_element : str
-        The element whose Jansson derivative ∂μ/∂x is used,
-        e.g. 'NB' for the Nb-V binary.
-    temperatures_celsius : list of float, optional
-        Temperature labels.  If None, read from file metadata.
+    Args:
+        table_paths: HDF5 tables, one per temperature, with ``dMU`` data.
+        independent_element: Element whose mole fraction is the composition axis, e.g.
+            ``"NB"`` for Nb-V.
+        temperatures_celsius: Temperature labels in °C, one per table. Defaults to the table
+            temperatures.
+        reference_element: The other element of the binary. When given, and its ``dMU`` key
+            exists, d²G/dx² = dMU[A_A] − dMU[B_A]. Without it the function uses dMU[A_A]
+            alone, which by Gibbs-Duhem is (1 − x_A) d²G/dx²: the zero crossings are the
+            same, but the values in ``"d2G_dx2"`` differ.
 
     Returns:
-    -------
-    dict with keys:
-        'temperatures_celsius'   list[float]          length N_T
-        'x_spinodal_low'         list[float | None]   lower boundary at each T
-        'x_spinodal_high'        list[float | None]   upper boundary at each T
-        'x_compositions'         list[np.ndarray]     composition arrays
-        'd2G_dx2'                list[np.ndarray]     d²G/dx² arrays
+        A dict with one entry per table under each key:
+
+        - ``"temperatures_celsius"``: temperature in °C.
+        - ``"x_spinodal_low"``, ``"x_spinodal_high"``: spinodal limits in mole fraction of
+          ``independent_element``, or ``None`` where none was found.
+        - ``"x_compositions"``: the table compositions, sorted.
+        - ``"d2G_dx2"``: d²G/dx² in J/mol at those compositions.
+
+    Raises:
+        KeyError: If a table lacks ``dMU`` or its ``<A>_<A>`` key.
     """
     key = f"{independent_element}_{independent_element}"
 
@@ -247,25 +240,27 @@ def spinodal_boundary_multi(
     temperatures_celsius: list[float] | None = None,
     reference_element: str | None = None,
 ) -> dict:
-    """Compute spinodal stability for a multicomponent system via eigenvalues
-    of the Gibbs Hessian H_ij = ∂²G/∂c_i∂c_j.
+    """Find the spinodally unstable table points of a multicomponent system.
 
-    A point is inside the spinodal when the smallest eigenvalue of H < 0.
+    At each table point the Hessian H_ij = dMU[i_j] − dMU[ref_j] is assembled from the
+    Jansson derivatives, and the point is unstable when the smallest eigenvalue is negative.
 
-    Parameters
-    ----------
-    table_paths : list of str or Path
-    independent_elements : list[str]
-        The N-1 independent elements (all except the reference).
-    temperatures_celsius : list[float], optional
+    Args:
+        table_paths: HDF5 tables, one per temperature.
+        independent_elements: The N - 1 independent elements.
+        temperatures_celsius: Temperature labels in °C, one per table. Defaults to the table
+            temperatures.
+        reference_element: Dependent element. When given, dMU[ref_j] is subtracted
+            (Gibbs-Duhem); without it H_ij = dMU[i_j].
 
     Returns:
-    -------
-    dict with keys:
-        'temperatures_celsius'   list[float]
-        'compositions'           list[np.ndarray]  shape (n_pts, N_elements)
-        'min_eigenvalue'         list[np.ndarray]  shape (n_pts,)
-        'is_spinodal'            list[np.ndarray]  bool, shape (n_pts,)
+        A dict with one entry per table under each key:
+
+        - ``"temperatures_celsius"``: temperature in °C.
+        - ``"compositions"``: table compositions, shape ``(n_pts, n_elements)``.
+        - ``"min_eigenvalue"``: smallest Hessian eigenvalue in J/mol, shape ``(n_pts,)``;
+          NaN where ``dMU`` data is missing or NaN.
+        - ``"is_spinodal"``: ``min_eigenvalue < 0``, shape ``(n_pts,)``.
     """
     n = len(independent_elements)
     results = {
@@ -323,50 +318,43 @@ def compute_ternary_phase_regions(
     driving_force_tol_frac: float = 5e-4,
     min_triangle_area: float = 0.05,
 ) -> dict:
-    """Classify ternary composition points into single-phase, two-phase, and
-    three-phase regions using the lower convex hull of the Gibbs energy surface.
+    """Classify ternary compositions as single-, two- or three-phase with the lower convex hull of G_m.
 
-    The raw CALPHAD data (typically ~190 points) is first interpolated onto a
-    fine triangular grid so the convex hull can distinguish surface (stable)
-    points from interior (unstable) points.  The phase topology follows from
-    the lower convex hull geometry:
+    G_m is interpolated linearly from the table onto a triangular grid with ``n_fine`` steps
+    per axis, with nearest-neighbour values outside the hull of the data, so the map covers
+    the whole simplex. The lower convex hull of (x_0, x_1, G_m) on that grid then gives:
 
-    - Interior triangular facets far from the ternary edges → three-phase
-      tie-triangle.  Compositions inside the triangle are in the 3-phase region.
-    - Compositions above the hull but outside tie-triangles → two-phase.
-    - Compositions on or very near the hull → single-phase (stable).
+    - single-phase: points whose driving force (G_m minus the hull) is below
+      ``driving_force_tol_frac`` times the G_m range, with the range taken as at least
+      1 J/mol;
+    - three-phase: points inside a lower-hull facet whose area in the (x_0, x_1) plane is
+      at least ``min_triangle_area`` (a tie-triangle);
+    - two-phase: all other points.
 
-    Parameters
-    ----------
-    table_path : str or Path
-        HDF5 table produced by generate_table(), must contain GM.
-    independent_elements : list[str]
-        The two independent elements, e.g. ['NB', 'HF'] for Nb-Hf-V.
-    n_fine : int
-        Points per axis on the interpolated triangular grid.  Default 150
-        gives ~11500 points.
-    driving_force_tol_frac : float
-        Fraction of |G_m| range used as the single-phase threshold.
-        A point with driving_force < tol_frac * (G_m_max - G_m_min) is
-        treated as on the hull (single-phase).  Default 5e-4.
-    min_triangle_area : float
-        Minimum area (composition units²) for a hull facet to be classified
-        as a tie-triangle.  For a ternary miscibility gap the tie-triangle is
-        typically large (area > 0.05); small facets are numerical artifacts.
-        Default 0.05.
+    Each table point takes the region of the nearest grid point, and its driving force is
+    measured against the hull planes.
+
+    Args:
+        table_path: HDF5 table with ``GM`` data.
+        independent_elements: The two independent elements, e.g. ``["NB", "HF"]`` for Nb-Hf-V.
+        n_fine: Grid steps per axis. The default of 150 gives about 11 500 grid points.
+        driving_force_tol_frac: Single-phase threshold as a fraction of the G_m range.
+        min_triangle_area: Smallest facet area, in squared mole fraction, counted as a
+            tie-triangle. Smaller facets are discretization artifacts.
 
     Returns:
-    -------
-    dict with keys:
-        'compositions'      (N, n_el) float array — original compositions
-        'gm'                (N,)      float array — G_m [J/mol]
-        'driving_force'     (N,)      float array — G_m minus hull G_m [J/mol]
-        'region'            (N,)      str array   — 'single' | 'two' | 'three'
-        'tie_triangles'     list of (3, 2) float arrays — vertices (x_el0, x_el1)
-        'elements'          list[str]
-        'independent_elements' list[str]
-        'temperature_C'     float
-        'fine_grid'         dict with 'x0', 'x1', 'gm', 'region' on fine grid
+        A dict with:
+
+        - ``"compositions"``: table compositions, shape ``(n_pts, n_el)``.
+        - ``"gm"``: G_m in J/mol, shape ``(n_pts,)``.
+        - ``"driving_force"``: G_m minus the hull in J/mol, shape ``(n_pts,)``.
+        - ``"region"``: ``"single"``, ``"two"`` or ``"three"`` for each table point.
+        - ``"tie_triangles"``: vertices of each tie-triangle, arrays of shape ``(3, 2)``
+          with columns ``(x_0, x_1)``.
+        - ``"elements"``, ``"independent_elements"``: element lists.
+        - ``"temperature_C"``: temperature in °C.
+        - ``"fine_grid"``: dict with ``"x0"``, ``"x1"``, ``"gm"``, ``"driving_force"`` and
+          ``"region"`` on the interpolation grid.
     """
     from scipy.interpolate import LinearNDInterpolator
     from scipy.spatial import ConvexHull
@@ -491,46 +479,33 @@ def compute_phase_regions_multi(
     driving_force_tol_frac: float = 5e-4,
     min_simplex_vol: float = 0.001,
 ) -> dict:
-    """Classify compositions into phase regions for any n-component system (n≥3).
+    """Classify the compositions of a system with three or more components into phase regions.
 
-    Uses the lower convex hull of the Gibbs energy surface in
-    (n_independent + 1)-dimensional space.  Works for ternary, quaternary,
-    pentenary, and beyond.
+    The lower convex hull of (x_1, ..., x_n_ind, G_m) is built directly from the table
+    points, without an interpolation grid. Points whose driving force is below
+    ``driving_force_tol_frac`` times the G_m range are ``"single"``. Points inside a
+    lower-hull facet whose volume in composition space is at least ``min_simplex_vol`` are
+    labelled by the facet's vertex count: ``"three"`` for a ternary, ``"four"`` for a
+    quaternary and ``"multi"`` beyond. All other points are ``"two"``. Separately, a point
+    is flagged as spinodal when its Hessian dMU[i_j] − dMU[ref_j] has a negative eigenvalue.
 
-    Phase labels
-    ------------
-    single   — driving force < tol (on or near the lower hull)
-    two      — above hull, not inside a large tie-simplex
-    three    — inside a large triangular hull facet (tie-triangle)
-    four     — inside a large tetrahedral hull facet (tie-tetrahedron)
-    multi    — inside a larger multi-phase simplex
-    spinodal — subset of two/multi-phase; min eigenvalue of Hessian < 0
+    If the hull cannot be built, every point is returned as ``"single"`` with zero driving
+    force and no spinodal points.
 
-    Parameters
-    ----------
-    table_path : str or Path
-        HDF5 table from generate_table(), must contain GM and (optionally) dMU.
-    independent_elements : list[str]
-        All elements except the reference element.
-    reference_element : str, optional
-        Reference element for Gibbs-Duhem Hessian correction.
-    driving_force_tol_frac : float
-        Fraction of G_m range used as single-phase threshold (default 5e-4).
-    min_simplex_vol : float
-        Minimum k-simplex volume (in composition units) for a hull facet to
-        be classified as a multi-phase region.  Default 0.001.
+    Args:
+        table_path: HDF5 table with ``GM`` data and, for the spinodal flag, ``dMU``.
+        independent_elements: All elements except the reference element.
+        reference_element: Dependent element. When given, dMU[ref_j] is subtracted in the
+            Hessian (Gibbs-Duhem).
+        driving_force_tol_frac: Single-phase threshold as a fraction of the G_m range.
+        min_simplex_vol: Smallest facet volume in composition space counted as a
+            multi-phase region.
 
     Returns:
-    -------
-    dict with keys:
-        compositions          (n_pts, n_el) float array
-        gm                    (n_pts,) float array
-        driving_force         (n_pts,) float array
-        region                (n_pts,) str array — 'single'|'two'|'three'|'four'|'multi'
-        spinodal              (n_pts,) bool array
-        elements              list[str]
-        independent_elements  list[str]
-        temperature_C         float
+        A dict with ``"compositions"`` (shape ``(n_pts, n_el)``), ``"gm"`` and
+        ``"driving_force"`` (J/mol, shape ``(n_pts,)``), ``"region"`` (object array of
+        labels), ``"spinodal"`` (bool array, all ``False`` without ``dMU``),
+        ``"elements"``, ``"independent_elements"`` and ``"temperature_C"``.
     """
     from math import factorial
 
@@ -634,11 +609,17 @@ def _points_in_simplex_nd(
     points: np.ndarray,
     simplex_verts: np.ndarray,
 ) -> np.ndarray:
-    """Return bool mask: True where points[i] lie inside the n-d simplex.
+    """Return a mask of the points that lie inside a simplex.
 
-    Uses barycentric coordinates via least-squares; works for any dimension.
-    simplex_verts : (k+1, n_dim) array of vertex coordinates.
-    points        : (n_pts, n_dim) array of query points.
+    The barycentric coordinates come from a least-squares solve, so this works in any
+    dimension. Points on the boundary count as inside.
+
+    Args:
+        points: Query points, shape ``(n_pts, n_dim)``.
+        simplex_verts: Simplex vertices, shape ``(k + 1, n_dim)``.
+
+    Returns:
+        Boolean mask, shape ``(n_pts,)``; all ``False`` if the solve fails.
     """
     n_pts = len(points)
     T = (simplex_verts[1:] - simplex_verts[0]).T  # (n_dim, k)
@@ -657,15 +638,18 @@ def _points_in_triangle(
     py: np.ndarray,
     triangle: np.ndarray,
 ) -> np.ndarray:
-    """Return boolean mask: True where (px[i], py[i]) lies inside ``triangle``.
+    """Return a mask of the points ``(px, py)`` that lie inside ``triangle``.
 
-    Uses barycentric coordinates.  Points exactly on the boundary are
-    considered inside.
+    Uses barycentric coordinates. Points on the boundary count as inside, and a degenerate
+    triangle contains no points.
 
-    Parameters
-    ----------
-    px, py : (N,) float arrays
-    triangle : (3, 2) float array — rows are vertices, columns are (x, y)
+    Args:
+        px: x coordinates, shape ``(n,)``.
+        py: y coordinates, shape ``(n,)``.
+        triangle: Vertices as rows of ``(x, y)``, shape ``(3, 2)``.
+
+    Returns:
+        Boolean mask, shape ``(n,)``.
     """
     ax, ay = triangle[0]
     bx, by = triangle[1]
@@ -691,49 +675,41 @@ def recommend_pfm_params(
     safety: float = 0.4,
     M: float | None = None,
 ) -> dict:
-    """Recommend phase-field simulation parameters derived from the G_m spline.
+    """Suggest phase-field parameters from the G_m spline surrogate.
 
-    Uses the Cahn-Hilliard length scales:
+    The estimates use the Cahn-Hilliard length and time scales, with f'' = d²G/dx² sampled
+    on x in [0.01, 0.99]:
 
-        Interface width   δ  = sqrt(κ / |d²G/dx²|_max)
-        Most unstable λ*     = 4π · sqrt(κ / |d²G/dx²|_c0)
-        Stable dt            = safety · dx² / (M_eff_max · |d²G/dx²|_max)
+        interface width        δ = sqrt(κ / |f''|_max)
+        fastest-growing mode   λ* = 4π sqrt(κ / |f''(c0)|)
+        critical wavelength    λ_c = 2π sqrt(2κ / |f''(c0)|)
+        stable time step       dt = safety dx² / (M_eff,max |f''|_max)
 
-    Parameters
-    ----------
-    calphad_fit : dict
-        Output of ``build_gm_spline_surrogate()``.
-    temperature_K : float
-        Simulation temperature in Kelvin.
-    c0 : float
-        Mean initial composition (mol fraction of reference element).
-    n_interfaces : int
-        Number of spinodal wavelengths λ* that the domain should contain.
-        Controls the recommended domain size Lx = n_interfaces × λ*.
-    delta_over_dx : float
-        Required number of grid points per interface width.
-        Controls the grid spacing: dx = δ / delta_over_dx.
-    safety : float
-        Stability safety factor for dt (default 0.4).
-    M : float, optional
-        Mobility [m⁵/(J·s)].  Required for dt recommendation.
+    where M_eff,max = M / 4 is the peak of the degenerate mobility M c(1 − c). κ is chosen
+    by a fixed-point iteration so that the interface spans ``delta_over_dx`` grid points
+    on a domain of ``n_interfaces`` wavelengths λ*.
+
+    Args:
+        calphad_fit: Output of ``build_gm_spline_surrogate``. The stored temperature
+            closest to ``temperature_K`` and its first model are used.
+        temperature_K: Simulation temperature in K.
+        c0: Mean initial composition, as mole fraction of the reference element (the
+            spline's variable).
+        n_interfaces: Number of wavelengths λ* the domain should hold.
+        delta_over_dx: Grid points per interface width.
+        safety: Safety factor for ``dt``.
+        M: Mobility in m²·mol/(J·s), consistent with G in J/mol. Needed for ``dt_stable``.
 
     Returns:
-    -------
-    dict with keys:
-        kappa_min   float   Minimum κ for δ = delta_over_dx × dx  [J·m²/mol]
-        lambda_star float   Most unstable spinodal wavelength at c0  [m]
-        lambda_crit float   Critical wavelength (onset of instability)  [m]
-        delta       float   Interface width at kappa_min  [m]
-        Lx_min      float   Minimum domain size  [m]
-        N_min       int     Minimum grid points (next power of 2)
-        dx          float   Grid spacing  [m]
-        dt_stable   float or None   Stable time step if M is given  [s]
-        d2G_max     float   |d²G/dx²|_max  [J/mol]
-        d2G_c0      float   |d²G/dx²| at c0  [J/mol]
-        spinodal_lo float or None   Lower spinodal boundary
-        spinodal_hi float or None   Upper spinodal boundary
-        c0_in_spinodal bool   Whether c0 lies inside the spinodal region
+        A dict with ``kappa_min`` (J·m²/mol); ``lambda_star``, ``lambda_crit``, ``delta``,
+        ``Lx_min`` and ``dx`` (m); ``N_min`` (grid points, a power of 2); ``dt_stable`` (s,
+        or ``None`` without ``M``); ``d2G_max`` and ``d2G_c0`` (J/mol); the spinodal limits
+        ``spinodal_lo`` and ``spinodal_hi`` (``None`` unless at least two zero crossings
+        are found); and ``c0_in_spinodal``.
+
+    Raises:
+        ValueError: If the fit has no ``spline_dfdx``, i.e. it was not built by
+            ``build_gm_spline_surrogate``.
     """
     stored_T = np.array(calphad_fit["temperatures_K"])
     T_K = stored_T[int(np.argmin(np.abs(stored_T - temperature_K)))]
@@ -839,28 +815,27 @@ def plot_spinodal(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """Plot the spinodal boundary in composition-temperature space.
+    """Plot the spinodal region in composition-temperature space.
 
-    Works with output from either ``spinodal_boundary_binary()`` or
-    ``spinodal_boundary_multi()``.
+    For ``spinodal_boundary_binary`` output the region between the two limits is filled and
+    the limits are drawn. Temperatures without both limits are skipped, and if none has
+    both, the function warns and returns the axes without labels. For
+    ``spinodal_boundary_multi`` output the unstable points are scattered, with the first
+    composition column on the x-axis whatever ``x_element`` is. The title always names the
+    Nb-V BCC_A2 system.
 
-    Parameters
-    ----------
-    spinodal_data : dict
-        Output of spinodal_boundary_binary() or spinodal_boundary_multi().
-    x_element : str
-        Element label for the x-axis.
-    ax : plt.Axes, optional
-    figsize : tuple
-    fill_color : str
-        Color for the spinodal region fill.
-    fill_alpha : float
-    save_path : str or Path, optional
-    show : bool
+    Args:
+        spinodal_data: Output of ``spinodal_boundary_binary`` or ``spinodal_boundary_multi``.
+        x_element: Element named in the x-axis label.
+        ax: Axes to draw on. A new figure is created if ``None``.
+        figsize: Size of the new figure, if one is created.
+        fill_color: Colour of the region and its limits.
+        fill_alpha: Opacity of the region fill.
+        save_path: If given, the figure is saved there at 150 dpi.
+        show: Call ``plt.show()`` at the end.
 
     Returns:
-    -------
-    matplotlib.axes.Axes
+        The axes.
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
@@ -935,34 +910,27 @@ def plot_phase_diagram(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """Plot binodal and spinodal boundaries together on a T–x phase diagram.
+    """Plot the binodal and spinodal boundaries together on a temperature-composition diagram.
 
-    The binodal (solid lines, blue) marks the two-phase region boundaries
-    where the phases are in chemical equilibrium (common tangent).
+    The binodal (solid blue) bounds the two-phase region, where the two phases have equal
+    chemical potentials (common tangent). The spinodal (dashed red) lies inside it;
+    compositions within the spinodal decompose without a nucleation barrier. Both are drawn
+    as interpolating splines through the per-temperature points, and the midpoint of the
+    highest-temperature spinodal pair is marked as the critical point.
 
-    The spinodal (dashed lines, red) marks the limit of metastability inside
-    the two-phase region; compositions inside the spinodal decompose
-    spontaneously without a nucleation barrier.
-
-    Parameters
-    ----------
-    spinodal_data : dict
-        Output of spinodal_boundary_binary() (after remapping to x_element
-        space, as done in workflows/02_fit_surrogate/run.py).
-    binodal_data : dict
-        Output of binodal_boundary_binary() (also in x_element space).
-    x_element : str
-        Element label for the x-axis (e.g. 'V').
-    system_name : str
-        Title suffix.
-    ax : plt.Axes, optional
-    figsize : tuple
-    save_path : str or Path, optional
-    show : bool
+    Args:
+        spinodal_data: Output of ``spinodal_boundary_binary``, expressed in mole fractions
+            of ``x_element`` (``workflows/02_fit_surrogate/run.py`` does this remapping).
+        binodal_data: Output of ``binodal_boundary_binary``, also in ``x_element`` fractions.
+        x_element: Element on the x-axis, e.g. ``"V"``.
+        system_name: System name shown in the title.
+        ax: Axes to draw on. A new figure is created if ``None``.
+        figsize: Size of the new figure, if one is created.
+        save_path: If given, the figure is saved there at 150 dpi.
+        show: Call ``plt.show()`` at the end.
 
     Returns:
-    -------
-    matplotlib.axes.Axes
+        The axes.
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)

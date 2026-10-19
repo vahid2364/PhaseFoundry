@@ -1,50 +1,11 @@
-"""Plotting utilities for thermodynamic tables.
+"""Plots of the thermodynamic tables written by ``generate_table``.
 
-Public functions
-────────────────
-plot_free_energy_vs_composition(table_paths, x_element, ...)
-    Plot a thermodynamic quantity (Gm or a chemical potential) vs mole fraction
-    for one element across multiple temperatures.  One curve per HDF5 table file.
-
-plot_chemical_potential_vs_composition(table_paths, x_element, ...)
-    Convenience wrapper around plot_free_energy_vs_composition that produces one
-    subplot per element showing all chemical potentials μᵢ vs composition.
-
-plot_ternary_spinodal(table_path, independent_elements, ...)
-    Ternary phase diagram (python-ternary) showing single-phase, two-phase,
-    three-phase, and spinodal regions derived from the lower convex hull of Gm.
-    Draws the spinodal boundary (λ_min = 0 contour) as a dashed line.
-    For n-component systems (n ≥ 4) call once per element pair.
-
-plot_as_umap(table_path, independent_elements, reference_element, ...)
-    Alloy-Space dimensionality reduction plot for any number of components.
-    Implements the AS-UMAP method (Vela et al., arXiv:2408.07681): samples the
-    full composition simplex, embeds it in 2D with UMAP (or t-SNE as fallback),
-    and overlays CALPHAD data colored by phase region and spinodal label.
-    Produces deltoid (n=3), astroid (n=4), or regular polygon (n≥5) shapes.
-
-Private helpers
-───────────────
-_full_simplex_lattice(n_el, scale)
-    Generate a stars-and-bars lattice covering the full n-component simplex.
-    Used to build the background point cloud for the AS-UMAP embedding.
-
-_draw_simplex_boundary(ax, emb, ...)
-    Draw the concave boundary (alpha-shape) of a 2D point cloud via Delaunay
-    triangulation.  Produces the hypocycloid outline in AS-UMAP plots.
-
-_fit_dim_reduction(pts)
-    Fit a 2D non-linear embedding on pts.  Tries UMAP first (n_neighbors=30,
-    min_dist=0.6); falls back to t-SNE if umap-learn is not installed.
-    Key UMAP parameters are named constants at the top of the function body.
-
-_canonical_rotation(pure_embs, elements, n_el)
-    Compute the rotation angle that aligns the pure-element embedding positions
-    to the canonical n-gon orientation (△ for n=3, ■ for n=4, vertex-at-top
-    for n≥5).  Returns (angle_rad, centroid).
-
-_rotate_embedding(emb, angle, centroid)
-    Apply a 2D rotation of *angle* radians around *centroid* to all points in emb.
+The functions plot G_m or chemical potentials against composition for one or more
+temperatures, draw a ternary phase map with the spinodal boundary (needs
+``python-ternary``), and draw an alloy-space map for three or more components with the
+AS-UMAP method of Vela et al. (arXiv:2408.07681). AS-UMAP embeds the whole composition
+simplex in 2-D with UMAP (needs ``umap-learn``; t-SNE from scikit-learn is the fallback)
+and colours the CALPHAD points by phase region.
 """
 
 from __future__ import annotations
@@ -67,34 +28,28 @@ def plot_free_energy_vs_composition(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """Plot a thermodynamic quantity vs mole fraction of one element
-    for multiple temperatures (one curve per table file).
+    """Plot G_m or a chemical potential against one mole fraction, one curve per table.
 
-    Parameters
-    ----------
-    table_paths : list of str or Path
-        HDF5 table files produced by generate_table(), one per temperature.
-        They are plotted in the order given (typically sorted by T).
-    x_element : str
-        Element whose mole fraction goes on the x-axis, e.g. 'V'.
-    quantity : str
-        Which quantity to plot: 'GM' (default) or a chemical potential
-        string like 'MU/HF'.
-    temperatures_celsius : list of float, optional
-        Labels for each curve.  If None, the temperature is read from
-        each file's metadata (stored in K, converted to °C for display).
-    ax : matplotlib Axes, optional
-        Axes to draw on.  A new figure is created when None.
-    figsize : tuple
-        Figure size when a new figure is created.
-    save_path : str or Path, optional
-        If given, save the figure to this path.
-    show : bool
-        Call plt.show() at the end.
+    Args:
+        table_paths: HDF5 tables from ``generate_table``, usually one per temperature.
+            Curves are drawn in this order and coloured along the plasma colormap.
+        x_element: Element whose mole fraction is on the x-axis, as stored in the
+            table, e.g. ``"V"``.
+        quantity: ``"GM"`` for the molar Gibbs energy, or ``"MU/<element>"`` (e.g.
+            ``"MU/HF"``) for a chemical potential. Both are in J/mol.
+        temperatures_celsius: Legend label of each curve in °C. ``None`` reads the
+            temperature from each table's metadata.
+        ax: Axes to draw on. ``None`` creates a new figure.
+        figsize: Figure size used when ``ax`` is ``None``.
+        save_path: File to save the current figure to, at 150 dpi.
+        show: Call ``plt.show()`` at the end.
 
     Returns:
-    -------
-    matplotlib.axes.Axes
+        The axes that were drawn on.
+
+    Raises:
+        ValueError: If ``x_element`` is not in a table, or ``quantity`` has another form.
+        KeyError: If a table does not store the requested quantity.
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
@@ -176,8 +131,24 @@ def plot_chemical_potential_vs_composition(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> list[plt.Axes]:
-    """Plot chemical potentials μᵢ vs mole fraction for multiple temperatures.
-    One subplot per element in mu_elements.
+    """Plot chemical potentials against one mole fraction, one subplot per element.
+
+    Each subplot is a ``plot_free_energy_vs_composition`` call with
+    ``quantity="MU/<element>"``, so every table gives one curve per subplot.
+
+    Args:
+        table_paths: HDF5 tables from ``generate_table``, usually one per temperature.
+        x_element: Element whose mole fraction is on the x-axis, as stored in the table.
+        mu_elements: Elements whose chemical potentials are plotted. ``None`` uses every
+            element of the first table.
+        temperatures_celsius: Legend label of each curve in °C. ``None`` reads the
+            temperature from each table's metadata.
+        figsize: Figure size.
+        save_path: File to save the figure to, at 150 dpi.
+        show: Call ``plt.show()`` at the end.
+
+    Returns:
+        The subplot axes, in the order of ``mu_elements``.
     """
     sample = load_table(table_paths[0])
     elements = sample["elements"]
@@ -230,37 +201,35 @@ def plot_ternary_spinodal(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """Ternary diagram showing single-phase, two-phase, three-phase, and spinodal
-    regions for a single-phase CALPHAD dataset.
+    """Draw a ternary phase map with the spinodal boundary for one phase's CALPHAD table.
 
-    Phase regions are identified from the lower convex hull of G_m(x_1, x_2)
-    (see ``compute_ternary_phase_regions``).  The spinodal boundary (λ_min = 0)
-    is overlaid as a dashed contour line.
+    Single-, two- and three-phase points come from the lower convex hull of
+    G_m(x_1, x_2) on the fine grid of ``compute_ternary_phase_regions`` and are drawn as
+    coloured markers. Tie-triangles are outlined with their vertices marked. The spinodal
+    boundary, where the smallest Hessian eigenvalue λ_min is zero, is a dashed black line;
+    the spinodal region itself is not filled.
 
-    Requires ``python-ternary`` (``pip install python-ternary``).
-
-    Parameters
-    ----------
-    table_path : str or Path
-        HDF5 table produced by ``generate_table()``.  Must contain GM and dMU.
-    independent_elements : list[str]
-        The two independent elements, e.g. ['NB', 'HF'] for Nb-Hf-V.
-    corner_labels : list[str], optional
-        Labels for the (right, top, left) corners in python-ternary convention.
-        Defaults to the element names derived from the table.
-    sim_composition : dict[str, float], optional
-        Composition of the simulated alloy, e.g. {'NB': 0.50, 'HF': 0.25}.
-        Plotted as a star marker if provided.
-    ax : matplotlib.axes.Axes, optional
-    figsize : tuple
-    marker_size : float
-        Size of the scatter markers (s parameter).
-    save_path : str or Path, optional
-    show : bool
+    Args:
+        table_path: HDF5 table from ``generate_table`` with ``GM`` and ``dMU``.
+        independent_elements: The two independent elements, e.g. ``["NB", "HF"]`` for
+            Nb-Hf-V. The remaining element of the table is the reference.
+        corner_labels: Labels of the right, top and left corners (python-ternary order),
+            which are the first independent element, the second, and the reference.
+            ``None`` uses the element names in title case.
+        sim_composition: Simulated composition keyed by element, e.g.
+            ``{"NB": 0.50, "HF": 0.25}``, drawn as a black star.
+        ax: Axes to draw on. ``None`` creates a new figure.
+        figsize: Figure size used when ``ax`` is ``None``.
+        marker_size: Marker size (``s``) of the region points; tie-triangle vertices are
+            twice as large.
+        save_path: File to save the figure to, at 300 dpi.
+        show: Call ``plt.show()`` at the end.
 
     Returns:
-    -------
-    matplotlib.axes.Axes
+        The axes that hold the ternary plot.
+
+    Raises:
+        ImportError: If ``python-ternary`` is not installed.
     """
     try:
         import ternary
@@ -342,7 +311,7 @@ def plot_ternary_spinodal(
     # Verified: project_point((1,0,0))→bottom-right, (0,1,0)→top, (0,0,1)→bottom-left
     # right_corner = el0 (NB), top_corner = el1 (HF), left_corner = ref (V)
     def _tern(xa, xb):
-        """Convert (x_el0, x_el1) → python-ternary (right=el0, top=el1, left=ref)."""
+        """Return the python-ternary point (right, top, left) = (x_el0, x_el1, x_ref)."""
         xref = 1.0 - xa - xb
         return (xa, xb, xref)
 
@@ -390,12 +359,12 @@ def plot_ternary_spinodal(
     edge_x1 = np.concatenate([np.zeros(n_edge + 1), t_edge, 1.0 - t_edge[::-1]])
 
     def _augmented_contour(x0_pts, x1_pts, values, edge_val_lam, edge_val_bin, field, level):
-        """Add ternary-edge anchor points then draw the contour at *level*.
+        """Return the ``level`` contour of ``values`` as python-ternary paths, with edge anchors.
 
-        edge_val_* are the scalar values assigned to every edge anchor point.
-        Physically correct anchors:
-          - lam field:  large positive (stable at pure-element limits)
-          - bin field:  0.0 (single-phase at pure-element limits)
+        Anchor points along the three ternary edges get ``edge_val_lam`` when ``field`` is
+        ``"lam"`` and ``edge_val_bin`` otherwise: a large positive λ (stable) or 0.0
+        (single-phase), the values at the pure-element limits. Triangles with an edge
+        longer than 0.05 are masked before contouring.
         """
         x0_aug = np.concatenate([x0_pts, edge_x0])
         x1_aug = np.concatenate([x1_pts, edge_x1])
@@ -427,8 +396,9 @@ def plot_ternary_spinodal(
         return paths
 
     def _merge_paths(paths, tol=1e-6):
-        """Chain disconnected path segments that share endpoints into longer
-        continuous paths, eliminating overlapping strokes at junctions.
+        """Join path segments whose endpoints coincide (within ``tol``) into longer paths.
+
+        This avoids overlapping strokes where contour segments meet.
         """
         if not paths:
             return paths
@@ -468,10 +438,10 @@ def plot_ternary_spinodal(
         return merged
 
     def _split_at_boundary(path, tol=0.01):
-        """Split a contour path into sub-segments that each run through the
-        interior, stopping the moment a point lands on or beyond a ternary
-        edge.  This ensures boundary lines only *terminate* at an axis —
-        they never run *along* one.
+        """Split a path wherever it reaches a ternary edge (any coordinate below ``tol``).
+
+        Each piece runs through the interior and ends at the first point on an edge, so
+        boundary lines end at an axis instead of running along it.
         """
         segments = []
         seg = []
@@ -607,40 +577,36 @@ def plot_as_umap(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Figure:
-    """Alloy-Space dimensionality reduction plot for quaternary and higher systems.
+    """Draw an alloy-space (AS-UMAP) map for a system with three or more components.
 
-    Implements the AS-UMAP method (Vela et al., arXiv:2408.07681): grid-samples
-    the full n-component composition simplex, fits a non-linear dimensionality
-    reduction (UMAP when available, t-SNE otherwise) on that full space, then
-    overlays CALPHAD data points colored by phase region and spinodal label.
+    This is the method of Vela et al. A regular lattice over the whole composition simplex,
+    the CALPHAD points and the simulated composition are embedded together in 2-D (UMAP,
+    or t-SNE if UMAP is missing or fails). The lattice is drawn as a grey background with
+    its outline, and the CALPHAD points are coloured by the phase region from
+    ``compute_phase_regions_multi``, with spinodal points shown as their own class. The
+    embedding is rotated so the pure elements sit at a fixed orientation, and each pure
+    element's position is labelled.
 
-    The simplex background reveals the full topology of the alloy space so
-    data coverage and phase-region boundaries can be read against a consistent
-    compositional reference frame.
-
-    Parameters
-    ----------
-    table_path : str or Path
-        HDF5 table from generate_table().
-    independent_elements : list[str]
-        All elements except the reference element.
-    reference_element : str
-        Reference (dependent) element.
-    corner_labels : list[str], optional
-        Labels for each element corner annotation (same order as elements
-        stored in the table).  Defaults to element symbols.
-    sim_composition : dict[str, float], optional
-        Simulated composition {element: x} — plotted as a star.
-    umap_scale : int, optional
-        Simplex lattice resolution for the background grid.  Larger gives a
-        denser background but slower embedding.  Defaults to max(10, 60 // n_el).
-    figsize : tuple
-    save_path : str or Path, optional
-    show : bool
+    Args:
+        table_path: HDF5 table from ``generate_table``.
+        independent_elements: All elements except the reference element.
+        reference_element: Dependent element.
+        corner_labels: Labels of the pure-element positions, in the table's element
+            order. ``None`` uses the element names.
+        sim_composition: Simulated composition keyed by element, drawn as a gold star.
+            Missing elements count as 0.
+        umap_scale: Number of lattice steps along each simplex edge. Larger values give a
+            denser background and a slower embedding. ``None`` uses
+            ``max(10, 60 // n_el)``.
+        figsize: Figure size.
+        save_path: File to save the figure to, at 200 dpi.
+        show: Call ``plt.show()`` at the end.
 
     Returns:
-    -------
-    matplotlib.figure.Figure
+        The figure.
+
+    References:
+        Vela et al., arXiv:2408.07681.
     """
     from .spinodal import compute_phase_regions_multi
 
@@ -772,7 +738,11 @@ def plot_as_umap(
 
 
 def _full_simplex_lattice(n_el: int, scale: int) -> np.ndarray:
-    """Stars-and-bars lattice covering the full n-el composition simplex."""
+    """Return every composition of ``n_el`` elements whose fractions are multiples of ``1 / scale``.
+
+    The points are enumerated by stars and bars, so there are
+    ``C(scale + n_el - 1, n_el - 1)`` rows of shape ``(n_el,)``.
+    """
     from itertools import combinations
 
     rows = []
@@ -786,11 +756,13 @@ def _full_simplex_lattice(n_el: int, scale: int) -> np.ndarray:
 def _draw_simplex_boundary(
     ax: plt.Axes, emb: np.ndarray, color: str = "#888888", lw: float = 1.2, alpha_frac: float = 0.25
 ) -> None:
-    """Draw the concave boundary (alpha-shape) of a 2-D point cloud on ax.
+    """Outline a 2-D point cloud on ``ax`` with the edges of its convex hull.
 
-    Uses Delaunay triangulation: a boundary edge belongs to exactly one
-    triangle.  The alpha parameter is set to alpha_frac × the span of the
-    embedding, which empirically gives the hypocycloid outline.
+    The edges are those that belong to exactly one triangle of the Delaunay
+    triangulation, which are the convex hull edges. Edges longer than
+    ``2 * alpha_frac * span`` are left out, where ``span`` is the larger extent of the
+    cloud along x or y; if that leaves nothing, the full hull is drawn. Concave parts of
+    the cloud are therefore not traced. Nothing is drawn for fewer than four points.
     """
     from matplotlib.collections import LineCollection
     from scipy.spatial import Delaunay
@@ -830,35 +802,28 @@ def _draw_simplex_boundary(
 
 
 def _fit_dim_reduction(pts: np.ndarray) -> tuple[str, np.ndarray]:
-    """Fit a 2-D non-linear embedding.  Tries UMAP first; falls back to t-SNE.
-    Returns (method_name, embedding) where embedding has shape (n_pts, 2).
+    """Embed points in 2-D with UMAP, or with t-SNE if UMAP cannot be imported or fails.
 
-    ── UMAP tuning parameters ───────────────────────────────────────────────
-    UMAP_N_NEIGHBORS : int  (default 30)
-        Number of nearest neighbors used to build the local manifold graph.
-        Controls the balance between local and global structure.
-        • Increase (e.g. 50–100) → smoother, more globally coherent embedding;
-          hypocycloid cusps become more distinct.
-        • Decrease (e.g. 5–15)  → finer local detail but cusps may fragment
-          and the simplex topology can break apart.
-        Must be large enough to "see" across the full simplex (≥ 20 is safe).
+    The tuning constants are set at the top of the function:
 
-    UMAP_MIN_DIST : float  (default 0.6)
-        Minimum distance between points in the 2-D embedding.
-        • Decrease (e.g. 0.0–0.05) → tighter clusters, deeper concavities,
-          more pronounced hypocycloid shape.
-        • Increase (e.g. 0.3–0.5)  → points spread out; shape inflates toward
-          a convex blob and the cusps disappear.
+    - ``UMAP_N_NEIGHBORS`` (30): neighbours in the UMAP graph. Larger values (50 to 100)
+      give a smoother, more globally consistent embedding with sharper hypocycloid cusps;
+      smaller values (5 to 15) keep more local detail but can break the simplex apart.
+      About 20 or more is needed to span the whole simplex.
+    - ``UMAP_MIN_DIST`` (0.6): minimum distance between embedded points. Values near 0
+      give tighter clusters and deeper concavities; 0.3 to 0.5 spread the points toward a
+      convex blob without cusps.
+    - ``UMAP_RANDOM_STATE`` (42): random seed of both methods. A different seed gives a
+      different orientation, which ``_canonical_rotation`` then corrects.
+    - ``TSNE_MAX_ITER`` (1000): t-SNE iterations. The t-SNE perplexity is
+      ``min(30, max(5, n_pts / 4 - 1))``.
 
-    UMAP_RANDOM_STATE : int  (default 42)
-        Random seed for reproducibility.  Change to get a different (equally
-        valid) orientation before the canonical-rotation step corrects it.
+    Args:
+        pts: Points to embed, shape ``(n_pts, n_features)``.
 
-    ── t-SNE fallback parameters (used only when umap-learn is not installed) ─
-    TSNE_MAX_ITER : int  (default 1000)
-        Number of optimisation iterations.  Increase for smoother layouts on
-        large datasets.
-    ─────────────────────────────────────────────────────────────────────────
+    Returns:
+        ``("UMAP", embedding)`` or ``("t-SNE", embedding)``, with the embedding of shape
+        ``(n_pts, 2)``.
     """
     UMAP_N_NEIGHBORS = 30
     UMAP_MIN_DIST = 0.6
@@ -885,12 +850,22 @@ def _canonical_rotation(
     elements: list[str],
     n_el: int,
 ) -> tuple[float, np.ndarray]:
-    """Return (rotation_angle_rad, centroid) to align the n-gon of pure-element
-    embedding positions to the canonical orientation:
+    """Find the rotation that turns the pure-element positions toward a fixed orientation.
 
-    - n=3 (ternary)   : equilateral triangle, one vertex at top (90°)  →  △
-    - n=4 (quaternary): square with flat sides, vertex at top-left (135°) → ■
-    - n≥5             : regular polygon, first vertex at top (90°)
+    The target angles around the centroid are those of a regular n-gon with one vertex at
+    the top (90°), or for n = 4 a square with flat sides (vertices at 135°, 45°, −45° and
+    −135°). The positions, sorted by angle, are matched to the targets under every cyclic
+    shift; the shift with the smallest squared angular error gives the rotation as the
+    mean angular offset.
+
+    Args:
+        pure_embs: Embedded 2-D position of each pure element, keyed by element.
+        elements: Elements, in the order used to read ``pure_embs``.
+        n_el: Number of elements.
+
+    Returns:
+        ``(angle, centroid)``: the rotation angle in radians and the centroid of the
+        pure-element positions, for ``_rotate_embedding``.
     """
     positions = np.array([pure_embs[el] for el in elements])
     centroid = positions.mean(axis=0)
@@ -929,7 +904,7 @@ def _canonical_rotation(
 
 
 def _rotate_embedding(emb: np.ndarray, angle: float, centroid: np.ndarray) -> np.ndarray:
-    """Apply a 2-D rotation of *angle* radians around *centroid*."""
+    """Rotate 2-D points of shape ``(n, 2)`` by ``angle`` radians around ``centroid``."""
     c, s = np.cos(angle), np.sin(angle)
     R = np.array([[c, -s], [s, c]])
     return (emb - centroid) @ R.T + centroid

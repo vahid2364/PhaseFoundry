@@ -1,23 +1,20 @@
 """HDF5 storage for thermodynamic tables.
 
-File layout
------------
-/metadata/
-    db_path            str
-    elements           str  (comma-separated)
-    phase              str
-    temperature        float
-    pressure           float
-    n_points_per_axis  int
-    pycalphad_version  str
-    created_at         str  (ISO 8601)
+A table file has this layout:
 
-/compositions          float64 (n_valid, N_elements)
-/GM                    float64 (n_valid,)             [J/mol]
-/MU/
-    {EL}               float64 (n_valid,)             [J/mol]
-/dMU/
-    {EL1}_{EL2}        float64 (n_valid,)             [J/mol]
+    /metadata             group whose attributes describe the run:
+                          db_path, elements (comma-separated), phase,
+                          temperature and temperature_units (K),
+                          pressure and pressure_units (Pa), n_points_per_axis,
+                          composition_ranges (JSON), pycalphad_version,
+                          created_at (ISO 8601) and n_failed
+    /compositions         float64, shape (n_valid, n_elements), mole fractions
+    /GM                   float64, shape (n_valid,), J/mol
+    /MU/{EL}              float64, shape (n_valid,), J/mol
+    /dMU/{EL1}_{EL2}      float64, shape (n_valid,), dμ_EL1/dx_EL2 in J/mol
+
+``GM``, ``MU`` and ``dMU`` are present only if they were computed. Every dataset is
+gzip-compressed.
 """
 
 from __future__ import annotations
@@ -36,6 +33,7 @@ except Exception:
     _PYCALPHAD_VERSION = "unknown"
 
 _COMPRESS = {"compression": "gzip", "compression_opts": 4}
+"""Compression settings for every dataset."""
 
 
 def save_table(
@@ -49,20 +47,20 @@ def save_table(
     composition_ranges: dict[str, tuple[float, float]],
     n_points: int,
 ) -> None:
-    """Write a thermodynamic data table to an HDF5 file.
+    """Write a thermodynamic table to an HDF5 file.
 
-    Parameters
-    ----------
-    path : str or Path
-        Output file path (created or overwritten).
-    data : dict
-        Output of ``generate.compute_table()``.
-    db_path, elements, phase, temperature, pressure : ...
-        Parameters used to produce the data (stored as metadata).
-    composition_ranges : dict
-        Per-element (min, max) ranges used for the grid.
-    n_points : int
-        Number of grid points per element axis.
+    Args:
+        path: Output file path. An existing file is overwritten and missing parent
+            directories are created.
+        data: Output of ``compute_table``.
+        db_path: TDB database the table was computed from.
+        elements: Elements, in the column order of ``data["compositions"]``.
+        phase: Phase name.
+        temperature: Temperature in K.
+        pressure: Pressure in Pa.
+        composition_ranges: ``(min, max)`` mole fraction of each independent element used
+            for the grid.
+        n_points: Number of grid points along each independent axis.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -110,15 +108,18 @@ def save_table(
 def load_table(path: str | Path) -> dict:
     """Load a thermodynamic table from HDF5.
 
+    Args:
+        path: Table file written by ``save_table``.
+
     Returns:
-    -------
-    dict with keys:
-        'metadata'      dict of stored attributes
-        'compositions'  np.ndarray (n_valid, N_elements)
-        'elements'      list[str]
-        'GM'            np.ndarray (n_valid,)           if present
-        'MU'            dict[str, np.ndarray(n_valid,)] if present
-        'dMU'           dict[str, np.ndarray(n_valid,)] if present
+        A dict with ``"metadata"`` (the stored attributes, with ``composition_ranges``
+        decoded from JSON), ``"elements"`` (list of element names in column order),
+        ``"compositions"`` (shape ``(n_valid, n_elements)``) and, if stored, ``"GM"``
+        (shape ``(n_valid,)``), ``"MU"`` and ``"dMU"`` (dicts of arrays of shape
+        ``(n_valid,)``).
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
     """
     path = Path(path)
     if not path.exists():
@@ -147,7 +148,17 @@ def load_table(path: str | Path) -> dict:
 
 
 def table_info(path: str | Path) -> str:
-    """Return a human-readable summary of a stored table."""
+    """Summarize a stored table: phase, conditions, point counts and dataset ranges.
+
+    Args:
+        path: Table file written by ``save_table``.
+
+    Returns:
+        A multi-line summary.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+    """
     data = load_table(path)
     meta = data["metadata"]
     lines = [

@@ -1,25 +1,31 @@
-"""thermodynamics — pre-compute and store CALPHAD thermodynamic tables.
+"""CALPHAD thermodynamic tables: computation, storage, surrogates and phase analysis.
 
-Quick start
------------
+Tables of G_m, chemical potentials and their composition derivatives are computed with
+pycalphad over a composition grid and stored in HDF5. The subpackage also fits surrogates
+to those tables, builds the free-energy interpolant used by the phase-field solver, finds
+spinodal and binodal boundaries, and plots the results.
+
+Examples:
+    ```python
     from phasefoundry.thermodynamics import generate_table, load_table
 
     generate_table(
-        db_path='PhaseFoundry/HF_NB_TI_V.TDB',
-        elements=['HF', 'NB', 'TI', 'V'],
-        phase='BCC_A2',
-        composition_ranges={'HF': (0.05, 0.60), 'NB': (0.05, 0.60), 'TI': (0.05, 0.60)},
-        reference_element='V',
+        db_path="data/tdb/HfNbTiV_BCC_PhaseForge_v3.tdb",
+        elements=["HF", "NB", "TI", "V"],
+        phase="BCC_A2",
+        composition_ranges={"HF": (0.05, 0.60), "NB": (0.05, 0.60), "TI": (0.05, 0.60)},
+        reference_element="V",
         n_points=20,
         temperature=1000,
-        output_path='data/hfnbtiv_1000K.h5',
+        output_path="results/hfnbtiv_1000K.h5",
     )
 
-    data = load_table('data/hfnbtiv_1000K.h5')
-    # data['compositions']  shape (n, 4)
-    # data['GM']            shape (n,)   J/mol
-    # data['MU']['HF']      shape (n,)   J/mol
-    # data['dMU']['HF_NB']  shape (n,)   J/mol
+    data = load_table("results/hfnbtiv_1000K.h5")
+    data["compositions"]  # shape (n, 4), columns HF, NB, TI, V
+    data["GM"]  # shape (n,), J/mol
+    data["MU"]["HF"]  # shape (n,), J/mol
+    data["dMU"]["HF_NB"]  # shape (n,), dμ_HF/dx_NB in J/mol
+    ```
 """
 
 from .fitting import build_gm_spline_surrogate, build_spline_surrogate, eval_delta_mu, fit_delta_mu, load_fits, save_fits
@@ -60,49 +66,33 @@ def generate_table(
     sampling: str = "grid",
     seed: int = 42,
 ) -> dict:
-    """Build a composition grid, evaluate pycalphad, and save to HDF5.
+    """Build a composition grid, evaluate it with pycalphad and save the table to HDF5.
 
-    Parameters
-    ----------
-    db_path : str
-        Path to the TDB thermodynamic database file.
-    elements : list[str]
-        All elements, e.g. ['HF', 'NB', 'TI', 'V'].
-        The reference element should be last or specified via
-        ``reference_element``.
-    phase : str
-        Phase name, e.g. 'BCC_A2'.
-    composition_ranges : dict
-        Mole-fraction (min, max) for each *independent* element
-        (every element except the reference).
-        Example: {'HF': (0.05, 0.60), 'NB': (0.05, 0.60), 'TI': (0.05, 0.60)}
-    reference_element : str
-        Dependent element. Its fraction is computed as
-        x_ref = 1 - sum(others).
-    n_points : int
-        For sampling="grid": grid lines per axis.
-        For sampling="sobol"/"dirichlet": total valid points returned.
-    temperature : float
-        Temperature in Kelvin.
-    pressure : float
-        Pressure in Pa. Default 101325.
-    output_path : str
-        Where to write the HDF5 file.
-    n_workers : int
-        Worker processes for parallel evaluation. Default 1 (serial).
-    quantities : tuple[str]
-        Subset of ('GM', 'MU', 'dMU') to compute.
-    sampling : {"grid", "sobol", "dirichlet"}
-        Composition sampling strategy.  "grid" (default) uses a Cartesian
-        linspace approach per element axis.  "sobol" gives quasi-random
-        uniform coverage of the constrained simplex.  "dirichlet" gives
-        pseudo-random uniform simplex samples.
-    seed : int
-        Random seed for "sobol" and "dirichlet" modes.  Default 42.
+    The table stores the elements with the reference element moved to the last column,
+    which is the order ``compute_table`` needs.
+
+    Args:
+        db_path: Path to the TDB database.
+        elements: All elements of the system, e.g. ``["HF", "NB", "TI", "V"]``, in any order.
+        phase: Phase name, e.g. ``"BCC_A2"``.
+        composition_ranges: ``(min, max)`` mole fraction of each independent element (every
+            element except the reference), e.g. ``{"HF": (0.05, 0.60), "NB": (0.05, 0.60)}``.
+        reference_element: Dependent element, with x_ref = 1 − Σ x_i.
+        n_points: With ``sampling="grid"``, the number of grid points along each
+            independent axis. With ``"sobol"`` or ``"dirichlet"``, the number of valid
+            points returned.
+        temperature: Temperature in K.
+        pressure: Pressure in Pa.
+        output_path: Path of the HDF5 file to write.
+        n_workers: Number of worker processes. ``1`` runs serially.
+        quantities: Subset of ``("GM", "MU", "dMU")`` to compute.
+        sampling: Composition sampling: ``"grid"`` for a regular grid along each
+            independent axis, ``"sobol"`` for quasi-random coverage of the constrained
+            simplex, or ``"dirichlet"`` for pseudo-random uniform samples of the simplex.
+        seed: Random seed for ``"sobol"`` and ``"dirichlet"``.
 
     Returns:
-    -------
-    dict — same as load_table(output_path) after saving.
+        The saved table, as returned by ``load_table(output_path)``.
     """
     grid = simplex_grid(elements, composition_ranges, reference_element, n_points, sampling=sampling, seed=seed)
     print(grid_summary(grid, elements))

@@ -1,40 +1,28 @@
-"""Polynomial fitting of exchange chemical potentials Δμ_i = μ_i - μ_ref
-as a function of composition, at fixed temperature.
+"""Surrogates for the exchange chemical potentials Δμ_i = μ_i − μ_ref at fixed temperature.
 
-The fitted models are stored in HDF5 with enough information to fully
-reconstruct the polynomial without sklearn — making them portable to
-phase-field codes in any language.
+``fit_delta_mu`` fits a multivariate polynomial in the independent mole fractions x_j
+(every element except the reference):
 
-Polynomial form (multivariate)
--------------------------------
-    Δμ_i(x) = intercept + Σ_k  coeff_k · Π_j  x_j ^ power[k, j]
+    Δμ_i(x) = intercept + Σ_k c_k Π_j x_j^power[k, j]
 
-where x_j are the independent mole fractions (all elements except the
-reference). The ``feature_powers`` dataset encodes the exponent of each
-variable in each term, so the model can be reconstructed from scratch.
+The ``feature_powers`` array gives the exponent of each variable in each term, so the
+stored fit can be evaluated without scikit-learn, in any language. ``fit_delta_mu`` puts
+the constant term among the features and stores the intercept as 0.
+``build_spline_surrogate`` and ``build_gm_spline_surrogate`` build cubic-spline
+surrogates for binary systems instead.
 
-HDF5 layout
------------
-/metadata/
-    reference_element        str   e.g. "V"
-    x_variables              str   e.g. "NB" (binary) or "HF,NB,TI"
-    poly_degree              int
-    source_db                str
-    fit_date                 str (ISO 8601)
+``save_fits`` writes the polynomial fits to HDF5 in this layout:
 
-/T_{T_K}K/
-    /metadata/
-        temperature_K        float
-        temperature_C        float
-    /delta_mu_{EL}/
-        coefficients         float64  (n_features,)   — one per polynomial term
-        intercept            float64  scalar
-        feature_powers       int32    (n_features, n_vars) — exponent per term per variable
-        x_variables          str      comma-separated variable names (redundant but handy)
-        rmse                 float64  J/mol
-        r2                   float64
-        n_points             int
-        description          str      human-readable equation summary
+    /metadata                    attributes reference_element, x_variables (comma-
+                                 separated), all_elements, poly_degree, source_db,
+                                 fit_date (ISO 8601) and n_temperatures
+    /T_{T_K:.2f}K/metadata       attributes temperature_K, temperature_C and
+                                 temperature_units
+    /T_{T_K:.2f}K/delta_mu_{EL}  datasets coefficients (float64, shape (n_features,))
+                                 and feature_powers (int32, shape (n_features, n_vars));
+                                 attributes intercept, rmse_J_per_mol, r2, n_points,
+                                 reference_element, x_variables, description and
+                                 delta_mu_formula
 """
 
 from __future__ import annotations
@@ -59,34 +47,28 @@ def fit_delta_mu(
 ) -> list[dict]:
     """Fit Δμ_i = μ_i − μ_ref as a polynomial in composition at each temperature.
 
-    Parameters
-    ----------
-    table_paths : list of str or Path
-        HDF5 tables (one per temperature) from generate_table().
-        Must contain 'MU' datasets.
-    reference_element : str
-        Reference element for the exchange potential, e.g. 'V'.
-    poly_degree : int
-        Polynomial degree. Default 4.
-    temperatures_K : list of float, optional
-        Override temperatures (K). If None, read from file metadata.
+    Every element except the reference gets its own fit. Points where Δμ_i is not finite
+    are left out. One summary line per temperature is printed.
+
+    Args:
+        table_paths: HDF5 tables from ``generate_table``, one per temperature. Each must
+            contain ``MU``.
+        reference_element: Reference element of the exchange potential, e.g. ``"V"``.
+        poly_degree: Polynomial degree.
+        temperatures_K: Temperatures in K, one per table, used instead of the values
+            stored in the tables.
 
     Returns:
-    -------
-    list of dict, one per temperature, each containing:
-        'temperature_K'     float
-        'temperature_C'     float
-        'elements'          list[str]   all elements
-        'x_variables'       list[str]   independent composition variables
-        'reference_element' str
-        'poly_degree'       int
-        'models'            dict[str, dict]  one entry per fitted element:
-            'coefficients'      np.ndarray  (n_features,)
-            'intercept'         float
-            'feature_powers'    np.ndarray  (n_features, n_vars)  int
-            'rmse'              float   J/mol
-            'r2'                float
-            'n_points'          int
+        One dict per temperature with ``"temperature_K"``, ``"temperature_C"``,
+        ``"elements"``, ``"x_variables"`` (the independent elements),
+        ``"reference_element"``, ``"poly_degree"`` and ``"models"``. ``"models"`` maps each
+        fitted element to ``"coefficients"`` (shape ``(n_features,)``), ``"intercept"``
+        (0.0), ``"feature_powers"`` (shape ``(n_features, n_vars)``), ``"rmse"`` in J/mol,
+        ``"r2"``, ``"n_points"`` and ``"description"``.
+
+    Raises:
+        ValueError: If ``reference_element`` is not in a table.
+        KeyError: If a table has no ``MU`` data.
     """
     results = []
 
@@ -168,41 +150,27 @@ def build_spline_surrogate(
     reference_element: str,
     temperatures_K: list[float] | None = None,
 ) -> dict:
-    """Build a CubicSpline surrogate for Δμ and G_m at each temperature.
+    """Build cubic-spline surrogates for Δμ, and its integral, at each temperature.
 
-    Instead of fitting a global polynomial, this constructs a
-    ``scipy.interpolate.CubicSpline`` directly through the pycalphad data
-    points.  The spline passes exactly through every data point and is
-    C² continuous, giving near-perfect fit quality (R² ≈ 1.0) with no
-    Runge oscillations.
+    Each Δμ_i is interpolated with a ``scipy.interpolate.CubicSpline`` through the
+    pycalphad points, as a function of x_i alone, so the surrogate is meant for binary
+    systems. The spline passes through every data point and has no polynomial (Runge)
+    oscillations. Its antiderivative ∫Δμ dx gives G_m up to a constant. One summary line
+    per temperature is printed.
 
-    G_m is obtained by analytic integration of the cubic spline for Δμ
-    (each piecewise cubic integrates to a quartic, computed exactly).
-
-    Parameters
-    ----------
-    table_paths : list of str or Path
-        HDF5 tables (one per temperature) from generate_table().
-        Must contain 'MU' datasets.
-    reference_element : str
-        e.g. 'V'.
-    temperatures_K : list of float, optional
+    Args:
+        table_paths: HDF5 tables from ``generate_table``, one per temperature. Each must
+            contain ``MU``.
+        reference_element: Reference element, e.g. ``"V"``.
+        temperatures_K: Temperatures in K, one per table, used instead of the values
+            stored in the tables.
 
     Returns:
-    -------
-    dict  — same top-level structure as ``load_fits()`` so it can be
-    passed directly to the PFM solver:
-        'temperatures_K'   np.ndarray
-        'metadata'         dict
-        'fits'             dict[float, dict]  keyed by temperature_K
-            Each entry has:
-            'models'  dict[str, dict]
-                'spline'        CubicSpline   Δμ(x)
-                'spline_antideriv'  PPoly     G_m(x) = ∫Δμ dx
-                'x_data'        np.ndarray   composition grid
-                'dmu_data'      np.ndarray   Δμ values
-                'rmse'          float   (0 — interpolating spline)
-                'r2'            float   (1.0 — interpolating spline)
+        A dict with the same top-level keys as ``load_fits``: ``"temperatures_K"``
+        (array), ``"metadata"`` and ``"fits"``. ``"fits"`` is keyed by temperature in K;
+        each entry has ``"x_variables"``, ``"reference_element"`` and ``"models"``, which
+        maps each independent element to ``"spline"`` (Δμ(x)), ``"spline_antideriv"``
+        (∫Δμ dx), ``"x_data"``, ``"dmu_data"``, ``"rmse"`` (0.0) and ``"r2"`` (1.0).
     """
     from scipy.interpolate import CubicSpline
 
@@ -268,42 +236,35 @@ def build_gm_spline_surrogate(
     reference_element: str,
     temperatures_K: list[float] | None = None,
 ) -> dict:
-    """Build a CubicSpline surrogate fitted **directly to G_m** at each temperature.
+    """Build a cubic-spline surrogate of G_m itself at each temperature.
 
-    This is the preferred approach for CALPHAD-PFM coupling because:
+    The spline interpolates the pycalphad G_m points exactly, so the double-well shape has
+    no integration error, and the phase-field driving force is its analytic derivative
+    (``CubicSpline.derivative()``). Fitting Δμ and integrating, as
+    ``build_spline_surrogate`` does, accumulates errors that can flatten a shallow double
+    well and push the equilibrium compositions to 0 and 1.
 
-    * The spline interpolates the pycalphad G_m data exactly — the double-well
-      shape is preserved with no integration error.
-    * The PFM driving force df/dc is the **analytic derivative** of the spline
-      (``CubicSpline.derivative()``), so no numerical differentiation is needed.
-    * Fitting Δμ and integrating (the previous approach) accumulates errors that
-      can destroy the shallow double-well and push equilibrium compositions to
-      0 and 1.
+    The composition variable is the mole fraction of the reference element, over the range
+    present in the table, so the surrogate is meant for binary systems. One summary line
+    per temperature is printed.
 
-    The composition variable is ``x_V`` (mol fraction of the reference element).
-    The spline is built on x_V ∈ [x_min, x_max] as found in the table.
-
-    Parameters
-    ----------
-    table_paths : list of str or Path
-        HDF5 tables (one per temperature) from generate_table().
-        Must contain 'GM' and 'MU' datasets.
-    reference_element : str
-        e.g. 'V'.  The composition axis is x_{reference_element}.
-    temperatures_K : list of float, optional
+    Args:
+        table_paths: HDF5 tables from ``generate_table``, one per temperature. Each must
+            contain ``GM``.
+        reference_element: Reference element, e.g. ``"V"``; its mole fraction is the
+            composition axis.
+        temperatures_K: Temperatures in K, one per table, used instead of the values
+            stored in the tables.
 
     Returns:
-    -------
-    dict  — same top-level structure as ``load_fits()`` / ``build_spline_surrogate()``:
-        'temperatures_K'   np.ndarray
-        'metadata'         dict
-        'fits'             dict[float, dict]
-            Each entry has:
-            'models'  dict[str, dict]  (keyed by reference element)
-                'spline_gm'     CubicSpline   G_m(x_V)
-                'spline_dfdx'   CubicSpline   dG_m/dx_V  (analytic derivative)
-                'x_data'        np.ndarray    x_V composition grid
-                'gm_data'       np.ndarray    G_m values  [J/mol]
+        A dict with the same top-level keys as ``load_fits``: ``"temperatures_K"``
+        (array), ``"metadata"`` and ``"fits"``. ``"fits"`` is keyed by temperature in K;
+        each entry has ``"x_variables"``, ``"reference_element"`` and ``"models"``, whose
+        one entry, keyed by the reference element, holds ``"spline_gm"`` (G_m(x_ref)),
+        ``"spline_dfdx"`` (dG_m/dx_ref), ``"x_data"`` and ``"gm_data"`` (J/mol).
+
+    Raises:
+        KeyError: If a table has no ``GM`` data.
     """
     from scipy.interpolate import CubicSpline
 
@@ -367,16 +328,13 @@ def save_fits(
     output_path: str | Path,
     source_db: str = "",
 ) -> None:
-    """Save polynomial fit results to HDF5.
+    """Save polynomial fits to HDF5, in the layout described in the module docstring.
 
-    Parameters
-    ----------
-    fit_results : list of dict
-        Output of fit_delta_mu().
-    output_path : str or Path
-        Output HDF5 file path.
-    source_db : str
-        Path to the original TDB file (stored as metadata).
+    Args:
+        fit_results: Output of ``fit_delta_mu``.
+        output_path: Output file path. An existing file is overwritten and missing parent
+            directories are created.
+        source_db: Path of the TDB database the tables came from, stored as metadata.
     """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -427,17 +385,17 @@ def save_fits(
 
 
 def load_fits(path: str | Path) -> dict:
-    """Load polynomial fit results from HDF5.
+    """Load polynomial fits written by ``save_fits``.
+
+    Args:
+        path: HDF5 file written by ``save_fits``.
 
     Returns:
-    -------
-    dict with keys:
-        'metadata'        dict  (global metadata)
-        'temperatures_K'  list[float]
-        'fits'            dict[float, dict]  keyed by T_K:
-            'temperature_K', 'temperature_C',
-            'models': dict[str, dict] with keys:
-                'coefficients', 'feature_powers', 'intercept', 'rmse', 'r2'
+        A dict with ``"metadata"`` (the file's global attributes), ``"temperatures_K"``
+        (sorted list) and ``"fits"``, keyed by temperature in K. Each fit has
+        ``"temperature_K"``, ``"temperature_C"`` and ``"models"``, which maps each fitted
+        element to ``"coefficients"``, ``"feature_powers"``, ``"intercept"``, ``"rmse"``
+        (J/mol), ``"r2"``, ``"n_points"``, ``"x_variables"`` and ``"description"``.
     """
     path = Path(path)
     out = {"metadata": {}, "temperatures_K": [], "fits": {}}
@@ -483,22 +441,18 @@ def eval_delta_mu(
     fit: dict,
     compositions: np.ndarray,
 ) -> dict[str, np.ndarray]:
-    """Evaluate Δμ_i at given compositions using stored polynomial coefficients.
+    """Evaluate the polynomial fits of Δμ_i at given compositions.
 
-    This function does NOT require sklearn — it reconstructs the polynomial
-    from ``coefficients`` and ``feature_powers`` directly.
+    The polynomial is rebuilt from ``coefficients`` and ``feature_powers`` with NumPy
+    only, without scikit-learn.
 
-    Parameters
-    ----------
-    fit : dict
-        A single temperature entry from load_fits()['fits'][T_K].
-    compositions : np.ndarray, shape (n_pts, n_vars)
-        Mole fractions of the independent elements in the same order as
-        fit['models'][el]['x_variables'].
+    Args:
+        fit: One temperature entry, ``load_fits(path)["fits"][T_K]``.
+        compositions: Mole fractions of the independent elements, in the order of
+            ``fit["models"][el]["x_variables"]``, shape ``(n_pts, n_vars)``.
 
     Returns:
-    -------
-    dict[str, np.ndarray]  Δμ_i in J/mol for each fitted element.
+        Δμ_i in J/mol for each fitted element, each of shape ``(n_pts,)``.
     """
     results = {}
     for el, m in fit["models"].items():
@@ -527,7 +481,7 @@ def _describe_poly(
     degree: int,
     n_terms: int = 5,
 ) -> str:
-    """Build a short human-readable polynomial description."""
+    """Write the ``n_terms`` largest-magnitude terms of a fitted polynomial on one line."""
     # Sort by absolute coefficient magnitude, show top n_terms
     order = np.argsort(-np.abs(coeffs))
     terms = []

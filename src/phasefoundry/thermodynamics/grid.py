@@ -1,8 +1,8 @@
-"""Composition grid generation on the N-component simplex.
+"""Composition grids on the N-component simplex.
 
-For N elements, there are N-1 independent mole fractions. We iterate
-over the N-1 independent elements on regular linspace grids and derive the
-reference element's fraction as x_ref = 1 - sum(others).
+An N-element system has N − 1 independent mole fractions. The grid takes evenly spaced
+values of each independent fraction and sets the reference element's fraction to
+x_ref = 1 − Σ x_i.
 """
 
 import itertools
@@ -18,25 +18,21 @@ def simplex_grid(
 ) -> np.ndarray:
     """Build a regular composition grid on the N-component simplex.
 
-    Parameters
-    ----------
-    elements : list[str]
-        All elements in the system, e.g. ['HF', 'NB', 'TI', 'V'].
-    composition_ranges : dict[str, tuple[float, float]]
-        Min/max mole fraction for each *independent* element (i.e. all
-        except the reference element). Example:
-        {'HF': (0.05, 0.60), 'NB': (0.05, 0.60), 'TI': (0.05, 0.60)}
-    reference_element : str
-        Dependent element whose fraction is computed as
-        x_ref = 1 - sum(x_i for i != ref).
-    n_points : int
-        Number of grid points along each element axis.
+    Args:
+        elements: All elements of the system, e.g. ``["HF", "NB", "TI", "V"]``.
+        composition_ranges: ``(min, max)`` mole fraction of each independent element (every
+            element except the reference), e.g. ``{"HF": (0.05, 0.60), "NB": (0.05, 0.60)}``.
+        reference_element: Dependent element, with x_ref = 1 − Σ x_i.
+        n_points: Number of grid points along each independent axis.
 
     Returns:
-    -------
-    np.ndarray, shape (n_valid, N_elements)
-        Valid composition rows in the order given by `elements`.
-        Invalid rows (x_ref < 0 or any x_i < 0) are excluded.
+        Compositions with columns in the order of ``elements``, shape
+        ``(n_valid, n_elements)``. Points where x_ref falls outside [0, 1] or any x_i is
+        negative are left out.
+
+    Raises:
+        ValueError: If ``reference_element`` is not in ``elements``, an independent element
+            has no range, or no valid composition remains.
     """
     if reference_element not in elements:
         raise ValueError(f"reference_element '{reference_element}' not in elements {elements}")
@@ -71,7 +67,15 @@ def simplex_grid(
 
 
 def grid_summary(grid: np.ndarray, elements: list[str]) -> str:
-    """Return a short human-readable summary of a composition grid."""
+    """Summarize a composition grid: the point count and each element's range and mean.
+
+    Args:
+        grid: Compositions, shape ``(n_points, n_elements)``.
+        elements: Element names, in column order.
+
+    Returns:
+        A multi-line summary.
+    """
     lines = [
         f"Grid: {len(grid)} valid points, {len(elements)} elements",
     ]

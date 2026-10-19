@@ -1,12 +1,12 @@
-"""Compute thermodynamic quantities over a composition grid using pycalphad.
+"""Thermodynamic quantities over a composition grid, computed with pycalphad.
 
-For each grid point the following are evaluated via IsolatedPhase (which
-forces pycalphad to stay on the single-phase free energy surface — required
-for phase-field driving force calculations):
+Each grid point is evaluated with ``IsolatedPhase``, which keeps pycalphad on the
+single-phase free-energy surface. The phase-field driving force needs that surface, not
+the equilibrium one. The quantities are:
 
-  GM              molar Gibbs energy                     [J/mol]
-  MU(i)           chemical potential of element i        [J/mol]
-  MU(i).X(j)      Jansson derivative d mu_i / d x_j     [J/mol]
+- ``GM``: molar Gibbs energy in J/mol;
+- ``MU(i)``: chemical potential of element i in J/mol;
+- ``MU(i).X(j)``: the Jansson derivative dμ_i/dx_j in J/mol.
 """
 
 from __future__ import annotations
@@ -22,24 +22,26 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 Quantities = tuple[Literal["GM", "MU", "dMU"], ...]
+"""Subset of ``"GM"``, ``"MU"`` and ``"dMU"`` to compute."""
 
 
 def _eval_point(
     args: tuple,
 ) -> tuple[int, dict | None]:
-    """Evaluate thermodynamic quantities at a single composition point.
+    """Evaluate the requested quantities at one composition.
 
-    This function is designed to run in a worker process.
+    The function takes a single tuple so it can run in a worker process. The last element
+    is the reference: its fraction is not passed to pycalphad as a condition. A point fails
+    if pycalphad raises, or if G_m or any chemical potential is not finite; a non-finite
+    derivative is stored as NaN instead.
 
-    Parameters
-    ----------
-    args : tuple
-        (idx, composition_row, elements, phase, db_path, temperature,
-         pressure, quantities)
+    Args:
+        args: ``(idx, composition_row, elements, phase, db_path, temperature, pressure,
+            quantities)``.
 
     Returns:
-    -------
-    (idx, result_dict) or (idx, None) on failure
+        ``(idx, result)``, where ``result`` holds the quantities, or ``(idx, None)`` if the
+        point failed.
     """
     idx, comp_row, elements, phase, db_path, temperature, pressure, quantities = args
 
@@ -102,38 +104,28 @@ def compute_table(
 ) -> dict:
     """Evaluate thermodynamic quantities over a composition grid.
 
-    Parameters
-    ----------
-    db_path : str
-        Path to the TDB thermodynamic database file.
-    elements : list[str]
-        All elements in the system. The *last* element is used as the
-        reference (its mole fraction is derived from the constraint
-        sum = 1 and is not passed as a condition to pycalphad).
-    phase : str
-        Phase name to evaluate (e.g. 'BCC_A2').
-    grid : np.ndarray, shape (n_points, N_elements)
-        Composition grid as returned by ``grid.simplex_grid()``.
-        Columns must be in the same order as ``elements``.
-    temperature : float
-        Temperature in Kelvin.
-    pressure : float
-        Pressure in Pa. Default 101325.
-    quantities : tuple of str
-        Which quantities to compute. Any combination of
-        ``'GM'``, ``'MU'``, ``'dMU'``.
-    n_workers : int
-        Number of parallel worker processes. Set to 1 for serial execution
-        (safer for debugging). Values > 1 use ProcessPoolExecutor.
+    Points that fail are skipped with a warning, and the remaining points keep the grid
+    order.
+
+    Args:
+        db_path: Path to the TDB database.
+        elements: All elements of the system. The last one is the reference: its fraction
+            follows from Σ x = 1 and is not passed to pycalphad.
+        phase: Phase name, e.g. ``"BCC_A2"``.
+        grid: Compositions with columns in the order of ``elements``, shape
+            ``(n_points, n_elements)``, e.g. from ``simplex_grid``.
+        temperature: Temperature in K.
+        pressure: Pressure in Pa.
+        quantities: Any combination of ``"GM"``, ``"MU"`` and ``"dMU"``.
+        n_workers: Number of worker processes. ``1`` runs serially, which is easier to
+            debug; larger values use a ``ProcessPoolExecutor``.
 
     Returns:
-    -------
-    dict with keys:
-        'compositions'  np.ndarray (n_valid, N_elements)
-        'GM'            np.ndarray (n_valid,)           if requested
-        'MU'            dict[str, np.ndarray(n_valid,)] if requested
-        'dMU'           dict[str, np.ndarray(n_valid,)] if requested
-        'n_failed'      int   number of points that failed / returned NaN
+        A dict with ``"compositions"`` (shape ``(n_valid, n_elements)``), ``"elements"``,
+        ``"n_failed"`` (number of skipped points) and the requested quantities: ``"GM"``
+        (shape ``(n_valid,)``), ``"MU"`` (one array per element) and ``"dMU"`` (one array
+        per ``"{EL1}_{EL2}"`` pair, dμ_EL1/dx_EL2 for every element EL1 and independent
+        element EL2).
     """
     n_pts = len(grid)
     args_list = [(i, grid[i], elements, phase, db_path, temperature, pressure, quantities) for i in range(n_pts)]
