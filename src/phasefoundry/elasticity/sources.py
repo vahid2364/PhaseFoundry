@@ -24,8 +24,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from phasefoundry.atomistic.settings import mlip_label, mlip_settings
-
-from .bond_model import BondLatticeModel
+from phasefoundry.elasticity.bond_model import BondLatticeModel
+from phasefoundry.errors import ConfigError
 
 
 def _el_cfg(cfg: dict) -> dict:
@@ -54,11 +54,11 @@ def elastic_source(cfg: dict) -> str:
         ``"csv"`` (the default) or ``"mlip"``.
 
     Raises:
-        ValueError: If ``elastic.source`` has any other value.
+        ConfigError: If ``elastic.source`` has any other value.
     """
     source = str(_el_cfg(cfg).get("source", "csv")).lower()
     if source not in ("csv", "mlip"):
-        raise ValueError(f"elastic.source must be 'csv' or 'mlip', got {source!r}")
+        raise ConfigError(f"elastic.source must be 'csv' or 'mlip', got {source!r}")
     return source
 
 
@@ -72,11 +72,11 @@ def lattice_model_name(cfg: dict) -> str:
         ``"sqs"`` (the default) or ``"bond"``.
 
     Raises:
-        ValueError: If ``elastic.lattice_model`` has any other value.
+        ConfigError: If ``elastic.lattice_model`` has any other value.
     """
     name = str(_el_cfg(cfg).get("lattice_model", "sqs")).lower()
     if name not in ("sqs", "bond"):
-        raise ValueError(f"elastic.lattice_model must be 'sqs' or 'bond', got {name!r}")
+        raise ConfigError(f"elastic.lattice_model must be 'sqs' or 'bond', got {name!r}")
     return name
 
 
@@ -95,14 +95,14 @@ def elastic_table_path(cfg: dict, root: Path) -> Path:
         Path to the table.
 
     Raises:
-        ValueError: If ``source`` is ``csv`` and ``elastic.elastic_csv`` is not set, or
+        ConfigError: If ``source`` is ``csv`` and ``elastic.elastic_csv`` is not set, or
             ``source`` is ``mlip``, no table is set and no MLIP calculator is configured.
     """
     el_cfg = _el_cfg(cfg)
     if elastic_source(cfg) == "csv":
         csv_rel = el_cfg.get("elastic_csv", "")
         if not csv_rel:
-            raise ValueError("elastic.elastic_csv must be set when elastic.source is 'csv'")
+            raise ConfigError("elastic.elastic_csv must be set when elastic.source is 'csv'")
         return _resolve(csv_rel, root)
 
     sqs_cfg = el_cfg.get("sqs", {}) or {}
@@ -126,7 +126,7 @@ def bond_table_path(cfg: dict, root: Path) -> Path:
         Path to the bond-length matrix.
 
     Raises:
-        ValueError: If no table is set and no MLIP calculator is configured.
+        ConfigError: If no table is set and no MLIP calculator is configured.
     """
     bond_cfg = _el_cfg(cfg).get("bond", {}) or {}
     if bond_cfg.get("table"):

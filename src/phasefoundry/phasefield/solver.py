@@ -32,28 +32,27 @@ Hessian eigenvalue over a coarse composition scan around c0 (see ``stable_dt``).
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import matplotlib.pyplot as plt
 import numpy as np
 from numpy.fft import fftn as _np_fftn
 from numpy.fft import ifftn as _np_ifftn
 from tqdm import tqdm
 
-from ..elasticity import (
-    build_isotropic_stiffness,
-    solve_elasticity,
-)
-from .spectral import laplacian_operator
+from phasefoundry.elasticity import build_isotropic_stiffness, solve_elasticity
+from phasefoundry.errors import MissingDependencyError
+from phasefoundry.phasefield.spectral import laplacian_operator
+from phasefoundry.phasefield.visualize import _plot_energy, _save_frame
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from ..elasticity.models import EigenstrainModel
-    from ..thermodynamics.interpolant import GmInterpolant
+    from phasefoundry.elasticity.models import EigenstrainModel
+    from phasefoundry.thermodynamics.interpolant import GmInterpolant
 
 try:
     import cupy as _cp
@@ -64,6 +63,8 @@ try:
 except ImportError:
     _cp = None
     _CUPY_AVAILABLE = False
+
+_logger = logging.getLogger(__name__)
 
 
 def _get_fft_backend(use_gpu: bool):
@@ -76,11 +77,11 @@ def _get_fft_backend(use_gpu: bool):
         ``(xp, fftn, ifftn)``.
 
     Raises:
-        RuntimeError: If ``use_gpu`` is True and CuPy is not installed.
+        MissingDependencyError: If ``use_gpu`` is True and CuPy is not installed.
     """
     if use_gpu:
         if not _CUPY_AVAILABLE:
-            raise RuntimeError(
+            raise MissingDependencyError(
                 "use_gpu=True requires CuPy.  Install with:\n  pip install cupy-cuda12x   # adjust for your CUDA version"
             )
         return _cp, _cp_fftn, _cp_ifftn
@@ -397,17 +398,17 @@ def solve_cahn_hilliard(
         ValueError: If ``ndim`` is not 2 or 3, if ``M``, ``kappa`` or ``c0`` has the wrong
             size, or if ``elastic_enabled`` is set without stiffness tensors (or
             ``elastic_G_matrix``) or without ``elastic_Lambda``.
-        RuntimeError: If ``use_gpu`` is set and CuPy is not installed, or if μ_el contains
-            NaN or Inf because the elastic solve diverged.
+        MissingDependencyError: If ``use_gpu`` is set and CuPy is not installed.
+        RuntimeError: If μ_el contains NaN or Inf because the elastic solve diverged.
     """
     if ndim not in (2, 3):
         raise ValueError(f"ndim must be 2 or 3, got {ndim}.")
 
     xp, _fftn, _ifftn = _get_fft_backend(use_gpu)
     if use_gpu and _cp is not None:
-        print(f"  FFT backend: CuPy (GPU)  device = {_cp.cuda.Device().id}")
+        _logger.info("  FFT backend: CuPy (GPU)  device = %s", _cp.cuda.Device().id)
     else:
-        print("  FFT backend: NumPy (CPU)")
+        _logger.info("  FFT backend: NumPy (CPU)")
 
     N_ind = interpolant.N_ind
     dx = Lx / N
@@ -432,22 +433,25 @@ def solve_cahn_hilliard(
 
         if elastic_model is not None:
             _model = elastic_model
-            print(
-                f"  Elastic coupling ENABLED ({_model.__class__.__name__}):  "
-                f"N_ind={N_ind}  solve_every={elastic_solve_every}  "
-                f"N_V={elastic_N_V:.4e}"
+            _logger.info(
+                "  Elastic coupling ENABLED (%s):  N_ind=%s  solve_every=%s  N_V=%.4e",
+                _model.__class__.__name__,
+                N_ind,
+                elastic_solve_every,
+                elastic_N_V,
             )
         else:
-            from ..elasticity.models import FixedVegardModel
+            from phasefoundry.elasticity.models import FixedVegardModel
 
             _model = FixedVegardModel(_Lambda, _C_mat, _C_ppt)
-            print(
-                f"  Elastic coupling ENABLED (FixedVegardModel):  "
-                f"N_ind={N_ind}  solve_every={elastic_solve_every}  "
-                f"N_V={elastic_N_V:.4e}"
+            _logger.info(
+                "  Elastic coupling ENABLED (FixedVegardModel):  N_ind=%s  solve_every=%s  N_V=%.4e",
+                N_ind,
+                elastic_solve_every,
+                elastic_N_V,
             )
             for k, el in enumerate(interpolant.ind_elements):
-                print(f"    α_{el} = {_Lambda[k, 0, 0]:.5f}")
+                _logger.info("    α_%s = %.5f", el, _Lambda[k, 0, 0])
     else:
         _C_mat = _C_ppt = _Lambda = None
     _mu_el_cache = None
@@ -462,14 +466,16 @@ def solve_cahn_hilliard(
     dt_stable = stable_dt(M_diag, dx, interpolant, c0=c0)
     if dt is None:
         dt = dt_stable
-        print(f"  auto dt = {dt:.4e} s  (stability criterion, scan ±0.3 around c0)")
+        _logger.info("  auto dt = %.4e s  (stability criterion, scan ±0.3 around c0)", dt)
     else:
-        print(f"  dt_stable = {dt_stable:.4e} s  |  dt used = {dt:.4e} s")
+        _logger.info("  dt_stable = %.4e s  |  dt used = %.4e s", dt_stable, dt)
 
     dt_lo = dt_min if dt_min is not None else dt / 100.0
     dt_hi = dt_max if dt_max is not None else dt * 20.0
     if adaptive_dt:
-        print(f"  Adaptive dt ENABLED  dc_tol = [{dc_tol_lo:.1e}, {dc_tol_hi:.1e}]  dt bounds = [{dt_lo:.3e}, {dt_hi:.3e}] s")
+        _logger.info(
+            "  Adaptive dt ENABLED  dc_tol = [%.1e, %.1e]  dt bounds = [%.3e, %.3e] s", dc_tol_lo, dc_tol_hi, dt_lo, dt_hi
+        )
     t_final = dt * n_steps
 
     if stabilization is None:
@@ -490,9 +496,9 @@ def solve_cahn_hilliard(
 
     for i, el in enumerate(interpolant.ind_elements):
         if A_stab[i] > 0:
-            print(f"  Stabilization A_{el} = {A_stab[i]:.4e} J/mol  (Eyre, component-specific)")
+            _logger.info("  Stabilization A_%s = %.4e J/mol  (Eyre, component-specific)", el, A_stab[i])
         else:
-            print(f"  Stabilization A_{el} = 0  (convex at c0)")
+            _logger.info("  Stabilization A_%s = 0  (convex at c0)", el)
 
     grid_shape = (N,) * ndim
     k2 = laplacian_operator(N, Lx, ndim=ndim)
@@ -500,9 +506,13 @@ def solve_cahn_hilliard(
 
     parseval_norm = N**ndim
 
-    print(
-        f"  Spatial dimension  ndim = {ndim}  "
-        f"({'N×N' if ndim == 2 else 'N×N×N'} = {N}{'×' + str(N) if ndim == 3 else ''}{'×' + str(N) if ndim == 3 else ''})"
+    _logger.info(
+        "  Spatial dimension  ndim = %s  (%s = %s%s%s)",
+        ndim,
+        "N×N" if ndim == 2 else "N×N×N",
+        N,
+        "×" + str(N) if ndim == 3 else "",
+        "×" + str(N) if ndim == 3 else "",
     )
 
     rng = np.random.default_rng(seed)
@@ -521,7 +531,7 @@ def solve_cahn_hilliard(
             for f in old:
                 f.unlink()
             if old:
-                print(f"  Cleared {len(old)} old file(s) from {output_dir}")
+                _logger.info("  Cleared %s old file(s) from %s", len(old), output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
     comp_hist = []
@@ -711,7 +721,7 @@ def solve_cahn_hilliard(
 
     pbar.close()
     if adaptive_dt:
-        print(f"  Adaptive dt: {dt_change_count} adjustment(s), final dt = {dt:.4e} s, total steps = {step}")
+        _logger.info("  Adaptive dt: %s adjustment(s), final dt = %.4e s, total steps = %s", dt_change_count, dt, step)
 
     elapsed = time.perf_counter() - t_start
 
@@ -790,60 +800,6 @@ def solve_cahn_hilliard(
     )
 
 
-_CMAP_FIELD = "RdBu_r"
-"""Colormap of the composition frames."""
-
-
-def _save_frame(
-    c: np.ndarray,
-    step: int,
-    out_dir: Path,
-    elements: list[str],
-    reference_element: str | None = None,
-) -> None:
-    """Save a PNG frame of every composition field, including the reference element.
-
-    The file is ``frame_<step>.png`` with the step zero-padded to 7 digits. For 3-D fields
-    the frame shows the mid-plane slice along the last axis. Each panel has its own colour
-    range.
-
-    Args:
-        c: Composition fields, shape ``(n_ind, *grid)``.
-        step: Step number, used in the title and the file name.
-        out_dir: Output directory.
-        elements: Independent elements, in the order of ``c``.
-        reference_element: Reference element, shown as 1 − Σ cᵢ. ``None`` leaves it out.
-    """
-    N_ind = c.shape[0]
-    ndim = c.ndim - 1
-
-    fields = [(c[i], elements[i]) for i in range(N_ind)]
-    if reference_element is not None:
-        c_ref = 1.0 - c.sum(axis=0)
-        fields.append((c_ref, reference_element))
-
-    slice_label = ""
-    if ndim == 3:
-        mid = c.shape[1] // 2
-        fields = [(data[..., mid], lbl) for data, lbl in fields]
-        slice_label = f"  [z={mid}]"
-
-    n_panels = len(fields)
-    fig, axes = plt.subplots(1, n_panels, figsize=(5 * n_panels, 4.5), squeeze=False)
-    for ax, (data, label) in zip(axes[0], fields, strict=True):
-        im = ax.imshow(data, cmap=_CMAP_FIELD, vmin=data.min(), vmax=data.max(), origin="lower", interpolation="nearest")
-        ax.set_title(
-            f"$x_{{\\rm {label.capitalize()}}}${slice_label}  (step {step:,})",
-            fontsize=11,
-        )
-        ax.set_xticks([])
-        ax.set_yticks([])
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    fig.tight_layout()
-    fig.savefig(out_dir / f"frame_{step:07d}.png", dpi=120, bbox_inches="tight")
-    plt.close(fig)
-
-
 def _save_log(
     out_dir: Path,
     t_hist: list,
@@ -875,89 +831,6 @@ def _save_log(
             )
             row = f"{step:>10d}  {t:>14.6e}  {F:>16.6e}  {Fb:>16.6e}  {Fg:>16.6e}  {el_vals}"
             fh.write(row + "\n")
-
-
-def _plot_energy(
-    out_dir: Path,
-    t_hist: list,
-    F_hist: list,
-    Fb_hist: list,
-    Fg_hist: list,
-    elements: list[str] | None = None,
-    cmin_hist: dict | None = None,
-    cmean_hist: dict | None = None,
-    cmax_hist: dict | None = None,
-) -> None:
-    """Plot the free-energy history and, if statistics are given, the composition history.
-
-    Writes ``free_energy_history.png`` (|F_total|, |F_bulk| and F_grad on a log scale) and,
-    when ``elements`` and ``cmin_hist`` are given, ``composition_evolution.png`` with the
-    minimum, mean and maximum of each element over time.
-    """
-    t = np.array(t_hist)
-
-    fig, ax = plt.subplots(figsize=(6, 4.5))
-    F_arr = np.array(F_hist)
-    Fb_arr = np.array(Fb_hist)
-    Fg_arr = np.array(Fg_hist)
-    ax.plot(t, np.abs(F_arr), label="|$F_{\\rm total}$|", linewidth=2, color="#1f77b4")
-    ax.plot(t, np.abs(Fb_arr), label="|$F_{\\rm bulk}$|", linewidth=1.5, linestyle="--", color="#ff7f0e")
-    ax.plot(t, np.abs(Fg_arr), label="$F_{\\rm gradient}$", linewidth=1.5, linestyle=":", color="#2ca02c")
-    ax.set_yscale("log")
-    ax.set_xlabel("Time [s]", fontsize=12)
-    ax.set_ylabel("|Free energy|  [J/mol]  (log scale)", fontsize=12)
-    ax.set_title("Free energy evolution", fontsize=12)
-    ax.legend(fontsize=10, frameon=False)
-    ax.grid(False)
-    fig.tight_layout()
-    fig.savefig(out_dir / "free_energy_history.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-    if elements is None or cmin_hist is None or cmean_hist is None or cmax_hist is None:
-        return
-    n_el = len(elements)
-    colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    fig, axes = plt.subplots(1, n_el, figsize=(5 * n_el, 4.5), squeeze=False)
-    for p, el in enumerate(elements):
-        ax = axes[0, p]
-        c_lo = np.array(cmin_hist[el])
-        c_mean = np.array(cmean_hist[el])
-        c_hi = np.array(cmax_hist[el])
-        col = colors[p % len(colors)]
-
-        ax.fill_between(t, c_lo, c_hi, alpha=0.15, color=col, label="min–max range")
-        ax.plot(
-            t,
-            c_lo,
-            color=col,
-            lw=1.5,
-            ls="--",
-            marker="s",
-            markersize=4,
-            markerfacecolor="white",
-            label=f"$x_{{{el.capitalize()}}}^{{\\rm min}}$",
-        )
-        ax.plot(
-            t,
-            c_hi,
-            color=col,
-            lw=1.5,
-            ls="-.",
-            marker="o",
-            markersize=4,
-            markerfacecolor="white",
-            label=f"$x_{{{el.capitalize()}}}^{{\\rm max}}$",
-        )
-        ax.plot(t, c_mean, color=col, lw=2.2, ls="-", label=f"$\\langle x_{{{el.capitalize()}}} \\rangle$")
-
-        ax.set_xlabel("Time [s]", fontsize=12)
-        ax.set_ylabel(f"$x_{{{el.capitalize()}}}$  [mol fraction]", fontsize=12)
-        ax.set_title(f"{el.capitalize()} — composition evolution", fontsize=12)
-        ax.legend(fontsize=9, frameon=False)
-        ax.grid(False)
-    fig.tight_layout()
-    fig.savefig(out_dir / "composition_evolution.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
 
 
 def _write_params(

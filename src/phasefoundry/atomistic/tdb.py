@@ -9,13 +9,17 @@ TDB is copied to the output path.
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from .settings import build_calculator, require_materialsframework
+from phasefoundry.atomistic.settings import MLIPSettings, build_calculator, require_materialsframework
+from phasefoundry.errors import ConfigError
+
+_logger = logging.getLogger(__name__)
 
 SQS2TDB_INIT_KEYS = ("fmax", "verbose", "md_temperature", "md_pressure", "md_timestep", "md_scaling_matrix")
 """Options passed to the ``Sqs2tdb`` constructor."""
@@ -38,7 +42,7 @@ def _working_directory(path: Path):
 def generate_tdb(
     species: list[str],
     output: str | Path,
-    settings: dict,
+    settings: MLIPSettings,
     *,
     work_dir: str | Path,
     calculator: Any = None,
@@ -61,8 +65,8 @@ def generate_tdb(
         The resolved output path.
 
     Raises:
-        ImportError: If MaterialsFramework is not installed.
-        ValueError: If ``options`` contains a key that ``Sqs2tdb`` does not accept.
+        MissingDependencyError: If MaterialsFramework is not installed.
+        ConfigError: If ``options`` contains a key that ``Sqs2tdb`` does not accept.
         RuntimeError: If ``sqs2tdb`` finishes without writing a TDB.
     """
     require_materialsframework()
@@ -70,7 +74,7 @@ def generate_tdb(
 
     unknown = set(options) - set(SQS2TDB_INIT_KEYS) - set(SQS2TDB_FIT_KEYS)
     if unknown:
-        raise ValueError(f"Unknown tdb_generation option(s): {sorted(unknown)}")
+        raise ConfigError(f"Unknown tdb_generation option(s): {sorted(unknown)}")
 
     symbols = [s.capitalize() for s in species]
     output = Path(output).resolve()
@@ -81,8 +85,8 @@ def generate_tdb(
 
     init_kw = {k: options[k] for k in SQS2TDB_INIT_KEYS if k in options}
     fit_kw = {k: options[k] for k in SQS2TDB_FIT_KEYS if k in options}
-    print(f"  sqs2tdb: {'-'.join(symbols)}  lattices={fit_kw.get('lattices', 'all')}  level={fit_kw.get('level', 1)}")
-    print(f"  Work dir: {work_dir}")
+    _logger.info("  sqs2tdb: %s  lattices=%s  level=%s", "-".join(symbols), fit_kw.get("lattices", "all"), fit_kw.get("level", 1))
+    _logger.info("  Work dir: %s", work_dir)
 
     with _working_directory(work_dir):
         fitter = Sqs2tdb(calculator=calculator, **init_kw)
@@ -95,5 +99,5 @@ def generate_tdb(
         )
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(produced, output)
-    print(f"  Written: {output}")
+    _logger.info("  Written: %s", output)
     return output

@@ -28,6 +28,7 @@ Output:
     runs/v3/fig2_cubic_anisotropy/fig2_radial_profile.pdf
 """
 
+import logging
 import sys
 from pathlib import Path
 
@@ -45,6 +46,9 @@ from phasefoundry.elasticity import (
     solve_elasticity,
 )
 from phasefoundry.elasticity.elastic_potential import compute_mu_el_from_result
+
+logging.basicConfig(format="%(message)s", stream=sys.stdout)
+logging.getLogger("phasefoundry").setLevel(logging.INFO)
 
 OUT_DIR = Path(__file__).parent
 

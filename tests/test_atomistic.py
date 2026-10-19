@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 
 from phasefoundry.atomistic.elastic import simplex_compositions
-from phasefoundry.atomistic.settings import mlip_label, mlip_settings
+from phasefoundry.atomistic.settings import MLIPSettings, mlip_label, mlip_settings
 from phasefoundry.elasticity.bond_model import BondLatticeModel
 from phasefoundry.elasticity.models import LocalVegardModel, build_eigenstrain_model
 from phasefoundry.elasticity.sources import (
@@ -129,9 +129,9 @@ def test_mlip_settings_override():
     """
     cfg = {"mlip": {"calculator": "orb", "params": {"model": "orb-v2", "device": "cuda"}}}
     s = mlip_settings(cfg, {"params": {"device": "cpu"}})
-    assert s == {"calculator": "orb", "params": {"model": "orb-v2", "device": "cpu"}}
+    assert s == MLIPSettings("orb", {"model": "orb-v2", "device": "cpu"})
     s = mlip_settings(cfg, {"calculator": "grace", "params": {"model": "GRACE-2L-OMAT"}})
-    assert s == {"calculator": "grace", "params": {"model": "GRACE-2L-OMAT"}}
+    assert s == MLIPSettings("grace", {"model": "GRACE-2L-OMAT"})
     assert mlip_label(s) == "GRACE-2L-OMAT"
     with pytest.raises(ValueError, match="No MLIP calculator"):
         mlip_settings({}, {})
@@ -230,7 +230,7 @@ def emt_calculator():
     return EMTCalculator(fmax=0.01)
 
 
-EMT_SETTINGS = {"calculator": "emt", "params": {}}
+EMT_SETTINGS = MLIPSettings("emt")
 
 
 def test_elastic_table_emt(emt_calculator, tmp_path, monkeypatch):

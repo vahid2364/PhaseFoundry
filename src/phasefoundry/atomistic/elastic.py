@@ -21,7 +21,9 @@ match the MaterialsFramework tables in ``data/``, so
 from __future__ import annotations
 
 import itertools
+import logging
 import warnings
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +31,9 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from .settings import build_calculator, mlip_settings, require_materialsframework
+from phasefoundry.atomistic.settings import MLIPSettings, build_calculator, mlip_settings, require_materialsframework
+
+_logger = logging.getLogger(__name__)
 
 PROPERTY_COLUMNS = [
     "a_relaxed_A",
@@ -163,7 +167,7 @@ def _compute_point(
 def build_elastic_table(
     elements: list[str],
     path: str | Path,
-    settings: dict,
+    settings: MLIPSettings,
     *,
     step: float = 0.05,
     crystal_structure: str = "bcc",
@@ -196,7 +200,7 @@ def build_elastic_table(
         Every row of the table, including rows computed in earlier runs.
 
     Raises:
-        ImportError: If MaterialsFramework is not installed.
+        MissingDependencyError: If MaterialsFramework is not installed.
         ValueError: If ``crystal_structure`` is not cubic, or the existing table was built
             with different settings.
         RuntimeError: If no composition could be computed.
@@ -217,7 +221,7 @@ def build_elastic_table(
     supercell = (int(supercell[0]), int(supercell[1]), int(supercell[2]))
     meta = {
         "elements": symbols,
-        "calculator": settings,
+        "calculator": asdict(settings),
         "crystal_structure": crystal_structure,
         "supercell": list(supercell),
         "sqs_iterations": sqs_iterations,
@@ -234,8 +238,8 @@ def build_elastic_table(
         done = {_row_key(r) for r in existing[[f"x_{el}" for el in symbols]].values}
     todo = [x for x in grid if _row_key(x) not in done]
 
-    print(f"  SQS elastic table: {path}")
-    print(f"    {len(grid)} grid points (step {step}), {len(grid) - len(todo)} cached, {len(todo)} to compute")
+    _logger.info("  SQS elastic table: %s", path)
+    _logger.info("    %s grid points (step %s), %s cached, %s to compute", len(grid), step, len(grid) - len(todo), len(todo))
     if not todo:
         return pd.read_csv(path)
 
@@ -272,7 +276,7 @@ def build_elastic_table(
         pd.DataFrame([row]).to_csv(path, mode="a", header=not path.exists(), index=False)
 
     if failed:
-        print(f"    {len(failed)} composition(s) failed; re-run step 1b to retry them.")
+        _logger.warning("    %s composition(s) failed; re-run step 1b to retry them.", len(failed))
     if not path.exists():
         raise RuntimeError(f"No compositions could be computed for {path}")
     return pd.read_csv(path)

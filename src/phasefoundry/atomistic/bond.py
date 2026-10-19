@@ -9,21 +9,24 @@ to a ``<table>.meta.yaml`` file that records the elements, structure and calcula
 
 from __future__ import annotations
 
+import logging
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import yaml
 
+from phasefoundry.atomistic.settings import MLIPSettings, build_calculator, mlip_settings, require_materialsframework
 from phasefoundry.elasticity.bond_model import BondLatticeModel
 
-from .settings import build_calculator, mlip_settings, require_materialsframework
+_logger = logging.getLogger(__name__)
 
 
 def compute_bond_table(
     elements: list[str],
     path: str | Path,
-    settings: dict,
+    settings: MLIPSettings,
     *,
     structure: str = "bcc",
     initial_a: dict[str, float] | None = None,
@@ -44,7 +47,7 @@ def compute_bond_table(
         The bond-length model built from the computed matrix.
 
     Raises:
-        ImportError: If MaterialsFramework is not installed.
+        MissingDependencyError: If MaterialsFramework is not installed.
     """
     require_materialsframework()
     from materialsframework.tools.bond_lattice_parameter import BondLatticeParameter
@@ -55,9 +58,12 @@ def compute_bond_table(
     if calculator is None:
         calculator = build_calculator(settings)
 
-    print(
-        f"  Bond-length model ({structure.upper()}, {'-'.join(symbols)}): "
-        f"{len(symbols)} pure + {len(symbols) * (len(symbols) - 1) // 2} binary relaxations"
+    _logger.info(
+        "  Bond-length model (%s, %s): %s pure + %s binary relaxations",
+        structure.upper(),
+        "-".join(symbols),
+        len(symbols),
+        len(symbols) * (len(symbols) - 1) // 2,
     )
     blp = BondLatticeParameter(structure, symbols, initial_a=initial_a, calculator=calculator)  # ty: ignore[invalid-argument-type]
     bonds = blp.calculate()["bonds"]
@@ -68,8 +74,8 @@ def compute_bond_table(
     path = Path(path)
     model.to_csv(path)
     with path.with_suffix(".meta.yaml").open("w") as fh:
-        yaml.safe_dump({"elements": symbols, "structure": structure, "calculator": settings}, fh, sort_keys=False)
-    print(f"    Written: {path}")
+        yaml.safe_dump({"elements": symbols, "structure": structure, "calculator": asdict(settings)}, fh, sort_keys=False)
+    _logger.info("    Written: %s", path)
     return model
 
 
@@ -88,7 +94,7 @@ def ensure_bond_table(cfg: dict, root: Path, calculator: Any = None) -> Path:
 
     path = bond_table_path(cfg, root)
     if path.exists():
-        print(f"  Bond-length table (cached): {path}")
+        _logger.info("  Bond-length table (cached): %s", path)
         return path
 
     bond_cfg = cfg["simulation"]["elastic"].get("bond", {}) or {}

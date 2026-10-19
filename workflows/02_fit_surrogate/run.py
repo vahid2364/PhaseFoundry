@@ -22,7 +22,9 @@ Run standalone
 
 from __future__ import annotations
 import argparse, sys
+import logging
 from pathlib import Path
+import sys
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -93,9 +95,8 @@ def _run_binary(cfg, paths, results_dir, ref_el, sim_T_C):
     from phasefoundry.thermodynamics.fitting import build_gm_spline_surrogate
     from phasefoundry.thermodynamics.spinodal import (
         spinodal_boundary_binary, binodal_boundary_binary,
-        plot_spinodal, plot_phase_diagram,
     )
-    from phasefoundry.thermodynamics.plot import plot_free_energy_vs_composition
+    from phasefoundry.thermodynamics.plot import plot_free_energy_vs_composition, plot_phase_diagram, plot_spinodal
 
     ind_el = [e for e in cfg["system"]["elements"] if e != ref_el][0]
     x_el   = ref_el.capitalize()
@@ -265,6 +266,8 @@ def _plot_spinodal_map(interp, n_ind, ind_elements, thermo_dir, T_label):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(
         description="Step 2 — Build G_m interpolant (general)")
     parser.add_argument("--config", required=True)

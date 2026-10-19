@@ -22,7 +22,9 @@ Run standalone
 
 from __future__ import annotations
 import argparse, sys
+import logging
 from pathlib import Path
+import sys
 
 import h5py
 import numpy as np
@@ -139,6 +141,8 @@ def run(cfg: dict) -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(
         description="Step 4 — Post-processing (general, any N-component system)"
     )

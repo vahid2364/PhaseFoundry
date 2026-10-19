@@ -25,6 +25,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -227,6 +228,8 @@ def run(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="3D Cahn-Hilliard simulation — ternary Nb50Hf5V45 at 500 °C")
     parser.add_argument("--N", type=int, default=64, help="Grid points per side (default: 64 → 64³)")
     parser.add_argument("--t", type=float, default=200.0, help="Physical end time in seconds (default: 200)")

@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import logging
 import pathlib
 import sys
 import warnings
@@ -145,4 +146,6 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     main()

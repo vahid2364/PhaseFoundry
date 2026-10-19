@@ -27,6 +27,7 @@ surrogates for binary systems instead.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -36,7 +37,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import PolynomialFeatures
 
-from .storage import load_table
+from phasefoundry.thermodynamics.storage import load_table
+
+_logger = logging.getLogger(__name__)
 
 
 def fit_delta_mu(
@@ -135,9 +138,10 @@ def fit_delta_mu(
             }
         )
 
-        print(
+        _logger.info(
+            "%s",
             f"T = {T_K:.1f} K ({T_C:.1f} °C)  |  "
-            + "  ".join(f"Δμ_{el}: RMSE={m['rmse']:.1f} J/mol  R²={m['r2']:.4f}" for el, m in models.items())
+            + "  ".join((f"Δμ_{el}: RMSE={m['rmse']:.1f} J/mol  R²={m['r2']:.4f}" for el, m in models.items())),
         )
 
     return results
@@ -215,7 +219,7 @@ def build_spline_surrogate(
             "reference_element": reference_element,
         }
 
-        print(f"T = {T_K:.1f} K ({T_K - 273.15:.1f} °C)  |  spline built on {valid.sum()} pts")
+        _logger.info("T = %.1f K (%.1f °C)  |  spline built on %s pts", T_K, T_K - 273.15, valid.sum())
 
     return {
         "temperatures_K": np.array(stored_T),
@@ -304,8 +308,13 @@ def build_gm_spline_surrogate(
             "reference_element": reference_element,
         }
 
-        print(
-            f"T = {T_K:.1f} K ({T_K - 273.15:.1f} °C)  |  Gm spline built on {valid.sum()} pts  x_V=[{x_V[0]:.4f}, {x_V[-1]:.4f}]"
+        _logger.info(
+            "T = %.1f K (%.1f °C)  |  Gm spline built on %s pts  x_V=[%.4f, %.4f]",
+            T_K,
+            T_K - 273.15,
+            valid.sum(),
+            x_V[0],
+            x_V[-1],
         )
 
     x_vars = [reference_element]
@@ -379,7 +388,7 @@ def save_fits(
                 eg.attrs["description"] = m["description"]
                 eg.attrs["delta_mu_formula"] = f"Δμ_{el} = μ_{el} - μ_{res['reference_element']}  [J/mol]"
 
-    print(f"\nSaved fits → {path}  ({len(fit_results)} temperatures, reference = {ref0['reference_element']})")
+    _logger.info("\nSaved fits → %s  (%s temperatures, reference = %s)", path, len(fit_results), ref0["reference_element"])
 
 
 def load_fits(path: str | Path) -> dict:

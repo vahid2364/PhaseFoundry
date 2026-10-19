@@ -39,6 +39,7 @@ Usage
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -52,6 +53,9 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
 from phasefoundry.elasticity import build_isotropic_stiffness, solve_elasticity
+
+logging.basicConfig(format="%(message)s", stream=sys.stdout)
+logging.getLogger("phasefoundry").setLevel(logging.INFO)
 
 N = 512  # grid points per axis — matches the paper exactly (Lx=Ly=512)
 Lx = 512.0  # domain size — matches the paper exactly (Δx=Δy=1)

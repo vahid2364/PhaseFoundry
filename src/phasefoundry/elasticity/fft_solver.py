@@ -24,9 +24,13 @@ in this package); strains are dimensionless.
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
-from .interpolation import InterpolationScheme, get_scheme
+from phasefoundry.elasticity.interpolation import InterpolationScheme, get_scheme
+
+_logger = logging.getLogger(__name__)
 
 
 def build_isotropic_stiffness(G: float, nu: float) -> np.ndarray:
@@ -302,14 +306,14 @@ def solve_elasticity(
         d_eps = float(np.sqrt(np.mean((eps - eps_old) ** 2)))
         residual_history.append(d_eps)
         if verbose and iteration % 100 == 0:
-            print(f"  iter {iteration:4d}  Δε_rms = {d_eps:.3e}")
+            _logger.info("  iter %4d  Δε_rms = %.3e", iteration, d_eps)
         if d_eps < tol:
             if verbose:
-                print(f"  Converged at iter {iteration}  Δε_rms = {d_eps:.3e}")
+                _logger.info("  Converged at iter %s  Δε_rms = %.3e", iteration, d_eps)
             break
     else:
         if verbose:
-            print(f"  WARNING: did not converge in {max_iter} iterations  Δε_rms = {d_eps:.3e}")
+            _logger.warning("  did not converge in %s iterations  Δε_rms = %.3e", max_iter, d_eps)
 
     eps_el = eps - eps_star
     sigma_final = np.einsum("...ijkl,...kl->...ij", C_d, eps_el)

@@ -27,7 +27,9 @@ Run standalone
 
 from __future__ import annotations
 import argparse, sys
+import logging
 from pathlib import Path
+import sys
 
 import numpy as np
 import matplotlib
@@ -227,6 +229,8 @@ def make_comparison_figure(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(
         description="Step 6 — Chemical vs. elasto-chemical comparison figure")
     parser.add_argument("--config", required=True)

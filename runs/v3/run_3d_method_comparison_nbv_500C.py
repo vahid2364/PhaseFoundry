@@ -30,6 +30,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import time
 from pathlib import Path
@@ -508,6 +509,8 @@ def _run_from_npz(npz_path: Path, cfg: dict) -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="3D derivative-method comparison — any binary system")
     parser.add_argument("--config", default="configs/nb_v_2d.yaml", help="Path to YAML config file")
     parser.add_argument(

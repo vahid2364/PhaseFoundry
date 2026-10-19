@@ -44,6 +44,7 @@ Outputs (in runs/v3/):
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -295,4 +296,6 @@ def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     main()

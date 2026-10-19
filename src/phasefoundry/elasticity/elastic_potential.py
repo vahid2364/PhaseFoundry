@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .interpolation import InterpolationScheme, get_scheme
+from phasefoundry.elasticity.interpolation import InterpolationScheme, get_scheme
 
 
 def build_vegard_tensor(alpha: dict, ind_elements: list[str], ndim: int = 2) -> np.ndarray:

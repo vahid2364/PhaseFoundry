@@ -41,6 +41,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -85,6 +86,8 @@ def run(cfg: dict) -> Path | None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="Step 0 — Generate the CALPHAD TDB from MLIP SQS energies")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
     parser.add_argument(

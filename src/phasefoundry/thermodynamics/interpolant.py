@@ -27,6 +27,7 @@ derivatives are obtained:
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
@@ -38,10 +39,12 @@ from scipy.interpolate import (
     RegularGridInterpolator,
 )
 
-from .storage import load_table
+from phasefoundry.thermodynamics.storage import load_table
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 DerivativeMethod = Literal["fd", "jansson", "hybrid"]
 """Name of the derivative backend: ``"fd"``, ``"jansson"`` or ``"hybrid"``."""
@@ -175,7 +178,7 @@ def _build_mu_interps(
     mu_ref = data["MU"][reference_element]
     interps = []
 
-    print(f"  Building Jansson μ interpolants for {ind_elements} …", flush=True)
+    _logger.info("  Building Jansson μ interpolants for %s …", ind_elements)
     for ind_el in ind_elements:
         y = data["MU"][ind_el] - mu_ref
         interp = _build_scalar_interp(comps, y, col_idx, N_ind, label=f"μ_{ind_el}")
@@ -212,7 +215,7 @@ def _build_dmu_interps(
     interps = {}
     n_elements = len(ind_elements)
 
-    print(f"  Building Jansson ∂μ/∂x interpolants ({n_elements}×{n_elements} matrix) …", flush=True)
+    _logger.info("  Building Jansson ∂μ/∂x interpolants (%s×%s matrix) …", n_elements, n_elements)
 
     for i, el_i in enumerate(ind_elements):
         for j, el_j in enumerate(ind_elements):
@@ -333,7 +336,7 @@ def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20, label: str = "
         ``(min, max)`` of each axis.
     """
     N_ind = pts.shape[1]
-    print(f"    Building RBF (TPS) for {label!r} from {len(pts)} points …", flush=True)
+    _logger.info("    Building RBF (TPS) for %r from %s points …", label, len(pts))
 
     y_scale = float(np.abs(GM).mean()) or 1.0
     rbf = RBFInterpolator(
@@ -372,7 +375,7 @@ def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20, label: str = "
     )
     rgi._grid_bounds = [(float(a.min()), float(a.max())) for a in axes]  # ty: ignore[unresolved-attribute]
 
-    print(f"    RBF→RGI built for {label!r} ({N_ind}-D, {n_grid} pts/axis).", flush=True)
+    _logger.info("    RBF→RGI built for %r (%s-D, %s pts/axis).", label, N_ind, n_grid)
     return rgi
 
 

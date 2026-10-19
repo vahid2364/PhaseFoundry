@@ -24,7 +24,9 @@ Run standalone
 
 from __future__ import annotations
 import argparse, sys, warnings
+import logging
 from pathlib import Path
+import sys
 
 import pycalphad  # noqa: F401 — must be imported first
 
@@ -73,6 +75,8 @@ def run(cfg: dict) -> list[Path]:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(
         description="Step 1 — Generate thermodynamic tables (general)")
     parser.add_argument("--config", required=True,

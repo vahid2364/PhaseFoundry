@@ -38,7 +38,9 @@ Run standalone
 
 from __future__ import annotations
 import argparse, sys, warnings
+import logging
 from pathlib import Path
+import sys
 
 import numpy as np
 
@@ -368,6 +370,8 @@ def run(cfg: dict) -> SimResult:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(
         description="Step 3 — Phase-field simulation (general)")
     parser.add_argument("--config", required=True,

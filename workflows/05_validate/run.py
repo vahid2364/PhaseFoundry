@@ -26,7 +26,9 @@ Called from the main pipeline
 
 from __future__ import annotations
 import argparse, sys
+import logging
 from pathlib import Path
+import sys
 
 import numpy as np
 import matplotlib
@@ -368,6 +370,8 @@ def run(cfg: dict) -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="Step 5 — Validate thermodynamic tables")
     parser.add_argument("--config", default="configs/nb_v.yaml")
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")

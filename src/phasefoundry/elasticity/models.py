@@ -41,21 +41,21 @@ of the SQS interpolant.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 
-from .fft_solver import _interp_stiffness, build_cubic_stiffness
-from .interpolation import get_scheme
-from .sqs_interpolant import (
-    BatchInterp,
-    build_batch_interpolators,
-    load_and_filter,
-)
+from phasefoundry.elasticity.fft_solver import _interp_stiffness, build_cubic_stiffness
+from phasefoundry.elasticity.interpolation import get_scheme
+from phasefoundry.elasticity.sqs_interpolant import BatchInterp, build_batch_interpolators, load_and_filter
+from phasefoundry.errors import ConfigError
 
 if TYPE_CHECKING:
-    from .bond_model import BondLatticeModel
+    from phasefoundry.elasticity.bond_model import BondLatticeModel
+
+_logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -329,9 +329,9 @@ def build_eigenstrain_model(
 
     Raises:
         FileNotFoundError: If ``local_vegard`` is chosen and the SQS table does not exist.
-        ValueError: If ``model_name`` is unknown, ``fixed_vegard`` is chosen without ``Lambda``,
-            ``C_mat`` and ``C_ppt``, or ``lattice_model`` is given without
-            ``reference_element``.
+        ConfigError: If ``model_name`` is unknown.
+        ValueError: If ``fixed_vegard`` is chosen without ``Lambda``, ``C_mat`` and ``C_ppt``,
+            or ``lattice_model`` is given without ``reference_element``.
     """
     c0 = np.atleast_1d(np.asarray(c0, dtype=float))
 
@@ -365,11 +365,11 @@ def build_eigenstrain_model(
             if reference_element is None:
                 raise ValueError("reference_element is required with a lattice_model")
             batch_interps["a_relaxed_A"] = lattice_model.batch_interp(ind_elements, reference_element)
-            print(f"  Lattice parameter a(x): bond-length model ({lattice_model.structure.upper()})")
+            _logger.info("  Lattice parameter a(x): bond-length model (%s)", lattice_model.structure.upper())
         model = LocalVegardModel(batch_interps, ind_elements, c0)
-        print(f"  LocalVegardModel: a_ref = {model._a_ref * 1e10:.4f} Å")
+        _logger.info("  LocalVegardModel: a_ref = %.4f Å", model._a_ref * 1e10)
         for k, el in enumerate(ind_elements):
-            print(f"    α_{el}(c₀) = {model._alpha_c0[k]:.6f}")
+            _logger.info("    α_%s(c₀) = %.6f", el, model._alpha_c0[k])
         return model
 
-    raise ValueError(f"Unknown eigenstrain_model: {model_name!r}. Choose 'fixed_vegard' (default) or 'local_vegard'.")
+    raise ConfigError(f"Unknown eigenstrain_model: {model_name!r}. Choose 'fixed_vegard' (default) or 'local_vegard'.")

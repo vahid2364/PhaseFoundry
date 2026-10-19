@@ -20,6 +20,7 @@ gzip-compressed.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,6 +32,8 @@ try:
     _PYCALPHAD_VERSION = pycalphad.__version__
 except Exception:
     _PYCALPHAD_VERSION = "unknown"
+
+_logger = logging.getLogger(__name__)
 
 _COMPRESS = {"compression": "gzip", "compression_opts": 4}
 """Compression settings for every dataset."""
@@ -102,7 +105,7 @@ def save_table(
                 el1, el2 = key.split("_", 1)
                 ds.attrs["description"] = f"d mu_{el1} / d x_{el2}  [J/mol per mol fraction]"
 
-    print(f"Saved {len(data['compositions'])} points to {path}")
+    _logger.info("Saved %s points to %s", len(data["compositions"]), path)
 
 
 def load_table(path: str | Path) -> dict:

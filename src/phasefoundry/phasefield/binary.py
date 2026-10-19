@@ -30,17 +30,17 @@ References:
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-import matplotlib.pyplot as plt
 import numpy as np
 from numpy.fft import fft2, ifft2
 from tqdm import tqdm
 
-from .free_energy import (
+from phasefoundry.phasefield.free_energy import (
     calphad_df_dc,
     calphad_df_dc_gm_spline,
     calphad_df_dc_spline,
@@ -50,7 +50,10 @@ from .free_energy import (
     double_well_df_dc,
     double_well_f,
 )
-from .spectral import laplacian_operator
+from phasefoundry.phasefield.spectral import laplacian_operator
+from phasefoundry.phasefield.visualize import _save_binary_frame, plot_free_energy_history
+
+_logger = logging.getLogger(__name__)
 
 
 def stable_dt(
@@ -269,7 +272,7 @@ def write_simulation_params(
     with out_path.open("w") as fh:
         fh.write("\n".join(lines) + "\n")
 
-    print(f"  Parameters written → {out_path}")
+    _logger.info("  Parameters written → %s", out_path)
     return out_path
 
 
@@ -438,7 +441,7 @@ def solve_cahn_hilliard_binary(
                 f.unlink()
                 removed += 1
         if removed:
-            print(f"  Cleared {removed} old file(s) from {output_dir}")
+            _logger.info("  Cleared %s old file(s) from %s", removed, output_dir)
 
     dx = Lx / N
     dt_stable_val = None
@@ -447,12 +450,12 @@ def solve_cahn_hilliard_binary(
             dt_stable_val = stable_dt(M=M, dx=dx, calphad_fit=fit, temperature_K=T_K, safety=0.4)
             dt = dt_stable_val * dt_scale
             if dt_scale == 1.0:
-                print(f"  auto dt = {dt:.4e} s  (stability criterion, safety=0.4)")
+                _logger.info("  auto dt = %.4e s  (stability criterion, safety=0.4)", dt)
             else:
-                print(f"  auto dt = {dt_stable_val:.4e} s  ×  dt_scale={dt_scale:.3g}  →  dt = {dt:.4e} s")
+                _logger.info("  auto dt = %.4e s  ×  dt_scale=%.3g  →  dt = %.4e s", dt_stable_val, dt_scale, dt)
         else:
             dt = 0.1 * dt_scale
-            print(f"  auto dt = {dt:.4e} s  (double-well default × dt_scale={dt_scale:.3g})")
+            _logger.info("  auto dt = %.4e s  (double-well default × dt_scale=%.3g)", dt, dt_scale)
     elif free_energy in ("calphad", "calphad_spline", "calphad_gm_spline"):
         dt_stable_val = stable_dt(M=M, dx=dx, calphad_fit=fit, temperature_K=T_K, safety=0.5)
         if dt > dt_stable_val:
@@ -573,7 +576,7 @@ def solve_cahn_hilliard_binary(
             mix_energy_history.append(dG)
 
         if output_dir is not None and save_frames:
-            _save_frame(c, step, t_phys, output_dir)
+            _save_binary_frame(c, step, t_phys, output_dir)
 
     _snapshot(c, 0)
     t_start = time.perf_counter()
@@ -652,85 +655,6 @@ def solve_cahn_hilliard_binary(
     return result
 
 
-def plot_result(
-    result: CHResult,
-    output_dir: str | Path | None = None,
-    show: bool = True,
-) -> None:
-    """Plot the final composition field and the free energy history.
-
-    The left panel shows the final field; the right panel shows the total, bulk and
-    gradient energies against time.
-
-    Args:
-        result: Output of ``solve_cahn_hilliard_binary``.
-        output_dir: If given, the figure is saved there as ``result_summary.png``.
-        show: Call ``plt.show()`` before closing the figure.
-    """
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    im = axes[0].imshow(
-        result.composition,
-        cmap="RdBu_r",
-        origin="lower",
-    )
-    plt.colorbar(im, ax=axes[0], label="Composition  (mol fraction)")
-    axes[0].set_title(
-        f"Composition field  —  $t$ = {result.time_history[-1]:.3g}\n[{result.params['free_energy']} model]",
-        fontsize=12,
-    )
-    axes[0].set_xlabel("")
-    axes[0].set_ylabel("")
-    axes[0].set_xticks([])
-    axes[0].set_yticks([])
-    axes[0].grid(False)
-
-    mk = {"marker": "o", "markersize": 4, "markerfacecolor": "white", "markeredgewidth": 1.2}
-    axes[1].plot(result.time_history, result.free_energy_history, color="#1f77b4", linewidth=1.8, label="$F_{total}$", **mk)
-    axes[1].plot(
-        result.time_history, result.bulk_energy_history, color="#d62728", linewidth=1.5, linestyle="--", label="$F_{bulk}$", **mk
-    )
-    axes[1].plot(
-        result.time_history, result.grad_energy_history, color="#2ca02c", linewidth=1.5, linestyle=":", label="$F_{grad}$", **mk
-    )
-    axes[1].set_xlabel("Time", fontsize=12)
-    axes[1].set_ylabel("Free energy  (a.u.)", fontsize=12)
-    axes[1].set_title("Free energy evolution", fontsize=12)
-    axes[1].legend(fontsize=10, frameon=False)
-    axes[1].grid(False)
-
-    plt.tight_layout()
-
-    if output_dir is not None:
-        p = Path(output_dir) / "result_summary.png"
-        plt.savefig(p, dpi=200, bbox_inches="tight")
-        print(f"Saved → {p}")
-
-    if show:
-        plt.show()
-    plt.close()
-
-
-def _save_frame(
-    c: np.ndarray,
-    step: int,
-    t_phys: float,
-    output_dir: Path,
-) -> None:
-    """Save the field at one snapshot as ``frame_<step>.png`` in ``output_dir``."""
-    fig, ax = plt.subplots(figsize=(5, 5))
-    vmin, vmax = c.min(), c.max()
-    im = ax.imshow(c, cmap="PuOr", origin="lower", vmin=vmin, vmax=vmax)
-    plt.colorbar(im, ax=ax, label="$x_V$  (mol fraction V)", shrink=0.25, aspect=10, pad=0.02)
-    ax.set_title(f"$t$ = {t_phys:.4g} s  (step {step})", fontsize=11)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.grid(False)
-    plt.tight_layout()
-    plt.savefig(output_dir / f"frame_{step:06d}.png", dpi=150, bbox_inches="tight")
-    plt.close()
-
-
 def _save_energy_log(
     output_dir: Path,
     time_history: list,
@@ -774,245 +698,3 @@ def _save_energy_log(
                 row += f"  {mix_energy_history[i]:>16.6e}"
             fh.write(row + "\n")
     return path
-
-
-def plot_free_energy_history(
-    result,
-    output_dir: str | Path | None = None,
-    show: bool = False,
-) -> None:
-    """Plot the energy contributions and the composition range against time.
-
-    The left panel shows |F_total|, |F_bulk|, |F_grad| and, when recorded, |ΔG_mix| on a
-    log scale. The right panel shows the minimum and maximum of the field at each
-    snapshot, labelled as x_V for the Nb-V system.
-
-    Args:
-        result: Output of ``solve_cahn_hilliard_binary``.
-        output_dir: If given, the figure is saved there as ``free_energy_history.png``.
-        show: Call ``plt.show()`` before closing the figure.
-    """
-    t = result.time_history
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    ax = axes[0]
-    F_tot = np.abs(result.free_energy_history)
-    F_bulk = np.abs(result.bulk_energy_history)
-    F_grad = np.abs(result.grad_energy_history)
-    ax.plot(
-        t,
-        F_tot,
-        color="#1f77b4",
-        lw=2,
-        marker="o",
-        markersize=5,
-        markerfacecolor="white",
-        markeredgewidth=1.5,
-        label="|$F_{total}$|",
-    )
-    ax.plot(
-        t,
-        F_bulk,
-        color="#d62728",
-        lw=1.8,
-        ls="--",
-        marker="s",
-        markersize=5,
-        markerfacecolor="white",
-        markeredgewidth=1.5,
-        label="|$F_{bulk}$|",
-    )
-    ax.plot(
-        t,
-        F_grad,
-        color="#2ca02c",
-        lw=1.8,
-        ls=":",
-        marker="^",
-        markersize=6,
-        markerfacecolor="white",
-        markeredgewidth=1.5,
-        label="|$F_{grad}$|  (interfacial)",
-    )
-    if result.mix_energy_history:
-        dG = np.array(result.mix_energy_history)
-        ax.plot(
-            t,
-            np.abs(dG),
-            color="#9467bd",
-            lw=1.8,
-            ls="-.",
-            marker="D",
-            markersize=5,
-            markerfacecolor="white",
-            markeredgewidth=1.5,
-            label="|$\\Delta G_{mix}$|",
-        )
-    ax.set_yscale("log")
-    ax.set_xlabel("Time  (s)", fontsize=12)
-    ax.set_ylabel("|Free energy|  (J/mol)  [log scale]", fontsize=12)
-    ax.set_title("Free energy contributions", fontsize=12)
-    ax.legend(fontsize=11, frameon=False)
-    ax.grid(False)
-
-    ax2 = axes[1]
-    if result.composition_history:
-        c_min = [c.min() for c in result.composition_history]
-        c_max = [c.max() for c in result.composition_history]
-        ax2.plot(
-            t,
-            c_min,
-            color="#d62728",
-            lw=1.8,
-            marker="s",
-            markersize=5,
-            markerfacecolor="white",
-            markeredgewidth=1.5,
-            label="$x_V^{min}$  (Nb-rich)",
-        )
-        ax2.plot(
-            t,
-            c_max,
-            color="#1f77b4",
-            lw=1.8,
-            marker="o",
-            markersize=5,
-            markerfacecolor="white",
-            markeredgewidth=1.5,
-            label="$x_V^{max}$  (V-rich)",
-        )
-        ax2.set_xlabel("Time  (s)", fontsize=12)
-        ax2.set_ylabel("$x_V$  (mol fraction V)", fontsize=12)
-        ax2.set_title("Phase composition evolution", fontsize=12)
-        ax2.legend(fontsize=11, frameon=False)
-    else:
-        ax2.text(
-            0.5,
-            0.5,
-            "Composition history\nnot available",
-            ha="center",
-            va="center",
-            transform=ax2.transAxes,
-            fontsize=12,
-            color="gray",
-        )
-        ax2.set_title("Phase composition evolution", fontsize=12)
-    ax2.grid(False)
-
-    plt.tight_layout()
-
-    if output_dir is not None:
-        p = Path(output_dir) / "free_energy_history.png"
-        plt.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"  Saved → {p}")
-    if show:
-        plt.show()
-    plt.close()
-
-
-def plot_gm_with_pfm(
-    result: CHResult,
-    calphad_fit: dict,
-    temperature_K: float,
-    output_dir: str | Path | None = None,
-    show: bool = False,
-) -> None:
-    """Plot the G_m curve next to the final phase-field composition field.
-
-    The left panel shows G_m(x) from the CALPHAD spline with the line between G_m(0) and
-    G_m(1), shades where ΔG_mix < 0 and where d²G/dx² < 0, and marks the mean initial
-    composition and the minimum and maximum of the final field. The right panel shows the
-    final field. Labels and title assume the Nb-V BCC system.
-
-    Args:
-        result: Output of ``solve_cahn_hilliard_binary``.
-        calphad_fit: Output of ``build_gm_spline_surrogate``, with ``spline_gm`` and
-            ``spline_dfdx``.
-        temperature_K: Temperature in K, used to pick the fit and label the plot.
-        output_dir: If given, the figure is saved there as ``gm_pfm_combined.png``.
-        show: Call ``plt.show()`` before closing the figure.
-
-    Raises:
-        ValueError: If the fit at that temperature has no ``spline_gm`` or ``spline_dfdx``.
-    """
-    stored_T = np.array(calphad_fit["temperatures_K"])
-    T_K = stored_T[int(np.argmin(np.abs(stored_T - temperature_K)))]
-    el_key = list(calphad_fit["fits"][T_K]["models"].keys())[0]
-    mdl = calphad_fit["fits"][T_K]["models"][el_key]
-
-    if "spline_gm" not in mdl or "spline_dfdx" not in mdl:
-        raise ValueError("plot_gm_with_pfm() requires calphad_gm_spline surrogate (spline_gm and spline_dfdx keys required).")
-
-    spl_gm = mdl["spline_gm"]
-    spl_dfdx = mdl["spline_dfdx"]
-
-    x = np.linspace(0.001, 0.999, 600)
-    gm = spl_gm(x)
-    d2G = spl_dfdx.derivative()(x)
-
-    gm_0 = float(spl_gm(0.0))
-    gm_1 = float(spl_gm(1.0))
-    linear_ref = gm_0 * (1.0 - x) + gm_1 * x
-
-    c_final = result.composition
-    c0_mean = result.composition_history[0].mean()
-    c_min = float(c_final.min())
-    c_max = float(c_final.max())
-    t_final = result.time_history[-1]
-
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
-    ax = axes[0]
-    ax.plot(x, gm, color="#1f77b4", lw=2.2, label="$G_m(x)$  CALPHAD spline")
-    ax.plot(x, linear_ref, color="gray", lw=1.2, ls="--", label="Mechanical mixture (ref)")
-
-    dGmix = gm - linear_ref
-    ax.fill_between(
-        x, gm, linear_ref, where=(dGmix < 0), alpha=0.15, color="#d62728", label="$\\Delta G_{mix} < 0$  (driving force)"
-    )
-
-    spinodal_mask = d2G < 0
-    if spinodal_mask.any():
-        ax.fill_between(
-            x, gm.min() - 500, gm, where=spinodal_mask, alpha=0.08, color="#9467bd", label="Spinodal region ($d^2G/dx^2 < 0$)"
-        )
-
-    ax.axvline(c0_mean, color="#2ca02c", lw=1.5, ls=":", label=f"$c_0$ = {c0_mean:.3f}")
-    ax.axvline(c_min, color="#d62728", lw=1.5, ls="-.", label=f"$c_{{min}}$ = {c_min:.3f}  (Nb-rich)")
-    ax.axvline(c_max, color="#1f77b4", lw=1.5, ls="-.", label=f"$c_{{max}}$ = {c_max:.3f}  (V-rich)")
-
-    ax.set_xlabel("$x_V$  (mol fraction V)", fontsize=12)
-    ax.set_ylabel("$G_m$  (J/mol)", fontsize=12)
-    ax.set_title(
-        f"$G_m$ landscape — {temperature_K - 273.15:.0f} °C\nNb-V BCC",
-        fontsize=11,
-    )
-    ax.legend(fontsize=8, frameon=True, loc="lower right")
-    ax.grid(False)
-
-    ax2 = axes[1]
-    im = ax2.imshow(
-        c_final,
-        cmap="RdBu_r",
-        origin="lower",
-        vmin=c_min,
-        vmax=c_max,
-    )
-    plt.colorbar(im, ax=ax2, label="$x_V$  (mol fraction V)", shrink=0.85)
-    ax2.set_title(
-        f"PFM composition field\n$t$ = {t_final:.3g} s  ($c_0$ = {c0_mean:.2f})",
-        fontsize=11,
-    )
-    ax2.set_xticks([])
-    ax2.set_yticks([])
-    ax2.grid(False)
-
-    plt.tight_layout()
-
-    if output_dir is not None:
-        p = Path(output_dir) / "gm_pfm_combined.png"
-        plt.savefig(p, dpi=150, bbox_inches="tight")
-        print(f"  Saved → {p}")
-    if show:
-        plt.show()
-    plt.close()

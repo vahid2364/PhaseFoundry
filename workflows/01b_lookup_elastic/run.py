@@ -43,6 +43,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import warnings
 from pathlib import Path
@@ -277,6 +278,8 @@ def run(cfg: dict) -> Path:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(
         description="Step 1b — Elastic constants: compute with an MLIP or look up from CSV"
     )

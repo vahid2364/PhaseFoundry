@@ -15,6 +15,7 @@ Output: results/HfNbTiV_BCC_PhaseForge_v2_Tdep/NbHfV/700C/
 
 from __future__ import annotations
 
+import logging
 import shutil
 import sys
 import time
@@ -32,6 +33,9 @@ sys.path.insert(0, str(_ROOT / "src"))
 from phasefoundry.phasefield.solver import solve_cahn_hilliard, stable_dt
 from phasefoundry.thermodynamics.interpolant import build_interpolant
 from phasefoundry.thermodynamics.storage import load_table
+
+logging.basicConfig(format="%(message)s", stream=sys.stdout)
+logging.getLogger("phasefoundry").setLevel(logging.INFO)
 
 TDB_STEM = "HfNbTiV_BCC_PhaseForge_v2_Tdep"
 SYSTEM = "NbHfV"

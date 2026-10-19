@@ -29,6 +29,7 @@ Data sources:
 """
 
 from __future__ import annotations
+import logging
 import pathlib
 import numpy as np
 import matplotlib
@@ -36,6 +37,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from matplotlib.image import imread
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import sys
 
 matplotlib.rcParams.update({
     "font.family":       "sans-serif",
@@ -412,6 +414,8 @@ def make_hf_sweep_elastic_figure(sweep=None, out_dir=None):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(format="%(message)s", stream=sys.stdout)
+    logging.getLogger("phasefoundry").setLevel(logging.INFO)
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--hf-sweep",         action="store_true")

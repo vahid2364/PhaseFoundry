@@ -13,12 +13,13 @@ MaterialsFramework is imported only when a calculation runs. Install it with
 ``materialsframework[orb]``. MaterialsFramework requires Python 3.12.
 """
 
-from .bond import compute_bond_table, ensure_bond_table
-from .elastic import build_elastic_table, ensure_elastic_table, simplex_compositions
-from .settings import build_calculator, mlip_label, mlip_settings
-from .tdb import generate_tdb
+from phasefoundry.atomistic.bond import compute_bond_table, ensure_bond_table
+from phasefoundry.atomistic.elastic import build_elastic_table, ensure_elastic_table, simplex_compositions
+from phasefoundry.atomistic.settings import MLIPSettings, build_calculator, mlip_label, mlip_settings
+from phasefoundry.atomistic.tdb import generate_tdb
 
 __all__ = [
+    "MLIPSettings",
     "build_calculator",
     "build_elastic_table",
     "compute_bond_table",

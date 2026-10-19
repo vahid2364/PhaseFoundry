@@ -34,19 +34,22 @@ Examples:
     ```
 """
 
-from .binary import (
+from phasefoundry.phasefield.binary import (
     CHResult,
-    plot_free_energy_history,
-    plot_gm_with_pfm,
-    plot_result,
     solve_cahn_hilliard_binary,
     stable_dt,
     write_simulation_params,
 )
-from .free_energy import calphad_df_dc, calphad_f, double_well_df_dc, double_well_f
-from .solver import SimResult, solve_cahn_hilliard
-from .spectral import laplacian_operator, wavenumbers
-from .visualize import save_pyvista_3d, save_slices_2d
+from phasefoundry.phasefield.free_energy import calphad_df_dc, calphad_f, double_well_df_dc, double_well_f
+from phasefoundry.phasefield.solver import SimResult, solve_cahn_hilliard
+from phasefoundry.phasefield.spectral import laplacian_operator, wavenumbers
+from phasefoundry.phasefield.visualize import (
+    plot_free_energy_history,
+    plot_gm_with_pfm,
+    plot_result,
+    save_pyvista_3d,
+    save_slices_2d,
+)
 
 __all__ = [
     "CHResult",

@@ -10,10 +10,15 @@ become a list (``thermo.temperatures_C=100,200,300``), and anything else stays a
 from __future__ import annotations
 
 import copy
+import logging
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from phasefoundry.errors import ConfigError
+
+_logger = logging.getLogger(__name__)
 
 
 def load_config(path: str | Path) -> dict:
@@ -27,7 +32,7 @@ def load_config(path: str | Path) -> dict:
 
     Raises:
         FileNotFoundError: If ``path`` does not exist.
-        ValueError: If the file is empty.
+        ConfigError: If the file is empty.
     """
     path = Path(path)
     if not path.exists():
@@ -35,7 +40,7 @@ def load_config(path: str | Path) -> dict:
     with path.open() as fh:
         cfg = yaml.safe_load(fh)
     if cfg is None:
-        raise ValueError(f"Config file is empty: {path}")
+        raise ConfigError(f"Config file is empty: {path}")
     return cfg
 
 
@@ -72,7 +77,7 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
         A deep copy of ``cfg`` with the overrides applied. ``cfg`` itself is not modified.
 
     Raises:
-        ValueError: If an override has no ``=``, or its key path is not in ``cfg``.
+        ConfigError: If an override has no ``=``, or its key path is not in ``cfg``.
 
     Examples:
         ```python
@@ -83,7 +88,7 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
     cfg = copy.deepcopy(cfg)
     for override in overrides:
         if "=" not in override:
-            raise ValueError(f"Invalid --set override {override!r}: expected 'key.subkey=value'")
+            raise ConfigError(f"Invalid --set override {override!r}: expected 'key.subkey=value'")
         key_path, raw_value = override.split("=", 1)
         keys = key_path.strip().split(".")
         value = _coerce(raw_value.strip())
@@ -91,14 +96,14 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
         node = cfg
         for k in keys[:-1]:
             if k not in node:
-                raise ValueError(f"Override key {key_path!r}: section {k!r} not found in config.")
+                raise ConfigError(f"Override key {key_path!r}: section {k!r} not found in config.")
             node = node[k]
         leaf = keys[-1]
         if leaf not in node:
-            raise ValueError(f"Override key {key_path!r}: key {leaf!r} not found in section.")
+            raise ConfigError(f"Override key {key_path!r}: key {leaf!r} not found in section.")
         old = node[leaf]
         node[leaf] = value
-        print(f"  [config] {key_path}: {old!r} → {value!r}")
+        _logger.info("  [config] %s: %r → %r", key_path, old, value)
 
     return cfg
 
@@ -200,7 +205,7 @@ def resolve_paths(cfg: dict, root: Path) -> dict:
     run_name = cfg.get("output", {}).get("run_name", "auto")
     if run_name in ("auto", None, ""):
         cfg["output"]["run_name"] = build_run_name(cfg)
-        print(f"  [config] run_name (auto): {cfg['output']['run_name']!r}")
+        _logger.info("  [config] run_name (auto): %r", cfg["output"]["run_name"])
 
     return cfg
 

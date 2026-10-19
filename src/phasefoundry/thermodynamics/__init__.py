@@ -28,27 +28,38 @@ Examples:
     ```
 """
 
-from .fitting import build_gm_spline_surrogate, build_spline_surrogate, eval_delta_mu, fit_delta_mu, load_fits, save_fits
-from .generate import Quantities, compute_table
-from .grid import grid_summary, simplex_grid
-from .interpolant import GmInterpolant, build_interpolant
-from .plot import (
+import logging
+
+from phasefoundry.thermodynamics.fitting import (
+    build_gm_spline_surrogate,
+    build_spline_surrogate,
+    eval_delta_mu,
+    fit_delta_mu,
+    load_fits,
+    save_fits,
+)
+from phasefoundry.thermodynamics.generate import Quantities, compute_table
+from phasefoundry.thermodynamics.grid import grid_summary, simplex_grid
+from phasefoundry.thermodynamics.interpolant import GmInterpolant, build_interpolant
+from phasefoundry.thermodynamics.plot import (
     plot_as_umap,
     plot_chemical_potential_vs_composition,
     plot_free_energy_vs_composition,
+    plot_phase_diagram,
+    plot_spinodal,
     plot_ternary_spinodal,
 )
-from .spinodal import (
+from phasefoundry.thermodynamics.spinodal import (
     binodal_boundary_binary,
     compute_phase_regions_multi,
     compute_ternary_phase_regions,
-    plot_phase_diagram,
-    plot_spinodal,
     recommend_pfm_params,
     spinodal_boundary_binary,
     spinodal_boundary_multi,
 )
-from .storage import load_table, save_table, table_info
+from phasefoundry.thermodynamics.storage import load_table, save_table, table_info
+
+_logger = logging.getLogger(__name__)
 
 
 def generate_table(
@@ -87,7 +98,7 @@ def generate_table(
         The saved table, as returned by ``load_table(output_path)``.
     """
     grid = simplex_grid(elements, composition_ranges, reference_element, n_points)
-    print(grid_summary(grid, elements))
+    _logger.info("%s", grid_summary(grid, elements))
 
     ordered = [e for e in elements if e != reference_element] + [reference_element]
 
