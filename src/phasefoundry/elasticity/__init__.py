@@ -1,24 +1,12 @@
-"""phasefoundry.elasticity — FFT-based elasticity solver for periodic microstructures
-==================================================================================
+"""FFT-based elasticity for periodic microstructures.
 
-Implements the displacement-formulation iterative scheme from:
-    Gururajan, M.P. & Abinandanan, T.A. (2007).
-    "Phase field study of precipitate rafting under a uniaxial stress."
-    Acta Materialia, 55(15), 5015-5026.
-
-Public API
-----------
-solve_elasticity(c, C_mat, C_ppt, eigenstrain, sigma_applied=None, tol=1e-7, max_iter=2000)
-    Solve the mechanical equilibrium for a two-phase microstructure described
-    by composition field `c` (values in [0,1]).
-get_scheme(name) / InterpolationScheme
-    Composition-interpolation functions (h, alpha, beta and derivatives) for
-    the stiffness and eigenstrain fields. See `interpolation.py`.
-elastic_potential(...) / compute_mu_el_from_result(...)
-    Elastic contribution mu_el to the chemical potential (Eq. 36).
-    Computes ONLY the elastic term -- the chemical potential mu_ch is
-    computed separately by GmInterpolant.mu(c); the caller sums them:
-    ``mu_total = mu_ch + mu_el``. See `elastic_potential.py`.
+The solver uses the displacement formulation of Gururajan and Abinandanan (2007), "Phase
+field study of precipitate rafting under a uniaxial stress", Acta Materialia 55(15),
+5015-5026. ``solve_elasticity`` finds mechanical equilibrium for a composition field,
+``interpolation`` holds the composition-interpolation functions for the stiffness and
+eigenstrain, and ``elastic_potential`` and ``models`` give the elastic contribution μ_el
+to the chemical potential. μ_el is only the elastic term; the caller adds it to the
+chemical potential from ``GmInterpolant.mu``.
 """
 
 from .bond_model import BondLatticeModel

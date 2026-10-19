@@ -1,32 +1,22 @@
-"""phasefoundry.elasticity.sources
-===============================
-Resolve where the elastic-constant table and the lattice-parameter model
-come from, so step 1b (which may compute them) and step 3 (which only reads
-them) agree on the same files.
+"""Locations of the elastic-constant table and the lattice-parameter model.
 
-Config (``simulation.elastic``)
--------------------------------
-    source:        csv | mlip      # csv: read elastic_csv (default)
-                                   # mlip: compute the SQS table with an MLIP (step 1b)
-    lattice_model: sqs | bond      # a(x) from the SQS table (default) or the
-                                   # bond-length model (Tandoc et al. 2025)
-    elastic_csv:   path            # used when source: csv
-    sqs:
-      table: path                  # cache for source: mlip
-                                   # default <data_dir>/sqs_elastic_constants_<model>.csv
-    bond:
-      table: path                  # bond-length matrix CSV
-                                   # default <data_dir>/bond_lengths_<model>.csv
-      crystal_structure: bcc
+Step 1b may compute these files and step 3 only reads them. Both steps resolve the paths
+here, so they always use the same files. The settings live in ``simulation.elastic``:
 
-Public API
-----------
-elastic_source(cfg)              → 'csv' | 'mlip'
-lattice_model_name(cfg)          → 'sqs' | 'bond'
-elastic_table_path(cfg, root)    → Path
-bond_table_path(cfg, root)       → Path
-bond_structure(cfg)              → 'bcc' | 'fcc' | 'hcp'
-load_lattice_model(cfg, root)    → BondLatticeModel | None
+```yaml
+source: csv            # csv (default): read elastic_csv
+                       # mlip: compute the SQS table with an MLIP in step 1b
+lattice_model: sqs     # sqs (default): a(x) from the SQS table
+                       # bond: bond-length model (Tandoc et al. 2025)
+elastic_csv: path      # used when source is csv
+sqs:
+  table: path          # cache file when source is mlip,
+                       # default <data_dir>/sqs_elastic_constants_<model>.csv
+bond:
+  table: path          # bond-length matrix CSV,
+                       # default <data_dir>/bond_lengths_<model>.csv
+  crystal_structure: bcc
+```
 """
 
 from __future__ import annotations
@@ -39,19 +29,33 @@ from .bond_model import BondLatticeModel
 
 
 def _el_cfg(cfg: dict) -> dict:
+    """Return ``simulation.elastic``, or an empty dict if it is missing or empty."""
     return cfg["simulation"].get("elastic", {}) or {}
 
 
 def _resolve(path: str | Path, root: Path) -> Path:
+    """Join a relative path to ``root`` and leave an absolute path unchanged."""
     path = Path(path)
     return path if path.is_absolute() else Path(root) / path
 
 
 def _data_dir(cfg: dict, root: Path) -> Path:
+    """Return ``output.data_dir`` resolved against ``root``."""
     return _resolve(cfg["output"]["data_dir"], root)
 
 
 def elastic_source(cfg: dict) -> str:
+    """Return where the elastic-constant table comes from.
+
+    Args:
+        cfg: Nested config dict.
+
+    Returns:
+        ``"csv"`` (the default) or ``"mlip"``.
+
+    Raises:
+        ValueError: If ``elastic.source`` has any other value.
+    """
     source = str(_el_cfg(cfg).get("source", "csv")).lower()
     if source not in ("csv", "mlip"):
         raise ValueError(f"elastic.source must be 'csv' or 'mlip', got {source!r}")
@@ -59,6 +63,17 @@ def elastic_source(cfg: dict) -> str:
 
 
 def lattice_model_name(cfg: dict) -> str:
+    """Return which model gives the lattice parameter a(x).
+
+    Args:
+        cfg: Nested config dict.
+
+    Returns:
+        ``"sqs"`` (the default) or ``"bond"``.
+
+    Raises:
+        ValueError: If ``elastic.lattice_model`` has any other value.
+    """
     name = str(_el_cfg(cfg).get("lattice_model", "sqs")).lower()
     if name not in ("sqs", "bond"):
         raise ValueError(f"elastic.lattice_model must be 'sqs' or 'bond', got {name!r}")
@@ -66,7 +81,23 @@ def lattice_model_name(cfg: dict) -> str:
 
 
 def elastic_table_path(cfg: dict, root: Path) -> Path:
-    """SQS elastic-constant table: the user CSV, or the MLIP cache file."""
+    """Return the path of the SQS elastic-constant table.
+
+    With ``source: csv`` this is ``elastic.elastic_csv``. With ``source: mlip`` it is
+    ``elastic.sqs.table`` if set, and ``<data_dir>/sqs_elastic_constants_<model>.csv``
+    otherwise.
+
+    Args:
+        cfg: Nested config dict.
+        root: Repository root used to resolve relative paths.
+
+    Returns:
+        Path to the table.
+
+    Raises:
+        ValueError: If ``source`` is ``csv`` and ``elastic.elastic_csv`` is not set, or
+            ``source`` is ``mlip``, no table is set and no MLIP calculator is configured.
+    """
     el_cfg = _el_cfg(cfg)
     if elastic_source(cfg) == "csv":
         csv_rel = el_cfg.get("elastic_csv", "")
@@ -82,7 +113,21 @@ def elastic_table_path(cfg: dict, root: Path) -> Path:
 
 
 def bond_table_path(cfg: dict, root: Path) -> Path:
-    """Bond-length matrix CSV: explicit ``bond.table`` or the MLIP cache file."""
+    """Return the path of the bond-length matrix CSV.
+
+    This is ``elastic.bond.table`` if set, and ``<data_dir>/bond_lengths_<model>.csv``
+    otherwise.
+
+    Args:
+        cfg: Nested config dict.
+        root: Repository root used to resolve relative paths.
+
+    Returns:
+        Path to the bond-length matrix.
+
+    Raises:
+        ValueError: If no table is set and no MLIP calculator is configured.
+    """
     bond_cfg = _el_cfg(cfg).get("bond", {}) or {}
     if bond_cfg.get("table"):
         return _resolve(bond_cfg["table"], root)
@@ -91,6 +136,17 @@ def bond_table_path(cfg: dict, root: Path) -> Path:
 
 
 def bond_structure(cfg: dict) -> str:
+    """Return the crystal structure of the bond-length model.
+
+    The value is ``elastic.bond.crystal_structure``, then ``elastic.sqs.crystal_structure``,
+    then ``"bcc"``, whichever is set first.
+
+    Args:
+        cfg: Nested config dict.
+
+    Returns:
+        Lowercase structure name, e.g. ``"bcc"``.
+    """
     el_cfg = _el_cfg(cfg)
     bond_cfg = el_cfg.get("bond", {}) or {}
     sqs_cfg = el_cfg.get("sqs", {}) or {}
@@ -98,7 +154,19 @@ def bond_structure(cfg: dict) -> str:
 
 
 def load_lattice_model(cfg: dict, root: Path) -> BondLatticeModel | None:
-    """Return the bond model when ``lattice_model: bond``, else None (use SQS a(x))."""
+    """Load the bond-length model if ``lattice_model`` is ``bond``.
+
+    Args:
+        cfg: Nested config dict.
+        root: Repository root used to resolve relative paths.
+
+    Returns:
+        The bond-length model, or ``None`` if ``lattice_model`` is ``sqs`` and a(x) comes
+        from the SQS table.
+
+    Raises:
+        FileNotFoundError: If the bond-length table does not exist.
+    """
     if lattice_model_name(cfg) != "bond":
         return None
     path = bond_table_path(cfg, root)

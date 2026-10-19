@@ -1,24 +1,22 @@
-"""phasefoundry.atomistic.settings
-===============================
-Resolve MLIP calculator settings from the config and build MaterialsFramework
-calculators.
+"""MLIP calculator settings and MaterialsFramework calculator construction.
 
-Config
-------
-    mlip:
-      calculator: orb            # any name in materialsframework.calculators.list_calculators()
-      params:                    # forwarded to the calculator constructor
-        model:  orb-v2
-        device: cpu
-        fmax:   0.01
+Calculator settings come from the top-level ``mlip`` section of the config:
 
-A feature block (``simulation.elastic.sqs``, ``simulation.elastic.bond``,
-``tdb_generation``) may carry its own ``calculator`` / ``params`` keys that
-override the top-level section, e.g. to compute bond lengths with GRACE and
-elastic constants with ORB.  If the override names a different calculator,
-the top-level ``params`` are not inherited.
+```yaml
+mlip:
+  calculator: orb      # any name in materialsframework.calculators.list_calculators()
+  params:              # passed to the calculator constructor
+    model: orb-v2
+    device: cpu
+    fmax: 0.01
+```
 
-Nothing in this module imports MaterialsFramework at import time.
+A feature block (``simulation.elastic.sqs``, ``simulation.elastic.bond`` or
+``tdb_generation``) can set its own ``calculator`` and ``params`` to override that
+section, for example to compute bond lengths with GRACE and elastic constants with ORB.
+A block that names a different calculator does not inherit the top-level ``params``.
+
+This module does not import MaterialsFramework at import time.
 """
 
 from __future__ import annotations
@@ -32,10 +30,15 @@ INSTALL_HINT = (
     "plus the extra for the chosen potential, e.g.\n"
     "    pip install 'materialsframework[orb]'"
 )
+"""Error message shown when MaterialsFramework is not installed."""
 
 
 def require_materialsframework() -> None:
-    """Raise an ImportError with install instructions if MaterialsFramework is missing."""
+    """Check that MaterialsFramework can be imported.
+
+    Raises:
+        ImportError: If MaterialsFramework is not installed. The message says how to install it.
+    """
     try:
         import materialsframework  # noqa: F401
     except ImportError as exc:
@@ -43,9 +46,20 @@ def require_materialsframework() -> None:
 
 
 def mlip_settings(cfg: dict, block: dict | None = None) -> dict:
-    """Merge the top-level ``mlip`` section with a feature-block override.
+    """Merge the top-level ``mlip`` section with a feature block's overrides.
 
-    Returns ``{"calculator": str, "params": dict}``.
+    Args:
+        cfg: Nested config dict.
+        block: Feature block that may set ``calculator`` and ``params``, e.g.
+            ``cfg["simulation"]["elastic"]["sqs"]``. ``None`` uses the top-level section only.
+
+    Returns:
+        ``{"calculator": name, "params": dict}``. If ``block`` names a different calculator
+        from the top-level one, ``params`` comes from ``block`` alone. Otherwise the block's
+        ``params`` are merged over the top-level ones.
+
+    Raises:
+        ValueError: If neither ``block`` nor the ``mlip`` section names a calculator.
     """
     base = cfg.get("mlip") or {}
     block = block or {}
@@ -63,13 +77,31 @@ def mlip_settings(cfg: dict, block: dict | None = None) -> dict:
 
 
 def mlip_label(settings: dict) -> str:
-    """Filesystem-safe tag for cache file names: the model name, else the calculator name."""
+    """Make a filesystem-safe tag for cache file names.
+
+    Args:
+        settings: Output of ``mlip_settings``.
+
+    Returns:
+        The model name from ``params["model"]``, or the calculator name if no model is set.
+        Characters other than letters, digits, ``.``, ``_`` and ``-`` become ``_``.
+    """
     raw = str(settings["params"].get("model") or settings["calculator"])
     return re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip("_")
 
 
 def build_calculator(settings: dict) -> Any:
-    """Instantiate a MaterialsFramework calculator from ``mlip_settings`` output."""
+    """Create a MaterialsFramework calculator.
+
+    Args:
+        settings: Output of ``mlip_settings``.
+
+    Returns:
+        The calculator returned by ``materialsframework.calculators.get_calculator``.
+
+    Raises:
+        ImportError: If MaterialsFramework is not installed.
+    """
     require_materialsframework()
     from materialsframework.calculators import get_calculator
 

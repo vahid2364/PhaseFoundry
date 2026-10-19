@@ -1,16 +1,7 @@
-"""phasefoundry.elasticity.sqs_interpolant
-=======================================
-Load SQS/DFT elastic constant CSV and build N-D interpolants for
-C11, C12, C44, and a_relaxed. Shared between workflow step 1b and
-the runtime elastic models so the same interpolant logic is used
-in both places.
+"""Interpolants for C11, C12, C44 and the lattice parameter from an SQS or DFT table.
 
-Public API
-----------
-load_and_filter(csv_path, elements)       → pd.DataFrame
-build_interpolators(df, ind_elements)     → dict[str, callable]
-build_batch_interpolators(df, ind_els)    → dict[str, BatchInterp]
-query_composition(interps, comp, ind_els) → dict[str, float]
+Workflow step 1b and the elastic models used during a simulation both build their
+interpolants here, so they interpolate the table the same way.
 """
 
 from __future__ import annotations
@@ -23,13 +14,26 @@ import pandas as pd
 
 
 def _element_col(el: str) -> str:
+    """Return the table column that holds an element's mole fraction, e.g. ``x_Nb``."""
     return "x_" + el.capitalize()
 
 
 def load_and_filter(csv_path: Path, elements: list[str]) -> pd.DataFrame:
-    """Load CSV and keep only rows in the active element subspace.
+    """Load an elastic-constant table and keep the rows for the active elements.
 
-    For NbHfV (elements=[NB, HF, V]), rows where x_Ti=0 are kept.
+    Rows that contain any other element of the table (fraction of 1e-6 or more) are
+    dropped. For ``elements=["NB", "HF", "V"]`` and a Hf-Nb-Ti-V table, only the rows with
+    ``x_Ti = 0`` are kept.
+
+    Args:
+        csv_path: Table CSV with ``x_<El>`` composition columns.
+        elements: Active elements, in any case.
+
+    Returns:
+        The matching rows, re-indexed from 0.
+
+    Raises:
+        ValueError: If no row matches.
     """
     df = pd.read_csv(csv_path)
     all_csv_els = [c[2:].upper() for c in df.columns if c.startswith("x_")]
@@ -51,10 +55,21 @@ def load_and_filter(csv_path: Path, elements: list[str]) -> pd.DataFrame:
 
 
 def build_interpolators(df: pd.DataFrame, ind_elements: list[str]) -> dict:
-    """Build scalar interpolators — each callable takes a 1-D composition vector
-    and returns a single float.  Suitable for point queries (step 1b).
+    """Build one scalar interpolant per property for single-composition queries.
 
-    1-D → interp1d; N-D → LinearNDInterpolator + NearestND fallback.
+    Each interpolant takes a 1-D vector of independent mole fractions and returns a float.
+    Binary systems use linear 1-D interpolation, held constant beyond the data. Systems with
+    more components use ``LinearNDInterpolator``; outside the convex hull of the data they
+    warn and return the nearest data point instead. Step 1b uses these for point queries.
+
+    Args:
+        df: Table rows, e.g. from ``load_and_filter``.
+        ind_elements: Independent elements, in the order of the query vector.
+
+    Returns:
+        Interpolants keyed by column name: ``C11_GPa``, ``C12_GPa``, ``C44_GPa``,
+        ``a_relaxed_A``, ``shear_modulus_vrh_GPa``, ``bulk_modulus_vrh_GPa`` and
+        ``poisson_ratio``.
     """
     from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator, interp1d
 
@@ -104,12 +119,22 @@ def build_interpolators(df: pd.DataFrame, ind_elements: list[str]) -> dict:
 
 # batch interpolators (used by LocalVegardModel for field evaluation)
 class BatchInterp:
-    """Vectorized interpolant: accepts (n_pts, n_ind) query array,
-    returns (n_pts,) values.  Outside the convex hull falls back to
-    nearest-neighbour.
+    """Vectorized interpolant of one property over many compositions.
+
+    A call maps independent mole fractions of shape ``(n_pts, n_ind)`` to values of shape
+    ``(n_pts,)``. Binary systems use linear 1-D interpolation, held constant beyond the
+    data. Systems with more components return the nearest data point outside the convex
+    hull, without a warning.
     """
 
     def __init__(self, coords: np.ndarray, vals: np.ndarray, n_ind: int) -> None:
+        """Build the interpolant.
+
+        Args:
+            coords: Independent mole fractions of the data points, shape ``(n_data, n_ind)``.
+            vals: Property values at the data points, shape ``(n_data,)``.
+            n_ind: Number of independent elements.
+        """
         from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator, interp1d
 
         self._n_ind = n_ind
@@ -124,7 +149,14 @@ class BatchInterp:
             self._near = NearestNDInterpolator(coords, vals)
 
     def __call__(self, x: np.ndarray) -> np.ndarray:
-        """X : (n_pts, n_ind) → values : (n_pts,)"""
+        """Evaluate the interpolant.
+
+        Args:
+            x: Independent mole fractions, shape ``(n_pts, n_ind)``.
+
+        Returns:
+            Interpolated values, shape ``(n_pts,)``.
+        """
         x = np.asarray(x, dtype=float)
         if self._n_ind == 1:
             return self._lin(x[:, 0])
@@ -136,9 +168,17 @@ class BatchInterp:
 
 
 def build_batch_interpolators(df: pd.DataFrame, ind_elements: list[str]) -> dict[str, BatchInterp]:
-    """Build batch interpolants for C11, C12, C44, a_relaxed.
-    Each BatchInterp accepts (n_pts, n_ind) and returns (n_pts,).
-    Used by LocalVegardModel for O(N²) field evaluation.
+    """Build a ``BatchInterp`` for C11, C12, C44 and the lattice parameter.
+
+    ``LocalVegardModel`` uses these to evaluate the properties at every grid point of the
+    composition field.
+
+    Args:
+        df: Table rows, e.g. from ``load_and_filter``.
+        ind_elements: Independent elements, in the column order of the query arrays.
+
+    Returns:
+        Interpolants keyed by ``C11_GPa``, ``C12_GPa``, ``C44_GPa`` and ``a_relaxed_A``.
     """
     props = ["C11_GPa", "C12_GPa", "C44_GPa", "a_relaxed_A"]
     n_ind = len(ind_elements)
@@ -147,6 +187,15 @@ def build_batch_interpolators(df: pd.DataFrame, ind_elements: list[str]) -> dict
 
 
 def query_composition(interps: dict, comp: dict, ind_elements: list[str]) -> dict:
-    """Query all scalar interpolants at a given composition dict."""
+    """Evaluate every scalar interpolant at one composition.
+
+    Args:
+        interps: Output of ``build_interpolators``.
+        comp: Mole fractions keyed by uppercase element symbol. Missing elements count as 0.
+        ind_elements: Independent elements, in the order the interpolants expect.
+
+    Returns:
+        Property values keyed by column name.
+    """
     x_ind = np.array([comp.get(el.upper(), 0.0) for el in ind_elements], dtype=float)
     return {prop: fn(x_ind) for prop, fn in interps.items()}

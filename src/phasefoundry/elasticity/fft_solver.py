@@ -1,38 +1,25 @@
-"""phasefoundry.elasticity.fft_solver
-=================================
-FFT-based iterative elasticity solver for periodic microstructures.
+"""FFT-based iterative elasticity solver for periodic microstructures.
 
-Algorithm:  Gururajan & Abinandanan (2007), Acta Materialia 55, 5015-5026.
-            Displacement formulation (Section 2.2), Eqs. (14)-(26).
+The algorithm is the displacement formulation of Gururajan and Abinandanan (2007), Acta
+Materialia 55, 5015-5026 (Section 2.2, Eqs. 14-26):
 
-Key steps
----------
-1. Choose C^eff = (C^matrix + C^precipitate) / 2  as the homogeneous reference.
-2. Build the acoustic (Green's operator) tensor G(k) = [C^eff_ijkl k_j k_l]^{-1}.
-   Explicitly set G(k=0) = 0 to remove the singular mode.
-3. At each iteration:
-     a. Compute the polarisation stress  τ_ij = (C_ij - C^eff_ij) ε_kl - C_ij ε*_kl
-     b. FFT(τ), contract with G to get correction u_hat, IFFT → u
-     c. Update strain from displacement gradient
-     d. Update macroscopic strain E from volume-average equilibrium (Eq. 24-26)
-4. Repeat until |Δε| < tol.
+1. Use C^eff = (C^matrix + C^precipitate) / 2 as the homogeneous reference stiffness.
+2. Build the Green's operator G(k) = [C^eff_ijkl k_j k_l]^-1 in Fourier space, with
+   G(0) = 0 to remove the rigid-body mode.
+3. In each iteration, compute the polarisation stress τ = C(x) : (ε − ε*) − C^eff : ε,
+   solve for the periodic displacement in Fourier space with G, update the strain from
+   its gradient, and update the macroscopic strain E so that the average stress equals
+   the applied stress (Eqs. 24-26).
+4. Stop when the RMS change in strain between iterations falls below ``tol``.
 
-Notation follows the paper:
-    u_i        — displacement field
-    ε_ij       — total strain  = (∂u_i/∂x_j + ∂u_j/∂x_i) / 2
-    ε*_ij      — eigenstrain (stress-free transformation strain)
-    σ_ij       — stress = C_ijkl (ε_kl - ε*_kl)
-    E_ij       — volume-averaged (macroscopic) strain
-    σ^A_ij     — applied (far-field) stress (default: zero)
+Notation follows the paper: u_i is the displacement, ε_ij = (∂u_i/∂x_j + ∂u_j/∂x_i) / 2
+the total strain, ε*_ij the eigenstrain (stress-free transformation strain),
+σ_ij = C_ijkl (ε_kl − ε*_kl) the stress, E_ij the volume-averaged strain, and σ^A_ij the
+applied stress, which is zero by default.
 
-Spatial dimensions
-------------------
-Both 2D (square N×N grid) and 3D (cubic N×N×N grid) are supported.
-The solver detects dimensionality from c.ndim and dispatches accordingly.
-
-Units
------
-Stiffness in Pa, strains dimensionless, stress in Pa.
+The solver works on 2-D and 3-D periodic grids with the same edge length along every
+axis, and takes the dimension from ``c.ndim``. Stiffness and stress share one unit (Pa
+in this package); strains are dimensionless.
 """
 
 from __future__ import annotations
@@ -43,18 +30,14 @@ from .interpolation import InterpolationScheme, get_scheme
 
 
 def build_isotropic_stiffness(G: float, nu: float) -> np.ndarray:
-    """Build the 3×3×3×3 isotropic stiffness tensor.
+    """Build the isotropic stiffness tensor from the shear modulus and Poisson's ratio.
 
-    Parameters
-    ----------
-    G : float
-        Shear modulus [Pa].
-    nu : float
-        Poisson's ratio (dimensionless).
+    Args:
+        G: Shear modulus. The tensor has the same unit.
+        nu: Poisson's ratio.
 
     Returns:
-    -------
-    C : ndarray, shape (3, 3, 3, 3)
+        Stiffness tensor C_ijkl, shape ``(3, 3, 3, 3)``.
     """
     lam = 2.0 * G * nu / (1.0 - 2.0 * nu)
     C = np.zeros((3, 3, 3, 3), dtype=np.float64)
@@ -67,21 +50,19 @@ def build_isotropic_stiffness(G: float, nu: float) -> np.ndarray:
 
 
 def build_cubic_stiffness(C11: float, C12: float, C44: float) -> np.ndarray:
-    """Build the 3×3×3×3 stiffness tensor for a cubic-symmetry crystal.
+    """Build the stiffness tensor of a cubic crystal.
 
-    Zener anisotropy ratio: A_Z = 2 C44 / (C11 - C12)
-        A_Z = 1  →  isotropic
-        A_Z > 1  →  ⟨100⟩ elastically soft, precipitate squares up along x/y axes
-        A_Z < 1  →  ⟨110⟩ elastically soft, precipitate squares up at 45°
+    With the Zener ratio A_Z = 2 C44 / (C11 − C12), A_Z = 1 is isotropic. For A_Z > 1 the
+    ⟨100⟩ directions are elastically soft and precipitates square up along the x and y
+    axes; for A_Z < 1 the ⟨110⟩ directions are soft and precipitates align at 45°.
 
-    Parameters
-    ----------
-    C11, C12, C44 : float
-        Independent cubic elastic constants [Pa or dimensionless].
+    Args:
+        C11: Elastic constant C11.
+        C12: Elastic constant C12.
+        C44: Elastic constant C44. All three share one unit, which the tensor keeps.
 
     Returns:
-    -------
-    C : ndarray (3, 3, 3, 3)
+        Stiffness tensor C_ijkl, shape ``(3, 3, 3, 3)``.
     """
     C = np.zeros((3, 3, 3, 3), dtype=np.float64)
     for i in range(3):
@@ -95,18 +76,16 @@ def build_cubic_stiffness(C11: float, C12: float, C44: float) -> np.ndarray:
 
 
 def _interp_stiffness(c: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, scheme: InterpolationScheme) -> np.ndarray:
-    """Spatially varying stiffness:  C(x) = (1 - h(c)) C^mat + h(c) C^ppt
+    """Blend the matrix and precipitate stiffness: C(x) = (1 − h(c)) C^mat + h(c) C^ppt.
 
-    Parameters
-    ----------
-    c      : ndarray (*spatial)      composition field in [0, 1]
-    C_mat  : ndarray (3,3,3,3)       matrix stiffness
-    C_ppt  : ndarray (3,3,3,3)       precipitate stiffness
-    scheme : InterpolationScheme
+    Args:
+        c: Composition field with values in [0, 1].
+        C_mat: Matrix stiffness, shape ``(3, 3, 3, 3)``.
+        C_ppt: Precipitate stiffness, shape ``(3, 3, 3, 3)``.
+        scheme: Interpolation scheme that supplies h(c).
 
     Returns:
-    -------
-    C_field : ndarray (*spatial, 3, 3, 3, 3)
+        Stiffness field, shape ``(*c.shape, 3, 3, 3, 3)``.
     """
     h = scheme.h(c)  # shape (*spatial,)
     dC = C_ppt - C_mat  # (3,3,3,3)
@@ -114,22 +93,18 @@ def _interp_stiffness(c: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, schem
 
 
 def _build_green_operator(C_eff: np.ndarray, shape: tuple[int, ...], Lx: float) -> np.ndarray:
-    """Build the Green's operator (acoustic tensor inverse) in Fourier space.
+    """Build the Green's operator, the inverse acoustic tensor, in Fourier space.
 
-    G_ik(k) = [A_ik(k)]^{-1},  A_ik = C^eff_ijkl k_j k_l
+    G_ik(k) = [A_ik(k)]^-1 with A_ik = C^eff_ijkl k_j k_l. The k = 0 entry is set to zero
+    to remove the rigid-body mode.
 
-    Supports 2D (shape=(Nx,Ny)) and 3D (shape=(Nx,Ny,Nz)).
-    The k=0 mode is explicitly set to zero (removes singular rigid-body mode).
-
-    Parameters
-    ----------
-    C_eff : ndarray (3,3,3,3)   effective (reference) stiffness
-    shape : tuple               spatial grid shape, e.g. (N,N) or (N,N,N)
-    Lx    : float               physical domain size [m] (assumed same in all axes)
+    Args:
+        C_eff: Reference stiffness. Only its leading ``(d, d, d, d)`` block is used.
+        shape: Grid shape, ``(N, N)`` or ``(N, N, N)``.
+        Lx: Domain edge length, the same along every axis.
 
     Returns:
-    -------
-    G : ndarray (*shape, d, d)  where d = len(shape)
+        Green's operator, shape ``(*shape, d, d)`` with ``d = len(shape)``.
     """
     d = len(shape)
     # Build wave-vector arrays for each axis
@@ -153,10 +128,13 @@ def _build_green_operator(C_eff: np.ndarray, shape: tuple[int, ...], Lx: float) 
 
 
 def _voigt_setup(d: int):
-    """Return Voigt index pairs and (tensor→voigt, voigt→tensor) helpers for dim d.
+    """Return the Voigt index pairs and conversion functions for dimension ``d``.
 
-    2D: 3 components  [11, 22, 12]
-    3D: 6 components  [11, 22, 33, 23, 13, 12]
+    In 2-D the components are ordered 11, 22, 12; in 3-D they are 11, 22, 33, 23, 13, 12.
+
+    Returns:
+        ``(pairs, tensor_to_voigt, voigt_to_tensor)``. The two functions convert a
+        symmetric ``(d, d)`` tensor to its Voigt vector and back.
     """
     if d == 2:
         pairs = [(0, 0), (1, 1), (0, 1)]
@@ -192,65 +170,52 @@ def solve_elasticity(
     C_eff_override: np.ndarray | None = None,
     C_field_override: np.ndarray | None = None,
 ) -> dict:
-    """Solve mechanical equilibrium for a 2D or 3D periodic microstructure.
+    """Solve mechanical equilibrium for a 2-D or 3-D periodic microstructure.
 
-    Parameters
-    ----------
-    c : ndarray (N, N) or (N, N, N)
-        Composition field (0 = matrix, 1 = precipitate).  Values in [0, 1].
-    C_mat : ndarray (3, 3, 3, 3)
-        Stiffness tensor of the matrix phase.
-    C_ppt : ndarray (3, 3, 3, 3)
-        Stiffness tensor of the precipitate phase.
-    eigenstrain : ndarray (d, d) or None
-        Constant stress-free strain tensor ε* applied via the interpolation
-        scheme: eps*(x) = h(c(x)) × eigenstrain.  Mutually exclusive with
-        ``eps_star_field``; provide exactly one.
-    sigma_applied : ndarray (d, d) or None
-        Applied (far-field) average stress.  Default: zero (stress-free BC).
-    Lx : float
-        Physical domain size [m] (same in all spatial axes).
-    tol : float
-        Convergence criterion on the RMS strain change per iteration.
-    max_iter : int
-        Maximum number of iterations.
-    verbose : bool
-        Print convergence info every 100 iterations.
-    scheme : InterpolationScheme or str
-        Composition-interpolation scheme for the stiffness and eigenstrain
-        fields.  Default "cubic" matches the paper.
-    u_init : ndarray (*spatial, d) or None
-        Warm-start displacement field from the previous solve.  When supplied
-        the iteration starts from u_init instead of zero.
-    eps_star_field : ndarray (*spatial, d, d) or None
-        Precomputed spatially varying eigenstrain field.  When provided it is
-        used directly for ε*(x) instead of h(c) × eigenstrain, enabling the
-        tensorial Vegard formulation for multi-component systems::
-
-            eps_star_field = einsum("k...,kij->...ij", c_all, Lambda)
-
-        Mutually exclusive with ``eigenstrain``; provide exactly one.
-    C_eff_override : ndarray (3,3,3,3) or None
-        If provided, used as the homogeneous reference stiffness for the
-        Green's operator instead of the default ½(C_mat + C_ppt).
-        Pass ``model.C_eff(C_mat, C_ppt)`` when using LocalVegardModel so
-        the reference stiffness matches the parent-phase composition.
-    C_field_override : ndarray (*spatial, 3,3,3,3) or None
-        If provided, used directly as the spatially varying stiffness field
-        C(x) instead of the default h(c)-blend between C_mat and C_ppt.
-        Pass ``model.C_field(c_all, C_mat, C_ppt)`` for LocalVegardModel.
+    Args:
+        c: Composition field, 0 for matrix and 1 for precipitate, shape ``(N, N)`` or
+            ``(N, N, N)``.
+        C_mat: Matrix stiffness, shape ``(3, 3, 3, 3)``.
+        C_ppt: Precipitate stiffness, shape ``(3, 3, 3, 3)``.
+        eigenstrain: Eigenstrain tensor ε* of the precipitate; its leading ``(d, d)`` block
+            is used. The field is ε*(x) = h(c(x)) ε*. Ignored when ``eps_star_field`` is
+            given; one of the two is required.
+        sigma_applied: Average applied stress, shape ``(d, d)``. Defaults to zero
+            (traction-free).
+        Lx: Domain edge length, the same along every axis. The displacement is returned in
+            this unit.
+        tol: Convergence threshold on the RMS strain change between iterations.
+        max_iter: Maximum number of iterations.
+        verbose: Print the residual every 100 iterations and at the end.
+        scheme: Interpolation scheme, or its name, for the stiffness and eigenstrain fields.
+            The default ``"cubic"`` is the paper's choice.
+        u_init: Starting displacement, shape ``(*c.shape, d)``. The solver treats it as the
+            periodic part of the displacement. Defaults to zero.
+        eps_star_field: Precomputed eigenstrain field ε*(x), shape ``(*c.shape, d, d)``,
+            used instead of h(c) ε*. The tensorial Vegard form, for example, passes
+            ``einsum("k...,kij->...ij", c_all, Lambda)``.
+        C_eff_override: Reference stiffness for the Green's operator, replacing
+            ``(C_mat + C_ppt) / 2``. Pass ``model.C_eff(C_mat, C_ppt)`` with
+            ``LocalVegardModel`` so the reference matches the parent composition.
+        C_field_override: Stiffness field C(x), shape ``(*c.shape, 3, 3, 3, 3)``, replacing
+            the h(c) blend of ``C_mat`` and ``C_ppt``. Pass
+            ``model.C_field(c_all, C_mat, C_ppt)`` with ``LocalVegardModel``.
 
     Returns:
-    -------
-    result : dict with keys
-        "strain"           : ndarray (*spatial, d, d)  total strain ε_ij(x)
-        "elastic_strain"   : ndarray (*spatial, d, d)  ε^el = ε - ε*(x)
-        "stress"           : ndarray (*spatial, d, d)  Cauchy stress σ_ij(x)
-        "displacement"     : ndarray (*spatial, d)     displacement u_i(x)
-        "E"                : ndarray (d, d)            macroscopic strain
-        "n_iter"           : int                       iterations to convergence
-        "residual"         : float                     final RMS residual
-        "residual_history" : list[float]               RMS Δε per iteration
+        A dict with these entries, where ``s`` is ``c.shape``:
+
+        - ``"strain"``: total strain ε(x), shape ``(*s, d, d)``.
+        - ``"elastic_strain"``: ε(x) − ε*(x), shape ``(*s, d, d)``.
+        - ``"stress"``: Cauchy stress σ(x), shape ``(*s, d, d)``.
+        - ``"displacement"``: total displacement, the periodic part plus E · x, shape
+          ``(*s, d)``.
+        - ``"E"``: macroscopic strain, shape ``(d, d)``.
+        - ``"n_iter"``: number of iterations run.
+        - ``"residual"``: RMS strain change in the last iteration.
+        - ``"residual_history"``: RMS strain change of every iteration.
+
+    Raises:
+        ValueError: If neither ``eigenstrain`` nor ``eps_star_field`` is given.
     """
     spatial_shape = c.shape  # (N,N) or (N,N,N)
     d = c.ndim  # 2 or 3

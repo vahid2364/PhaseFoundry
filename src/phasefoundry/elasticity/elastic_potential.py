@@ -1,30 +1,23 @@
-"""phasefoundry.elasticity.elastic_potential
-=========================================
-Elastic contribution to the chemical potential, μ_el (Eq. 36 in
-Gururajan & Abinandanan, 2007).
+"""Elastic contribution μ_el to the chemical potential (Gururajan and Abinandanan 2007, Eq. 36).
 
-This module computes ONLY the elastic term.  It knows nothing about the
-chemical (thermodynamic) potential μ_ch -- that is computed independently
-by ``GmInterpolant.mu(c)`` in ``phasefoundry.thermodynamics.interpolant``.
-The two are summed by the caller (the Cahn-Hilliard timestep loop in
-``phasefoundry.phasefield.solver``):
+This module computes only the elastic term. The chemical part μ_ch comes from
+``GmInterpolant.mu`` in ``phasefoundry.thermodynamics.interpolant``, and the
+Cahn-Hilliard loop in ``phasefoundry.phasefield.solver`` adds the two:
+``mu_total = mu_ch + mu_el``.
 
-    mu_total = mu_ch + mu_el
+The paper's Eq. 36 is
 
-Governing equation (paper Eq. 36)
------------------------------------
-    N_V * mu_el(x) = 1/2 * alpha'(c) * ΔC_ijkl * eps_el_kl * eps_el_ij
-                     - beta'(c) * eps_T * delta_ij * sigma_ij
+    N_V μ_el(x) = ½ α'(c) ΔC_ijkl ε^el_kl ε^el_ij − β'(c) ε_T δ_ij σ_ij
 
-where eps_el = eps - eps0(c) is the elastic strain, eps0(c) = beta(c) * eigenstrain
-is the (composition-dependent) eigenstrain field, and sigma = C(c) : eps_el is
-the Cauchy stress -- both produced by ``solve_elasticity()``.
+where ε^el = ε − ε0(c) is the elastic strain, ε0(c) = β(c) ε* is the eigenstrain field,
+and σ = C(c) : ε^el is the Cauchy stress, both from ``solve_elasticity``. Here the second
+term is the full contraction ε*_ij σ_ij instead of the purely dilatational
+ε_T δ_ij σ_ij = ε_T tr(σ). The two agree when ε* = ε_T I, and the tensor form also
+handles non-dilatational (for example tetragonal) misfit.
 
-We generalize the second term from the paper's purely-dilatational form
-(eps_T * delta_ij * sigma_ij = eps_T * tr(sigma)) to a full tensor
-contraction `eigenstrain_ij * sigma_ij`, which reduces exactly to the
-paper's expression when eigenstrain = eps_T * I, but also supports
-non-dilatational (e.g. tetragonal) misfit strains.
+``elastic_strain``, ``elastic_free_energy_density``, ``elastic_potential`` and
+``compute_mu_el_from_result`` handle 2-D fields only. ``build_vegard_tensor`` and
+``compute_mu_el_tensorial`` work in 2-D and 3-D.
 """
 
 from __future__ import annotations
@@ -35,29 +28,20 @@ from .interpolation import InterpolationScheme, get_scheme
 
 
 def build_vegard_tensor(alpha: dict, ind_elements: list[str], ndim: int = 2) -> np.ndarray:
-    """Build the Vegard eigenstrain coefficient tensor Λ, shape (N_ind, ndim, ndim).
+    """Build the Vegard eigenstrain coefficient tensor Λ.
 
-    Λ[k] = α_k × I_d,   where α_k = (a_k − a_ref) / a_ref
+    Λ[k] = α_k I, with α_k = (a_k − a_ref) / a_ref. Isotropic Vegard's law gives a scaled
+    identity for each element, with no shear part. The eigenstrain field is then
+    ε*(x) = Σ_k Λ[k] c_k(x), i.e. ``einsum("k...,kij->...ij", c, Lambda)``.
 
-    For isotropic Vegard's law the per-element eigenstrain coefficient is a
-    scaled identity (no shear component).  The total eigenstrain field at each
-    pixel is then::
-
-        eps*(x) = Σ_k  Λ[k] × c_k(x)   →  einsum('kxy,kij->xyij', c, Lambda)
-
-    Parameters
-    ----------
-    alpha : dict  {ELEMENT_UPPER: float}
-        Per-element Vegard coefficient α_k = (a_k − a_ref) / a_ref.
-        Computed by step 1b and stored in elastic_params.yaml.
-    ind_elements : list[str]
-        Independent elements in the same order as the composition fields c[k].
-    ndim : int
-        Spatial dimension (2 for 2-D, 3 for 3-D).
+    Args:
+        alpha: Vegard coefficient α_k of each element, keyed by uppercase symbol. Step 1b
+            computes these and stores them in ``elastic_params.yaml``.
+        ind_elements: Independent elements, in the order of the composition fields.
+        ndim: Spatial dimension, 2 or 3.
 
     Returns:
-    -------
-    Lambda : ndarray, shape (N_ind, ndim, ndim)
+        Λ, shape ``(n_ind, ndim, ndim)``.
     """
     N_ind = len(ind_elements)
     Lambda = np.zeros((N_ind, ndim, ndim), dtype=np.float64)
@@ -67,31 +51,21 @@ def build_vegard_tensor(alpha: dict, ind_elements: list[str], ndim: int = 2) -> 
 
 
 def compute_mu_el_tensorial(sigma: np.ndarray, Lambda: np.ndarray, N_V: float) -> np.ndarray:
-    """Elastic chemical potential in the tensorial Vegard formulation.
+    """Return the elastic chemical potential in the tensorial Vegard form.
 
-    μ_el_k(x) = −(1/N_V) × σ(x) : Λ_k
-               = −(1/N_V) × σ_ij(x) × Λ_{k,ij}
+    μ_el,k(x) = −σ(x) : Λ_k / N_V is the variational derivative δF_el/δc_k for a linear
+    (Vegard) coupling between composition and eigenstrain. The stiffness-contrast term
+    (term 1 of Eq. 36) is neglected, which holds when the stiffness contrast between the
+    phases is small compared with the eigenstrain coupling.
 
-    This is the variational derivative δF_el/δc_k of the elastic free energy
-    with respect to the k-th composition field, for a linear (Vegard) coupling
-    between composition and eigenstrain.  The stiffness-contrast term (term 1
-    in G&A Eq. 36) is omitted here because it is negligible when the stiffness
-    contrast between phases is small relative to the eigenstrain coupling.
-
-    Parameters
-    ----------
-    sigma  : ndarray, shape (*spatial, d, d)
-        Cauchy stress field from ``solve_elasticity()``.
-    Lambda : ndarray, shape (N_ind, d, d)
-        Vegard eigenstrain coefficient tensor (from ``build_vegard_tensor``).
-    N_V    : float
-        Molar density [mol/m³] = 1/V_m.  Converts Pa → J/mol so the result
-        can be added directly to μ_ch [J/mol].
+    Args:
+        sigma: Cauchy stress from ``solve_elasticity``, shape ``(*spatial, d, d)``.
+        Lambda: Vegard tensor from ``build_vegard_tensor``, shape ``(n_ind, d, d)``.
+        N_V: Molar density in mol/m³ (1 / molar volume). Dividing by it converts Pa to
+            J/mol, so the result can be added to μ_ch.
 
     Returns:
-    -------
-    mu_el : ndarray, shape (N_ind, *spatial)
-        Elastic chemical potential for each independent element [J/mol].
+        μ_el in J/mol for each independent element, shape ``(n_ind, *spatial)``.
     """
     return -np.einsum("...ij,kij->k...", sigma, Lambda) / N_V
 
@@ -99,23 +73,17 @@ def compute_mu_el_tensorial(sigma: np.ndarray, Lambda: np.ndarray, N_V: float) -
 def elastic_strain(
     strain: np.ndarray, c: np.ndarray, eigenstrain: np.ndarray, scheme: InterpolationScheme | str = "cubic"
 ) -> np.ndarray:
-    """Elastic strain  eps^el(x) = strain(x) - beta(c(x)) * eigenstrain.
+    """Return the elastic strain ε^el(x) = ε(x) − β(c(x)) ε* of a 2-D field.
 
-    Parameters
-    ----------
-    strain : ndarray (N, N, 2, 2)
-        Total strain field (from solve_elasticity()["strain"]).
-    c : ndarray (N, N)
-        Composition field.
-    eigenstrain : ndarray (2, 2) or (3, 3)
-        Stress-free transformation strain tensor; only the 2x2 in-plane
-        block is used.
-    scheme : InterpolationScheme or str
-        Composition-interpolation scheme (default "cubic", matches the paper).
+    Args:
+        strain: Total strain, e.g. ``solve_elasticity(...)["strain"]``, shape ``(N, N, 2, 2)``.
+        c: Composition field, shape ``(N, N)``.
+        eigenstrain: Eigenstrain tensor ε*, shape ``(2, 2)`` or ``(3, 3)``. Only the
+            in-plane 2 × 2 block is used.
+        scheme: Interpolation scheme, or its name. Defaults to the paper's ``"cubic"``.
 
     Returns:
-    -------
-    eps_el : ndarray (N, N, 2, 2)
+        Elastic strain, shape ``(N, N, 2, 2)``.
     """
     if isinstance(scheme, str):
         scheme = get_scheme(scheme)
@@ -125,20 +93,17 @@ def elastic_strain(
 
 
 def elastic_free_energy_density(elastic_strain_field: np.ndarray, stress: np.ndarray) -> np.ndarray:
-    """Elastic free-energy density  f_el(x) = 1/2 * sigma_ij * eps^el_ij  (Eq. 8).
+    """Return the elastic free-energy density f_el(x) = ½ σ_ij ε^el_ij (Eq. 8) of a 2-D field.
 
-    Not used in the Cahn-Hilliard timestep itself -- this exists purely so
-    that mu_el can be validated against a finite-difference derivative of
-    the total elastic energy  F_el = (1/N_V) * integral(f_el) dOmega.
+    The Cahn-Hilliard step does not use it. It is here to check μ_el against a
+    finite-difference derivative of the total elastic energy F_el = (1 / N_V) ∫ f_el dΩ.
 
-    Parameters
-    ----------
-    elastic_strain_field : ndarray (N, N, 2, 2)
-    stress : ndarray (N, N, 2, 2)
+    Args:
+        elastic_strain_field: Elastic strain, shape ``(N, N, 2, 2)``.
+        stress: Cauchy stress, shape ``(N, N, 2, 2)``.
 
     Returns:
-    -------
-    f_el : ndarray (N, N)
+        Energy density in the unit of stress, shape ``(N, N)``.
     """
     return 0.5 * np.einsum("xyij,xyij->xy", stress, elastic_strain_field)
 
@@ -153,34 +118,24 @@ def elastic_potential(
     N_V: float = 1.0,
     scheme: InterpolationScheme | str = "cubic",
 ) -> np.ndarray:
-    """Elastic contribution to the chemical potential, mu_el(x) (Eq. 36).
+    """Return the elastic contribution μ_el(x) to the chemical potential (Eq. 36) of a 2-D field.
 
-    mu_el(x) = [ 1/2 * alpha'(c) * (eps^el : ΔC : eps^el)
-                 - beta'(c) * (eigenstrain : sigma) ] / N_V
+    μ_el(x) = [½ α'(c) (ε^el : ΔC : ε^el) − β'(c) (ε* : σ)] / N_V
 
-    Parameters
-    ----------
-    c : ndarray (N, N)
-        Composition field.
-    strain : ndarray (N, N, 2, 2)
-        Total strain field (solve_elasticity()["strain"]).
-    stress : ndarray (N, N, 2, 2)
-        Cauchy stress field (solve_elasticity()["stress"]).
-    C_mat, C_ppt : ndarray (3, 3, 3, 3)
-        Matrix / precipitate stiffness tensors.
-    eigenstrain : ndarray (2, 2) or (3, 3)
-        Stress-free transformation strain tensor.
-    N_V : float
-        Molar-volume-like normalization constant (matches the convention
-        used for F_ch in the rest of the codebase; default 1.0).
-    scheme : InterpolationScheme or str
-        Composition-interpolation scheme (default "cubic").
+    Args:
+        c: Composition field, shape ``(N, N)``.
+        strain: Total strain, ``solve_elasticity(...)["strain"]``, shape ``(N, N, 2, 2)``.
+        stress: Cauchy stress, ``solve_elasticity(...)["stress"]``, shape ``(N, N, 2, 2)``.
+        C_mat: Matrix stiffness, shape ``(3, 3, 3, 3)``.
+        C_ppt: Precipitate stiffness, shape ``(3, 3, 3, 3)``.
+        eigenstrain: Eigenstrain tensor ε*, shape ``(2, 2)`` or ``(3, 3)``.
+        N_V: Molar density in mol/m³. The default of 1.0 leaves the result in the unit of
+            stress.
+        scheme: Interpolation scheme, or its name. Defaults to ``"cubic"``.
 
     Returns:
-    -------
-    mu_el : ndarray (N, N)
-        Elastic chemical potential, same units as mu_ch, ready to be added
-        to it by the caller: ``mu_total = mu_ch + mu_el``.
+        μ_el, shape ``(N, N)``. With ``N_V`` in mol/m³ and stresses in Pa it is in J/mol,
+        ready to add to μ_ch.
     """
     if isinstance(scheme, str):
         scheme = get_scheme(scheme)
@@ -208,25 +163,22 @@ def compute_mu_el_from_result(
     N_V: float = 1.0,
     scheme: InterpolationScheme | str = "cubic",
 ) -> np.ndarray:
-    """Compute mu_el directly from a ``solve_elasticity()`` result dict.
+    """Compute μ_el of a 2-D field from a ``solve_elasticity`` result.
 
-    Equivalent to::
+    This is ``elastic_potential`` with ``result["strain"]`` and ``result["stress"]`` as
+    the strain and stress.
 
-        elastic_potential(c, result["strain"], result["stress"], C_mat, C_ppt, eigenstrain, N_V, scheme)
-
-    Parameters
-    ----------
-    c : ndarray (N, N)
-    result : dict
-        Output of ``phasefoundry.elasticity.solve_elasticity()``.
-    C_mat, C_ppt : ndarray (3, 3, 3, 3)
-    eigenstrain : ndarray (2, 2) or (3, 3)
-    N_V : float
-    scheme : InterpolationScheme or str
+    Args:
+        c: Composition field, shape ``(N, N)``.
+        result: Output of ``solve_elasticity``.
+        C_mat: Matrix stiffness, shape ``(3, 3, 3, 3)``.
+        C_ppt: Precipitate stiffness, shape ``(3, 3, 3, 3)``.
+        eigenstrain: Eigenstrain tensor ε*, shape ``(2, 2)`` or ``(3, 3)``.
+        N_V: Molar density in mol/m³.
+        scheme: Interpolation scheme, or its name.
 
     Returns:
-    -------
-    mu_el : ndarray (N, N)
+        μ_el, shape ``(N, N)``.
     """
     return elastic_potential(
         c,

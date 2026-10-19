@@ -1,29 +1,21 @@
-"""phasefoundry.atomistic.elastic
-==============================
-Compute the SQS elastic-constant table with an MLIP via MaterialsFramework.
+"""SQS elastic-constant table computed with an MLIP through MaterialsFramework.
 
-For every composition on a regular simplex grid over the system elements:
+Each composition on a regular simplex grid over the system elements goes through five
+steps:
 
-  1. build a BCC/FCC SQS supercell (MaterialsFramework ``SqsGenerator``)
-  2. relax cell and positions with the MLIP
-  3. a_relaxed = (V / n_cells)^(1/3)      volume-averaged cubic lattice parameter
-  4. C11, C12, C44 and VRH moduli from ``CubicElasticConstantsAnalyzer``
-     (uniform / orthorhombic / monoclinic energy-strain fits)
-  5. biaxial modulus M = E / (1 − ν)
+1. Build a BCC or FCC SQS supercell with MaterialsFramework's ``SqsGenerator``.
+2. Relax the cell and the atomic positions with the MLIP.
+3. Take the volume-averaged cubic lattice parameter, a_relaxed = (V / n_cells)^(1/3).
+4. Get C11, C12, C44 and the Voigt-Reuss-Hill moduli from
+   ``CubicElasticConstantsAnalyzer`` (uniform, orthorhombic and monoclinic energy-strain
+   fits).
+5. Compute the biaxial modulus M = E / (1 − ν).
 
-Rows are appended to the cache CSV as each composition finishes, so an
-interrupted run resumes where it stopped.  A ``<table>.meta.yaml`` sidecar
-records the calculator and SQS settings; appending to a table built with
-different settings is refused.
-
-The CSV schema is the one the MaterialsFramework-generated tables in
-``data/`` use, so ``phasefoundry.elasticity.sqs_interpolant`` reads both.
-
-Public API
-----------
-simplex_compositions(n_elements, step)            → np.ndarray
-build_elastic_table(elements, path, settings, …)  → pd.DataFrame
-ensure_elastic_table(cfg, root)                   → Path
+Rows are appended to the CSV as each composition finishes, so an interrupted run picks
+up where it stopped. A ``<table>.meta.yaml`` file records the calculator and SQS
+settings, and a table built with different settings is never extended. The columns
+match the MaterialsFramework tables in ``data/``, so
+``phasefoundry.elasticity.sqs_interpolant`` reads either kind.
 """
 
 from __future__ import annotations
@@ -51,18 +43,28 @@ PROPERTY_COLUMNS = [
     "biaxial_modulus_M_GPa",
     "sqs_objective",
 ]
+"""Property columns of the table, written after the ``x_<El>`` and ``m_<El>`` columns."""
 
 ATOMS_PER_CELL = {"bcc": 2, "fcc": 4}
+"""Atoms per conventional cubic cell, used to count the unit cells in a relaxed SQS."""
 
 
 def simplex_compositions(n_elements: int, step: float) -> np.ndarray:
-    """All compositions on the simplex with mole fractions in multiples of *step*.
+    """List the compositions on the simplex whose mole fractions are multiples of ``step``.
 
-    Built from integer partitions so every row sums to exactly 1 (no
-    floating-point points lost at the simplex boundary).
+    The grid is built from integer partitions, so each row sums to exactly 1 and no
+    points on the simplex boundary are lost to rounding.
 
-    Returns (n_points, n_elements); step=0.05 gives 21 / 231 / 1771 points
-    for 2 / 3 / 4 elements.
+    Args:
+        n_elements: Number of elements.
+        step: Grid spacing in mole fraction. ``1 / step`` must be an integer.
+
+    Returns:
+        Array of shape ``(n_points, n_elements)``. With ``step=0.05`` there are 21, 231
+        and 1771 points for 2, 3 and 4 elements.
+
+    Raises:
+        ValueError: If ``step`` does not divide 1 evenly.
     """
     n = round(1.0 / step)
     if n < 1 or abs(n * step - 1.0) > 1e-9:
@@ -72,15 +74,26 @@ def simplex_compositions(n_elements: int, step: float) -> np.ndarray:
 
 
 def _row_key(fractions: np.ndarray) -> tuple[int, ...]:
+    """Round mole fractions to integer millionths so rows can be compared as set keys."""
     return tuple(int(round(v * 1e6)) for v in fractions)
 
 
 def _meta_path(path: Path) -> Path:
+    """Return the metadata file path that belongs to a table."""
     return path.with_suffix(".meta.yaml")
 
 
 def _check_meta(path: Path, meta: dict) -> None:
-    """Refuse to extend a table built with different settings."""
+    """Make sure an existing table was built with the same settings.
+
+    Args:
+        path: Table CSV path. Nothing is checked if the file does not exist.
+        meta: Settings of the current run.
+
+    Raises:
+        ValueError: If the table exists without a metadata file, or its metadata differs
+            from ``meta``.
+    """
     if not path.exists():
         return
     mpath = _meta_path(path)
@@ -110,6 +123,12 @@ def _compute_point(
     crystal_structure: str,
     supercell: tuple[int, int, int],
 ) -> dict:
+    """Generate, relax and analyse one SQS and return its table row.
+
+    Returns:
+        The ``x_<El>`` mole fractions, the ``m_<El>`` atom counts in the relaxed cell, and
+        the ``PROPERTY_COLUMNS`` values.
+    """
     from pymatgen.core import Composition
 
     present = {el: x for el, x in zip(symbols, fractions) if x > 0}
@@ -155,23 +174,32 @@ def build_elastic_table(
     strain_step: float = 0.01,
     calculator: Any = None,
 ) -> pd.DataFrame:
-    """Compute (or complete) the SQS elastic-constant table at *path*.
+    """Compute the SQS elastic-constant table at ``path``, or fill in its missing rows.
 
-    Parameters
-    ----------
-    elements          : system elements (any case), e.g. ['NB', 'HF', 'V']
-    path              : cache CSV; existing rows are kept, missing grid points computed
-    settings          : ``mlip_settings`` output, recorded in the metadata sidecar
-    step              : grid spacing in mole fraction
-    crystal_structure : 'bcc' or 'fcc' (cubic elastic constants only)
-    supercell         : SQS supercell repeats of the conventional cell
-    sqs_iterations    : sqsgenerator iterations (None → MaterialsFramework default)
-    eos, delta_max, strain_step : ``CubicElasticConstantsAnalyzer`` settings
-    calculator        : pre-built calculator (default: built from *settings*)
+    A composition that fails is skipped with a warning, and running again retries it.
+
+    Args:
+        elements: System elements, in any case, e.g. ``["NB", "HF", "V"]``.
+        path: Table CSV. Existing rows are kept and only missing grid points are computed.
+        settings: Output of ``mlip_settings``, stored in the metadata file.
+        step: Grid spacing in mole fraction.
+        crystal_structure: ``"bcc"`` or ``"fcc"``. Only cubic elastic constants are supported.
+        supercell: SQS supercell size in repeats of the conventional cell.
+        sqs_iterations: Number of SQS search iterations. ``None`` uses the MaterialsFramework
+            default.
+        eos: Equation of state that ``CubicElasticConstantsAnalyzer`` fits.
+        delta_max: Largest deformation that ``CubicElasticConstantsAnalyzer`` applies.
+        strain_step: Deformation step of ``CubicElasticConstantsAnalyzer``.
+        calculator: Calculator to use. Defaults to one built from ``settings``.
 
     Returns:
-    -------
-    pd.DataFrame with all rows of the table.
+        Every row of the table, including rows computed in earlier runs.
+
+    Raises:
+        ImportError: If MaterialsFramework is not installed.
+        ValueError: If ``crystal_structure`` is not cubic, or the existing table was built
+            with different settings.
+        RuntimeError: If no composition could be computed.
     """
     require_materialsframework()
     from materialsframework.analysis.cubic_elastic_constants import CubicElasticConstantsAnalyzer
@@ -247,7 +275,16 @@ def build_elastic_table(
 
 
 def ensure_elastic_table(cfg: dict, root: Path, calculator: Any = None) -> Path:
-    """Build or complete the table described by ``simulation.elastic.sqs``; return its path."""
+    """Build or complete the table configured in ``simulation.elastic.sqs``.
+
+    Args:
+        cfg: Nested config dict.
+        root: Repository root used to resolve relative paths.
+        calculator: Calculator to use. Defaults to one built from the config.
+
+    Returns:
+        Path to the table CSV.
+    """
     from phasefoundry.elasticity.sources import elastic_table_path
 
     sqs_cfg = cfg["simulation"]["elastic"].get("sqs", {}) or {}

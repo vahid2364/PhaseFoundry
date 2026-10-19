@@ -1,18 +1,10 @@
-"""phasefoundry.atomistic.bond
-===========================
-Compute the bond-length matrix for ``BondLatticeModel`` with an MLIP, using
-MaterialsFramework's ``BondLatticeParameter`` (Tandoc et al., Materialia 2025):
+"""Bond-length matrix for ``BondLatticeModel``, computed with an MLIP.
 
-  d_ii from relaxed pure cells        (BCC / FCC / HCP)
-  d_ij from relaxed binary ordered cells  (B2 / L1_0 / D0_19)
-
-The matrix is written in the MaterialsFramework ``from_csv`` format, with a
-``<table>.meta.yaml`` sidecar recording the calculator used.
-
-Public API
-----------
-compute_bond_table(elements, path, settings, …)  → BondLatticeModel
-ensure_bond_table(cfg, root)                     → Path
+The matrix comes from MaterialsFramework's ``BondLatticeParameter`` (Tandoc et al.,
+Materialia 2025). The diagonal entries d_ii come from relaxed pure-element cells (BCC,
+FCC or HCP) and the off-diagonal entries d_ij from relaxed binary ordered cells (B2,
+L1_0 or D0_19). The matrix is written in MaterialsFramework's ``from_csv`` format, next
+to a ``<table>.meta.yaml`` file that records the elements, structure and calculator.
 """
 
 from __future__ import annotations
@@ -39,15 +31,20 @@ def compute_bond_table(
 ) -> BondLatticeModel:
     """Relax pure and binary ordered cells and write the bond-length matrix.
 
-    Parameters
-    ----------
-    elements   : system elements (any case)
-    path       : output CSV
-    settings   : ``mlip_settings`` output, recorded in the metadata sidecar
-    structure  : 'bcc' | 'fcc' | 'hcp'
-    initial_a  : starting lattice parameters [Å] for elements missing from
-                 MaterialsFramework's built-in defaults
-    calculator : pre-built calculator (default: built from *settings*)
+    Args:
+        elements: System elements, in any case.
+        path: Output CSV path. The metadata file is written next to it.
+        settings: Output of ``mlip_settings``, stored in the metadata file.
+        structure: Crystal structure, ``"bcc"``, ``"fcc"`` or ``"hcp"``.
+        initial_a: Starting lattice parameters in Å for elements that have no built-in
+            default in MaterialsFramework.
+        calculator: Calculator to use. Defaults to one built from ``settings``.
+
+    Returns:
+        The bond-length model built from the computed matrix.
+
+    Raises:
+        ImportError: If MaterialsFramework is not installed.
     """
     require_materialsframework()
     from materialsframework.tools.bond_lattice_parameter import BondLatticeParameter
@@ -77,7 +74,16 @@ def compute_bond_table(
 
 
 def ensure_bond_table(cfg: dict, root: Path, calculator: Any = None) -> Path:
-    """Compute the bond table for ``simulation.elastic.bond`` unless it already exists."""
+    """Compute the bond table configured in ``simulation.elastic.bond`` if it does not exist yet.
+
+    Args:
+        cfg: Nested config dict.
+        root: Repository root used to resolve relative paths.
+        calculator: Calculator to use. Defaults to one built from the config.
+
+    Returns:
+        Path to the bond table CSV.
+    """
     from phasefoundry.elasticity.sources import bond_structure, bond_table_path
 
     path = bond_table_path(cfg, root)

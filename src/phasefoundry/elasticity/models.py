@@ -1,50 +1,42 @@
-"""phasefoundry.elasticity.models
-==============================
-Eigenstrain and stiffness models for the FFT elastic solver.
+"""Eigenstrain and stiffness models for the FFT elastic solver.
 
-Two models are provided; the choice is set in the config via:
+The config chooses the model with ``elastic.eigenstrain_model``:
 
-    elastic:
-      eigenstrain_model: fixed_vegard    # (default) constant α from step 1b
-      #                  local_vegard    # α(c) and ε*(c) from SQS interpolant
+```yaml
+elastic:
+  eigenstrain_model: fixed_vegard    # default: constant α_k from step 1b
+  # eigenstrain_model: local_vegard  # α(c) and ε*(c) from the SQS interpolant
+```
 
-fixed_vegard (FixedVegardModel)
----------------------------------
-  ε*(x) = Σ_k α_k c_k(x) I
-  μ_el_k = −σ(x):Λ_k / N_V          (Λ_k = α_k I)
-  C_eff  = ½(C_mat + C_ppt)          (Voigt average of endpoint stiffnesses)
-  C(x)   = (1−h(c_ref)) C_mat + h(c_ref) C_ppt   (h = interpolation scheme)
+``fixed_vegard`` (``FixedVegardModel``):
 
-  α_k are fixed scalars evaluated at the midpoint between tie-line endpoints
-  by step 1b.  This is the current (pre-generalisation) behaviour and is the
-  default so that existing configs work unchanged.
+    ε*(x) = Σ_k α_k c_k(x) I
+    μ_el,k = −σ(x) : Λ_k / N_V,   with Λ_k = α_k I
+    C_eff = (C_mat + C_ppt) / 2
+    C(x) = (1 − h(c_ref)) C_mat + h(c_ref) C_ppt
 
-local_vegard (LocalVegardModel)
----------------------------------
-  ε*(x) = [a(c(x)) − a(c₀)] / a(c₀) · I
-  μ_el_k = −α_k(c₀) tr(σ(x)) / N_V   (α_k evaluated at c₀, not midpoint)
-  C_eff  = C(c₀)                       (SQS stiffness at parent composition)
-  C(x)   = SQS interpolant evaluated at c(x) pointwise
+The α_k are fixed numbers that step 1b evaluates at the midpoint between the tie-line
+endpoints. This model is the default.
 
-  ε* vanishes everywhere when c(x)=c₀ (correct for a uniform parent phase).
-  Captures nonlinear Vegard behaviour across the full composition range.
+``local_vegard`` (``LocalVegardModel``):
 
-  Requires the SQS elastic table (elastic.elastic_csv, or the MLIP table
-  computed by step 1b) and the filtered DataFrame from
-  sqs_interpolant.build_batch_interpolators().  With
-  elastic.lattice_model: bond, a(x) comes from the bond-length model
-  instead of the SQS interpolant.
+    ε*(x) = [a(c(x)) − a(c₀)] / a(c₀) I
+    μ_el,k = −α_k(c₀) tr(σ(x)) / N_V
+    C_eff = C(c₀), the SQS stiffness at the parent composition
+    C(x) = the SQS interpolant evaluated at each grid point
 
-Academic note
--------------
-  Both models use the Lippmann–Schwinger / Moulinec–Suquet spectral scheme
-  with a homogeneous reference C_eff.  The stiffness-contrast correction
-  (G&A Eq. 36 term 1, ½ ∂C/∂c_k : ε_el : ε_el) is neglected in both modes
-  as is standard in spectral phase-field codes when the stiffness contrast
-  is moderate.  local_vegard additionally neglects spatial variation of α_k
-  in μ_el (α is evaluated at c₀, not at each grid point) — this is a
-  second-order correction that can be added when the batch gradient of the
-  SQS interpolant is available.
+ε* is zero wherever c(x) = c₀, as it should be for a uniform parent phase, and the model
+follows a nonlinear a(c) across the whole composition range. It needs the SQS elastic
+table (``elastic.elastic_csv``, or the MLIP table from step 1b). With
+``elastic.lattice_model: bond``, a(x) comes from the bond-length model instead of the SQS
+interpolant.
+
+Both models use a spectral (Lippmann-Schwinger, Moulinec-Suquet) scheme with a
+homogeneous reference stiffness C_eff. Both leave out the stiffness-contrast term of
+Eq. 36, ½ ∂C/∂c_k : ε^el : ε^el, as spectral phase-field codes usually do when the
+contrast is moderate. ``local_vegard`` also evaluates α_k at c₀ instead of at each grid
+point; adding the spatial variation is a second-order correction that needs the gradient
+of the SQS interpolant.
 """
 
 from __future__ import annotations
@@ -66,112 +58,131 @@ from .sqs_interpolant import (
 
 @runtime_checkable
 class EigenstrainModel(Protocol):
-    """Minimal interface every eigenstrain model must satisfy."""
+    """Interface that every eigenstrain model implements."""
 
     def eps_star_field(self, c_all: np.ndarray, ndim: int) -> np.ndarray:
-        """Eigenstrain field ε*(x).
+        """Return the eigenstrain field ε*(x).
 
-        Parameters
-        ----------
-        c_all : (N_ind, *spatial)   all independent composition fields
-        ndim  : spatial dimension (2 or 3)
+        Args:
+            c_all: All independent composition fields, shape ``(n_ind, *spatial)``.
+            ndim: Spatial dimension, 2 or 3.
 
         Returns:
-        -------
-        eps_star : (*spatial, ndim, ndim)
+            Eigenstrain, shape ``(*spatial, ndim, ndim)``.
         """
         ...
 
     def mu_el(self, sigma: np.ndarray, c_all: np.ndarray, N_V: float) -> np.ndarray:
-        """Elastic chemical potential μ_el_k(x) = δF_el/δc_k.
+        """Return the elastic chemical potential μ_el,k(x) = δF_el/δc_k.
 
-        Parameters
-        ----------
-        sigma : (*spatial, d, d)    Cauchy stress from solve_elasticity
-        c_all : (N_ind, *spatial)
-        N_V   : float               molar density [mol/m³]
+        Args:
+            sigma: Cauchy stress from ``solve_elasticity``, shape ``(*spatial, d, d)``.
+            c_all: All independent composition fields, shape ``(n_ind, *spatial)``.
+            N_V: Molar density in mol/m³.
 
         Returns:
-        -------
-        mu_el : (N_ind, *spatial)   [J/mol]
+            μ_el in J/mol, shape ``(n_ind, *spatial)``.
         """
         ...
 
     def C_eff(self, C_mat: np.ndarray, C_ppt: np.ndarray) -> np.ndarray:
-        """Reference stiffness (3,3,3,3) for the Green's operator."""
+        """Return the reference stiffness for the Green's operator.
+
+        Args:
+            C_mat: Matrix stiffness, shape ``(3, 3, 3, 3)``.
+            C_ppt: Precipitate stiffness, shape ``(3, 3, 3, 3)``.
+
+        Returns:
+            Reference stiffness, shape ``(3, 3, 3, 3)``.
+        """
         ...
 
     def C_field(self, c_all: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, scheme_name: str = "cubic") -> np.ndarray:
-        """Spatially varying stiffness field C(x).
+        """Return the stiffness field C(x).
+
+        Args:
+            c_all: All independent composition fields, shape ``(n_ind, *spatial)``.
+            C_mat: Matrix stiffness, shape ``(3, 3, 3, 3)``.
+            C_ppt: Precipitate stiffness, shape ``(3, 3, 3, 3)``.
+            scheme_name: Interpolation scheme, for models that blend ``C_mat`` and ``C_ppt``.
 
         Returns:
-        -------
-        C_field : (*spatial, 3, 3, 3, 3)
+            Stiffness field, shape ``(*spatial, 3, 3, 3, 3)``.
         """
         ...
 
 
 class FixedVegardModel:
-    """Current (pre-generalisation) behaviour.  α_k are fixed scalars from step 1b.
-    ε*(x) = Σ_k α_k c_k(x) I — linear in composition fields.
+    """Eigenstrain linear in composition, with fixed Vegard coefficients from step 1b.
+
+    ε*(x) = Σ_k α_k c_k(x) I. The stiffness field blends ``C_mat`` and ``C_ppt`` by the
+    reference element's fraction.
+
+    Attributes:
+        Lambda: Vegard tensor, shape ``(n_ind, ndim, ndim)``.
     """
 
     def __init__(self, Lambda: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray) -> None:
-        """Parameters
-        ----------
-        Lambda : (N_ind, ndim, ndim)   Vegard tensor from build_vegard_tensor()
-        C_mat  : (3,3,3,3)             matrix stiffness [Pa]
-        C_ppt  : (3,3,3,3)             precipitate stiffness [Pa]
+        """Initialize the model.
+
+        Args:
+            Lambda: Vegard tensor from ``build_vegard_tensor``, shape ``(n_ind, ndim, ndim)``.
+            C_mat: Matrix stiffness in Pa, shape ``(3, 3, 3, 3)``.
+            C_ppt: Precipitate stiffness in Pa, shape ``(3, 3, 3, 3)``.
         """
         self.Lambda = Lambda
         self._C_mat = C_mat
         self._C_ppt = C_ppt
 
     def eps_star_field(self, c_all: np.ndarray, ndim: int) -> np.ndarray:
+        """Return ε*(x) = Σ_k Λ_k c_k(x), shape ``(*spatial, ndim, ndim)``."""
         Lam = self.Lambda[:, :ndim, :ndim]  # (N_ind, d, d)
         return np.einsum("k...,kij->...ij", c_all, Lam)
 
     def mu_el(self, sigma: np.ndarray, c_all: np.ndarray, N_V: float) -> np.ndarray:
+        """Return μ_el,k = −σ : Λ_k / N_V, shape ``(n_ind, *spatial)``."""
         d = sigma.shape[-1]
         Lam = self.Lambda[:, :d, :d]
         return -np.einsum("...ij,kij->k...", sigma, Lam) / N_V
 
     def C_eff(self, C_mat: np.ndarray, C_ppt: np.ndarray) -> np.ndarray:
+        """Return the mean of ``C_mat`` and ``C_ppt``."""
         return 0.5 * (C_mat + C_ppt)
 
     def C_field(self, c_all: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, scheme_name: str = "cubic") -> np.ndarray:
+        """Blend ``C_mat`` and ``C_ppt`` by h of the reference element's fraction, 1 − Σ_k c_k."""
         scheme = get_scheme(scheme_name)
         # order parameter = reference element fraction
         c_ref = np.clip(1.0 - c_all.sum(axis=0), 0.0, 1.0)
         return _interp_stiffness(c_ref, C_mat, C_ppt, scheme)
 
     def __repr__(self) -> str:  # pragma: no cover
+        """Return the Vegard coefficients α_k, labelled by component index."""
         n_ind = self.Lambda.shape[0]
         alphas = {f"el{k}": round(self.Lambda[k, 0, 0], 6) for k in range(n_ind)}
         return f"FixedVegardModel(alpha={alphas})"
 
 
 class LocalVegardModel:
-    """Composition-dependent eigenstrain via SQS lattice-parameter interpolant.
+    """Composition-dependent eigenstrain from the SQS lattice-parameter interpolant.
 
-    ε*(x) = [a(c(x)) − a(c₀)] / a(c₀) · I
-
-    α_k for μ_el is evaluated at c₀ (first-order approximation; avoids
-    per-point gradient calls on the scattered interpolant).
-
-    C(x) is evaluated from the SQS interpolant pointwise across the grid.
-    C_eff = C(c₀).
+    ε*(x) = [a(c(x)) − a(c₀)] / a(c₀) I. For μ_el, α_k is evaluated once at c₀, a
+    first-order approximation that avoids gradient calls on the scattered interpolant at
+    every grid point. The stiffness field comes from the SQS interpolant at each grid
+    point, and the reference stiffness is C(c₀).
     """
 
     def __init__(
         self, batch_interps: dict[str, BatchInterp], ind_elements: list[str], c0: np.ndarray, delta_fd: float = 0.02
     ) -> None:
-        """Parameters
-        ----------
-        batch_interps : dict from build_batch_interpolators()
-        ind_elements  : independent element names (same order as c_all axis 0)
-        c0            : (N_ind,)  parent composition (mean composition)
-        delta_fd      : finite-difference step for α_k at c₀
+        """Evaluate a(c₀), α_k(c₀) and C(c₀) from the interpolants.
+
+        Args:
+            batch_interps: Output of ``build_batch_interpolators``, with ``a_relaxed_A``
+                in Å and ``C11_GPa``, ``C12_GPa`` and ``C44_GPa`` in GPa.
+            ind_elements: Independent elements, in the order of the composition fields.
+            c0: Parent (mean) composition, shape ``(n_ind,)``.
+            delta_fd: Step of the central finite difference for α_k at c₀.
         """
         self._interps = batch_interps
         self._ind_elements = ind_elements
@@ -189,14 +200,14 @@ class LocalVegardModel:
         self._C_eff_cache = self._build_C_at(self._c0)
 
     def _eval_a_field(self, c_all: np.ndarray) -> np.ndarray:
-        """a(c(x)) in metres, shape (*spatial,)."""
+        """Return a(c(x)) in metres, shape ``(*spatial,)``."""
         spatial_shape = c_all.shape[1:]
         x_ind = c_all.reshape(self._N_ind, -1).T  # (n_pts, N_ind)
         a_flat = self._interps["a_relaxed_A"](x_ind)  # (n_pts,) in Å
         return a_flat.reshape(spatial_shape) * 1e-10  # → m
 
     def _eval_C_field(self, c_all: np.ndarray) -> np.ndarray:
-        """C(x) shape (*spatial, 3,3,3,3) in Pa."""
+        """Return the cubic stiffness field C(x) in Pa, shape ``(*spatial, 3, 3, 3, 3)``."""
         spatial_shape = c_all.shape[1:]
         n_pts = int(np.prod(spatial_shape))
         x_ind = c_all.reshape(self._N_ind, -1).T  # (n_pts, N_ind)
@@ -216,7 +227,7 @@ class LocalVegardModel:
         return C.reshape(*spatial_shape, 3, 3, 3, 3)
 
     def _build_C_at(self, c_vec: np.ndarray) -> np.ndarray:
-        """Stiffness tensor (3,3,3,3) at a single composition vector."""
+        """Return the cubic stiffness tensor in Pa at one composition."""
         q = c_vec.reshape(1, -1)
         C11 = float(self._interps["C11_GPa"](q)[0]) * 1e9
         C12 = float(self._interps["C12_GPa"](q)[0]) * 1e9
@@ -224,7 +235,14 @@ class LocalVegardModel:
         return build_cubic_stiffness(C11, C12, C44)
 
     def _compute_alpha_at(self, c_vec: np.ndarray, delta_fd: float) -> np.ndarray:
-        """α_k = (∂a/∂c_k)(c_vec) / a(c_vec) for all k.  Returns (N_ind,)."""
+        """Return α_k = (∂a/∂c_k) / a at one composition, by central finite differences.
+
+        The perturbed fractions are clipped to [0, 1], and a component whose clipped step
+        is zero gets α_k = 0.
+
+        Returns:
+            α_k of every independent element, shape ``(n_ind,)``.
+        """
         c_q = c_vec.reshape(1, -1)
         a_ref = float(self._interps["a_relaxed_A"](c_q)[0]) * 1e-10
         alpha = np.zeros(self._N_ind)
@@ -242,12 +260,14 @@ class LocalVegardModel:
         return alpha
 
     def eps_star_field(self, c_all: np.ndarray, ndim: int) -> np.ndarray:
+        """Return ε*(x) = [a(c(x)) − a(c₀)] / a(c₀) I, shape ``(*spatial, ndim, ndim)``."""
         a_field = self._eval_a_field(c_all)  # (*spatial,) in m
         eps_T = (a_field - self._a_ref) / self._a_ref  # (*spatial,)
         I = np.eye(ndim)
         return eps_T[..., None, None] * I  # (*spatial, d, d)
 
     def mu_el(self, sigma: np.ndarray, c_all: np.ndarray, N_V: float) -> np.ndarray:
+        """Return μ_el,k = −α_k(c₀) tr(σ) / N_V, shape ``(n_ind, *spatial)``."""
         d = sigma.shape[-1]
         tr_sigma = np.einsum("...ii->...", sigma)  # (*spatial,)
         # α_k at c₀ (fixed) — shape (N_ind, 1, ..., 1) for broadcasting
@@ -257,12 +277,15 @@ class LocalVegardModel:
         return -alpha_bc * tr_sigma[None, ...] / N_V
 
     def C_eff(self, C_mat: np.ndarray, C_ppt: np.ndarray) -> np.ndarray:
+        """Return the SQS stiffness at c₀; ``C_mat`` and ``C_ppt`` are ignored."""
         return self._C_eff_cache
 
     def C_field(self, c_all: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, scheme_name: str = "cubic") -> np.ndarray:
+        """Return the SQS stiffness at each grid point; the other arguments are ignored."""
         return self._eval_C_field(c_all)
 
     def __repr__(self) -> str:  # pragma: no cover
+        """Return a(c₀) in Å and the α_k(c₀) values."""
         alphas = {el: round(a, 6) for el, a in zip(self._ind_elements, self._alpha_c0)}
         return f"LocalVegardModel(a_ref={self._a_ref * 1e10:.4f} Å, alpha_c0={alphas})"
 
@@ -282,24 +305,36 @@ def build_eigenstrain_model(
     lattice_model: BondLatticeModel | None = None,
     reference_element: str | None = None,
 ) -> EigenstrainModel:
-    """Instantiate the correct EigenstrainModel from config.
+    """Create the eigenstrain model named in the config.
 
-    Parameters
-    ----------
-    model_name    : value of elastic.eigenstrain_model in config
-    el_cfg        : the elastic sub-dict from simulation config
-    elastic_params: loaded elastic_params.yaml (may be empty for isotropic)
-    ind_elements  : independent element names (no reference element)
-    c0            : mean composition (N_ind,)
-    ndim          : spatial dimension
-    Lambda        : Vegard tensor (N_ind, ndim, ndim) — always built by caller
-    C_mat, C_ppt  : endpoint stiffness tensors
-    all_elements  : full element list including reference (used by local_vegard
-                    to filter the SQS CSV to the correct subspace)
-    table_path    : SQS elastic table (default: elastic.elastic_csv); see
-                    ``sources.elastic_table_path``
-    lattice_model : bond-length model replacing the SQS a(x) interpolant
-                    (local_vegard only); requires *reference_element*
+    Args:
+        model_name: Value of ``elastic.eigenstrain_model``: ``"fixed_vegard"`` (also
+            accepted as ``"fixed"`` or ``"uniform"``) or ``"local_vegard"``.
+        el_cfg: The ``simulation.elastic`` block.
+        elastic_params: Contents of ``elastic_params.yaml``; may be empty.
+        ind_elements: Independent elements, without the reference element.
+        c0: Mean composition, shape ``(n_ind,)``. A scalar is accepted for binaries.
+        ndim: Spatial dimension. Neither model uses it at present.
+        Lambda: Vegard tensor, shape ``(n_ind, ndim, ndim)``, used by ``fixed_vegard``.
+        C_mat: Matrix stiffness, used by ``fixed_vegard``.
+        C_ppt: Precipitate stiffness, used by ``fixed_vegard``.
+        all_elements: All elements, including the reference. ``local_vegard`` uses them to
+            select the rows of the SQS table. Without them it falls back to
+            ``elastic_params["meta"]["system"]``, then to ``ind_elements`` plus
+            ``el_cfg["reference_element"]``.
+        table_path: SQS elastic table. Defaults to ``elastic.elastic_csv``; see
+            ``sources.elastic_table_path``.
+        lattice_model: Bond-length model that replaces the SQS a(x) interpolant
+            (``local_vegard`` only). Needs ``reference_element``.
+        reference_element: Dependent element. Required with ``lattice_model``.
+
+    Returns:
+        The eigenstrain model.
+
+    Raises:
+        FileNotFoundError: If ``local_vegard`` is chosen and the SQS table does not exist.
+        ValueError: If ``model_name`` is unknown, or ``lattice_model`` is given without
+            ``reference_element``.
     """
     c0 = np.atleast_1d(np.asarray(c0, dtype=float))  # binary configs give a scalar c0
 

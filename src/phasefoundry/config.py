@@ -1,19 +1,10 @@
-"""phasefoundry.config — Configuration loader and override engine
-=============================================================
+"""YAML configuration loading and command-line overrides.
 
-Loads a YAML config file and applies ``--set key.subkey=value``
-command-line overrides.  Dot-notation keys map to nested dicts:
-
-    simulation.kappa=1e-10   →   cfg["simulation"]["kappa"] = 1e-10
-    thermo.n_points=100      →   cfg["thermo"]["n_points"]  = 100
-
-Type coercion is automatic:
-    "true"/"false"  → bool
-    "none"/"null"   → None
-    integers        → int
-    floats          → float
-    comma-separated → list   e.g.  thermo.temperatures_C=100,200,300
-    everything else → str
+A config file is a nested YAML mapping. ``--set`` overrides reach nested keys with dot
+notation, so ``simulation.kappa=1e-10`` sets ``cfg["simulation"]["kappa"]``. Override
+values are converted to the closest Python type: ``true`` and ``false`` become bool,
+``none`` and ``null`` become None, numbers become int or float, comma-separated values
+become a list (``thermo.temperatures_C=100,200,300``), and anything else stays a string.
 """
 
 from __future__ import annotations
@@ -26,7 +17,18 @@ import yaml
 
 
 def load_config(path: str | Path) -> dict:
-    """Load a YAML config file and return as a nested dict."""
+    """Load a YAML config file.
+
+    Args:
+        path: Path to the YAML file.
+
+    Returns:
+        The config as a nested dict.
+
+    Raises:
+        FileNotFoundError: If ``path`` does not exist.
+        ValueError: If the file is empty.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -38,7 +40,10 @@ def load_config(path: str | Path) -> dict:
 
 
 def _coerce(value: str) -> Any:
-    """Coerce a string value to the most appropriate Python type."""
+    """Convert an override value to bool, None, int, float, list or str.
+
+    Comma-separated input gives a list whose items are converted the same way.
+    """
     if value.lower() == "true":
         return True
     if value.lower() == "false":
@@ -60,30 +65,24 @@ def _coerce(value: str) -> Any:
 
 
 def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
-    """Apply a list of ``"key.subkey=value"`` strings to *cfg* (in-place copy).
+    """Apply ``--set`` overrides to a copy of a config.
 
-    Parameters
-    ----------
-    cfg : dict
-        Nested config dict (from ``load_config``).
-    overrides : list of str
-        Each string must be of the form ``"section.key=value"``
-        or ``"section.subsection.key=value"``.
+    Args:
+        cfg: Nested config dict, as returned by ``load_config``.
+        overrides: Strings of the form ``"section.key=value"`` or
+            ``"section.subsection.key=value"``. Each key path must already exist in ``cfg``.
 
     Returns:
-    -------
-    dict
-        A deep copy of *cfg* with overrides applied.
+        A deep copy of ``cfg`` with the overrides applied. ``cfg`` itself is not modified.
 
     Raises:
-    ------
-    ValueError
-        If an override string is malformed or the key path doesn't exist.
+        ValueError: If an override has no ``=``, or its key path is not in ``cfg``.
 
     Examples:
-    --------
-    >>> cfg = load_config("configs/nb_v.yaml")
-    >>> cfg = apply_overrides(cfg, ["simulation.kappa=1e-10", "simulation.n_steps=5000"])
+        ```python
+        cfg = load_config("configs/nb_v_pipeline_test.yaml")
+        cfg = apply_overrides(cfg, ["simulation.kappa=1e-10", "simulation.n_steps=5000"])
+        ```
     """
     cfg = copy.deepcopy(cfg)
     for override in overrides:
@@ -110,14 +109,20 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
 
 
 def build_run_name(cfg: dict) -> str:
-    """Auto-construct a run_name from simulation parameters.
+    """Build a run name from the simulation parameters.
 
-    Pattern:
-        pf_{ndim}d_c{mol%}{El}_kappa{kappa_str}_M{M_str}_{tdb_tag}[_elastic]
+    The name has the form ``pf_{ndim}d_c{composition}_kappa{kappa}_M{M}_{tdb}[_elastic]``.
+    The composition tag gives the mole percent and symbol of each independent element.
+    ``kappa`` and ``M`` are formatted with ``_sci_tag``, using only the first entry when
+    they are lists. The TDB tag is ``tdbv<N>`` when the database file name contains
+    ``_v<N>``, and ``tdb`` otherwise.
 
-    Examples:
-        pf_2d_c50Nb_kappa1e12_M5e21_tdbv3
-        pf_3d_c50Nb05Hf_kappa1e12_M5e21_tdbv3
+    Args:
+        cfg: Nested config dict with ``system`` and ``simulation`` sections.
+
+    Returns:
+        The run name, e.g. ``pf_2d_c50Nb_kappa1e12_M5e21_tdbv3`` or
+        ``pf_3d_c50Nb05Hf_kappa1e12_M5e21_tdbv3``.
     """
     sim = cfg["simulation"]
     db_path = str(cfg["system"].get("db_path", ""))
@@ -163,8 +168,11 @@ def build_run_name(cfg: dict) -> str:
 
 
 def _sci_tag(value: float) -> str:
-    """Convert a float to a compact scientific-notation tag (no sign, no dot).
-    Examples: 1e-12 → '1e12',  5e-21 → '5e21',  1.5e-10 → '15e10'
+    """Format a number as a compact exponent tag without a decimal point.
+
+    For example, ``1e-12`` gives ``"1e12"``, ``5e-21`` gives ``"5e21"`` and ``1.5e-10``
+    gives ``"15e10"``. The sign of the exponent is dropped, so ``1e12`` and ``1e-12``
+    give the same tag.
     """
     import math
 
@@ -182,13 +190,18 @@ def _sci_tag(value: float) -> str:
 
 
 def resolve_paths(cfg: dict, root: Path) -> dict:
-    """Resolve all path-like values in the ``output`` and ``system`` sections
-    relative to *root* (the repository root).
+    """Turn path strings in the ``output`` and ``system`` sections into paths under ``root``.
 
-    Also auto-constructs ``output.run_name`` from simulation parameters when
-    it is set to ``"auto"`` or is absent entirely.
+    A string counts as a path if it contains ``/`` or ends in ``.tdb``. When
+    ``output.run_name`` is missing, empty or ``"auto"``, it is filled in by
+    ``build_run_name``.
 
-    Returns a deep copy with string paths replaced by ``pathlib.Path`` objects.
+    Args:
+        cfg: Nested config dict.
+        root: Repository root that relative paths are joined to.
+
+    Returns:
+        A deep copy of ``cfg`` with those strings replaced by ``pathlib.Path`` objects.
     """
     cfg = copy.deepcopy(cfg)
     for section in ("output", "system"):
@@ -207,7 +220,14 @@ def resolve_paths(cfg: dict, root: Path) -> dict:
 
 
 def summary(cfg: dict) -> str:
-    """Return a human-readable summary of the active configuration."""
+    """Format the config as an indented, human-readable listing.
+
+    Args:
+        cfg: Nested config dict.
+
+    Returns:
+        One line per section, followed by one line per key in that section.
+    """
     lines = ["Active configuration:", "─" * 40]
     for section, values in cfg.items():
         lines.append(f"  [{section}]")

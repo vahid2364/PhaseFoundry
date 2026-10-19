@@ -1,28 +1,16 @@
-"""phasefoundry.atomistic — MLIP calculations via MaterialsFramework
-================================================================
+"""MLIP calculations through MaterialsFramework.
 
-Produces the atomistic inputs that the rest of the pipeline consumes, so
-they are computed inside PhaseFoundry rather than imported as CSV files:
+Computes the atomistic inputs that the rest of the pipeline reads:
 
-  SQS elastic-constant table   C11, C12, C44, a_relaxed over the composition
-                               simplex  (step 1b, elastic.source: mlip)
-  Bond-length matrix           pairwise FNN bond lengths for the analytic
-                               a(x) model  (step 1b, elastic.lattice_model: bond)
-  CALPHAD TDB                  PhaseForge-style sqs2tdb fit  (step 0)
+- the SQS elastic-constant table, with C11, C12, C44 and the relaxed lattice parameter
+  over the composition simplex (step 1b, ``elastic.source: mlip``);
+- the bond-length matrix behind the analytic a(x) model (step 1b,
+  ``elastic.lattice_model: bond``);
+- a CALPHAD TDB fitted with ATAT ``sqs2tdb`` in the PhaseForge style (step 0).
 
-All MaterialsFramework imports are deferred to call time; install with
-``pip install -e '.[mlip]'`` plus the extra for the chosen potential
-(e.g. ``materialsframework[orb]``).  MaterialsFramework requires Python 3.12.
-
-Public API
-----------
-mlip_settings(cfg, block)                → {"calculator", "params"}
-build_calculator(settings)               → MaterialsFramework calculator
-build_elastic_table(elements, path, …)   → pd.DataFrame
-ensure_elastic_table(cfg, root)          → Path
-compute_bond_table(elements, path, …)    → BondLatticeModel
-ensure_bond_table(cfg, root)             → Path
-generate_tdb(species, output, …)         → Path
+MaterialsFramework is imported only when a calculation runs. Install it with
+``pip install -e '.[mlip]'`` plus the extra for the chosen potential, for example
+``materialsframework[orb]``. MaterialsFramework requires Python 3.12.
 """
 
 from .bond import compute_bond_table, ensure_bond_table
