@@ -58,8 +58,6 @@ from phasefoundry.config import load_config, apply_overrides, resolve_paths, sum
 from phasefoundry.thermodynamics import plot_ternary_spinodal, plot_as_umap
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
-
 def _glob_tables(cfg: dict) -> list[Path]:
     """Return HDF5 tables from step 1 matching this config's system name."""
     data_dir = Path(cfg["output"]["data_dir"])
@@ -109,8 +107,6 @@ def _element_pairs(cfg: dict) -> list[tuple[str, str]]:
     return list(itertools.combinations(ind_els, 2))
 
 
-# ── main logic ────────────────────────────────────────────────────────────────
-
 def run(cfg: dict) -> list[Path]:
     """
     Generate phase maps for every temperature in the config.
@@ -124,7 +120,6 @@ def run(cfg: dict) -> list[Path]:
         print("  Binary system — phase map not applicable. Skipping.")
         return []
 
-    # Resolve phase_map_style: default is 'ternary' for n=3, 'both' for n>=4
     style_cfg  = cfg.get("thermo", {}).get("phase_map_style", None)
     if style_cfg is None:
         style = "both" if n_el >= 4 else "ternary"
@@ -150,7 +145,6 @@ def run(cfg: dict) -> list[Path]:
         thermo_dir = results_dir / f"{T_C}C" / "thermodynamics"
         thermo_dir.mkdir(parents=True, exist_ok=True)
 
-        # ── ternary projected phase maps ──────────────────────────────────
         if do_ternary:
             for el0, el1 in pairs:
                 out = thermo_dir / f"phase_map_{el0.lower()}_{el1.lower()}_{T_C}C.pdf"
@@ -174,7 +168,7 @@ def run(cfg: dict) -> list[Path]:
                 )
                 saved.append(out)
 
-        # ── AS-UMAP (works for any n >= 3) ───────────────────────────────
+        # AS-UMAP (works for any n >= 3)
         if do_umap:
             out_umap = thermo_dir / f"as_umap_{T_C}C.pdf"
             print(f"  [AS-UMAP]  {n_el} components  @  {T_C} °C"

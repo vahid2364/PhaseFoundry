@@ -16,7 +16,6 @@ import warnings
 import numpy as np
 import yaml
 
-# pycalphad imports
 try:
     import pycalphad as pcp
     from pycalphad import equilibrium, variables as v
@@ -47,7 +46,6 @@ def run_tieline(config_path: str) -> None:
     temperature_K = temperature_C + 273.15
     c0 = sim_cfg["c0"]                       # independent fractions [x_NB, x_HF, x_TI]
 
-    # Build independent element list (everything except reference)
     ind_els = [el for el in elements if el != ref_el]
     if len(ind_els) != len(c0):
         sys.exit(f"c0 length {len(c0)} != number of independent elements {len(ind_els)}")
@@ -61,7 +59,6 @@ def run_tieline(config_path: str) -> None:
 
     db = pcp.Database(str(db_path))
 
-    # Build conditions dict
     conds = {v.T: temperature_K, v.P: 101325, v.N: 1}
     for el, xi in zip(ind_els, c0):
         conds[v.X(el)] = float(xi)
@@ -70,7 +67,6 @@ def run_tieline(config_path: str) -> None:
         warnings.simplefilter("ignore")
         eq = equilibrium(db, elements + ["VA"], [phase], conds)
 
-    # Extract phase fractions and compositions
     phase_frac = eq.NP.squeeze().values
     phase_names = eq.Phase.values.flatten()
     x_vals = eq.X.squeeze()   # shape: (n_phases, n_elements)
@@ -121,7 +117,6 @@ def run_tieline(config_path: str) -> None:
         }
         print(f"  {lbl}: " + "  ".join(f"x_{el}={comp_ind[el]:.4f}" for el in elements))
 
-    # Determine output path
     results_dir = pathlib.Path(cfg["output"]["results_dir"])
     if not results_dir.is_absolute():
         results_dir = pathlib.Path(config_path).parent.parent / results_dir

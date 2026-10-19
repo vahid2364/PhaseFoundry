@@ -4,11 +4,11 @@ Step 6 — Chemical vs. Elasto-Chemical Comparison Figure
 Produces a 2×N panel figure comparing final-frame composition fields from
 chemical-only and elasto-chemical simulations at matched compositions.
 
-Layout (portrait, paper-ready):
+Layout (landscape, paper-ready):
     Row 0 — Chemical only:     c50  c60  c70  c80
     Row 1 — Elasto-chemical:   c50  c60  c70  c80
 
-Colormap: RdBu_r  (blue = Nb-rich, red = V-rich)
+Colormap: RdBu_r  (blue = V-rich, red = Nb-rich)
 Colorbar: shared per row, labelled x_NB.
 
 Output
@@ -42,8 +42,6 @@ sys.path.insert(0, str(_ROOT))
 from phasefoundry.config import load_config, apply_overrides, resolve_paths
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
 def _run_dir(results_dir: Path, T_C: int, run_name: str) -> Path:
     return results_dir / f"{T_C}C" / "kinetics" / run_name
 
@@ -67,8 +65,6 @@ def _sci(val: float) -> str:
     exp = int(floor(log10(abs(val))))
     return f"$10^{{{exp}}}$"
 
-
-# ── main figure ───────────────────────────────────────────────────────────────
 
 def make_comparison_figure(
     results_dir: Path,
@@ -115,7 +111,7 @@ def make_comparison_figure(
     fig.subplots_adjust(left=0.085, right=0.88, top=0.91, bottom=0.10,
                         wspace=0.08, hspace=0.00)
 
-    row_labels = ["Elasto-chemical", "Chemical only"]
+    row_labels = ["Chemical only", "Elasto-chemical"]
     row_elastic = [False, True]
 
     # determine global colormap range across all available fields
@@ -135,7 +131,7 @@ def make_comparison_figure(
 
     vmin = min(f.min() for f in all_fields)
     vmax = max(f.max() for f in all_fields)
-    # center colormap symmetrically around mean if nearly symmetric
+    # center colormap symmetrically around the midpoint of the range
     vcen = 0.5 * (vmin + vmax)
     vhalf = max(vcen - vmin, vmax - vcen)
     vmin, vmax = vcen - vhalf, vcen + vhalf
@@ -189,9 +185,10 @@ def make_comparison_figure(
 
         # shared colorbar on the right of each row
         # each row occupies ~0.405 of figure height; colorbar is 80% of that
-        row_bottom = 0.10 + row * 0.405
+        # row 0 is the top row, as in the axes grid
+        row_bottom = 0.10 + (1 - row) * 0.405
         row_height = 0.405
-        cb_height  = row_height * 0.80          # 20% shorter than full row
+        cb_height  = row_height * 0.80
         cb_bottom  = row_bottom + (row_height - cb_height) / 2
         cbar_ax = fig.add_axes([0.895, cb_bottom, 0.018, cb_height])
         sm = plt.cm.ScalarMappable(cmap="RdBu_r",
@@ -216,7 +213,6 @@ def make_comparison_figure(
         fontsize=9, y=0.97,
     )
 
-    # ── save ─────────────────────────────────────────────────────────────────
     if out_dir is None:
         out_dir = results_dir / f"{T_C}C" / "comparison"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -229,8 +225,6 @@ def make_comparison_figure(
     plt.close(fig)
     return out_dir / f"chem_vs_elastic_{snap_tag}.pdf"
 
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

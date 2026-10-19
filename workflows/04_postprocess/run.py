@@ -49,12 +49,10 @@ def plot_d2G_vs_T(cfg: dict, thermo_dir: Path) -> None:
     phase     = cfg["system"]["phase"].lower().replace("_", "")  # e.g. "bcca2"
     sys_name  = cfg["system"]["name"]               # e.g. "nb_v"
 
-    # First independent element (exclude reference)
     ind_els = [e for e in elements if e != ref_el]
     el0 = ind_els[0]                                # e.g. "NB"
     dmu_key = f"dMU/{el0}_{el0}"                   # e.g. "dMU/NB_NB"
 
-    # Find HDF5 tables — try system-name glob first, fall back to any .h5
     paths = sorted(data_dir.glob(f"{sys_name}_*C.h5"))
     if not paths:
         paths = sorted(data_dir.glob("*.h5"))

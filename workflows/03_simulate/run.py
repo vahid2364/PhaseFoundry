@@ -56,6 +56,7 @@ from phasefoundry.elasticity import (
     build_cubic_stiffness, build_isotropic_stiffness, build_vegard_tensor,
     build_eigenstrain_model,
 )
+from phasefoundry.elasticity.sources import elastic_table_path, load_lattice_model
 import numpy as np
 
 
@@ -86,7 +87,6 @@ def run(cfg: dict) -> SimResult:
 
     paths = _glob_tables(cfg)
 
-    # match requested temperature
     T_target = sim["temperature_C"] + 273.15
     all_T    = sorted(
         float(load_table(p)["metadata"]["temperature"]) for p in paths
@@ -95,7 +95,6 @@ def run(cfg: dict) -> SimResult:
     print(f"  Temperature: {sim['temperature_C']} °C  →  matched "
           f"{T_K - 273.15:.1f} °C in data")
 
-    # build interpolant
     deriv_method = sim.get("derivative_method", "fd")
     print(f"  Derivative method: {deriv_method!r}")
     interp = build_interpolant(
@@ -106,7 +105,6 @@ def run(cfg: dict) -> SimResult:
         derivative_method = deriv_method,
     )
 
-    # output directories
     T_folder   = f"{sim['temperature_C']}C"
     output_dir = results_dir / T_folder / "kinetics" / cfg["output"]["run_name"]
     thermo_dir = results_dir / T_folder / "thermodynamics"
@@ -119,12 +117,11 @@ def run(cfg: dict) -> SimResult:
     print(f"  GPU FFT: {use_gpu}  |  Adaptive dt: {adaptive_dt}")
     print(f"  Output → {output_dir}")
 
-    # handle dt
     dt = sim.get("dt", None)
     if dt in (None, "None", "none"):
         dt = None
 
-    # normalise M and kappa from config
+    # M and kappa from config; the solver normalises them
     # M in config may be scalar, list (diagonal), or list-of-lists (matrix)
     M_cfg     = sim["M"]
     kappa_cfg = sim["kappa"]
@@ -137,7 +134,6 @@ def run(cfg: dict) -> SimResult:
         stiffness_model   = el_cfg.get("stiffness_model", "isotropic")
         eigenstrain_model = el_cfg.get("eigenstrain_model", "uniform")
 
-        # ── stiffness tensors ─────────────────────────────────────────────────
         if stiffness_model == "cubic_csv":
             # Load pre-computed elastic_params.yaml written by step 1b
             T_folder     = f"{sim['temperature_C']}C"
@@ -172,7 +168,6 @@ def run(cfg: dict) -> SimResult:
             C_ppt_tens = build_isotropic_stiffness(delta * G_mat, nu_val)
             ep = {}   # no elastic_params.yaml in isotropic mode
 
-        # ── Vegard tensor Λ and unit conversion ──────────────────────────────
         ind_elements = [e for e in elements if e != ref_el]
         es_data = ep.get("eigenstrain", {}) if stiffness_model == "cubic_csv" else {}
         if stiffness_model == "cubic_csv" and "alpha" in es_data:
@@ -214,6 +209,10 @@ def run(cfg: dict) -> SimResult:
 
         # Build eigenstrain model (fixed_vegard default; local_vegard optional)
         model_name = el_cfg.get("eigenstrain_model", "fixed_vegard")
+        table_path = lattice_model = None
+        if stiffness_model == "cubic_csv" and model_name == "local_vegard":
+            table_path    = elastic_table_path(cfg, _ROOT)
+            lattice_model = load_lattice_model(cfg, _ROOT)
         _model = build_eigenstrain_model(
             model_name    = model_name,
             el_cfg        = el_cfg,
@@ -225,6 +224,9 @@ def run(cfg: dict) -> SimResult:
             C_mat         = C_mat_tens,
             C_ppt         = C_ppt_tens,
             all_elements  = [e.upper() for e in elements],
+            table_path    = table_path,
+            lattice_model = lattice_model,
+            reference_element = ref_el,
         )
 
         elastic_kwargs = dict(
@@ -277,13 +279,11 @@ def run(cfg: dict) -> SimResult:
 
     print(f"  Elapsed: {result.elapsed_seconds:.1f} s")
 
-    # ── post-simulation visualization ─────────────────────────────────────────
     ind_elements = [e for e in elements if e != ref_el]
     t_final      = result.time_history[-1] if result.time_history else 0.0
 
-    # ── save raw composition fields ───────────────────────────────────────────
-    # All snapshots saved as float32 for compactness; shape (n_steps, N, N)
-    # or (n_steps, N, N, N) for 3D.  Reload with np.load("fields.npz").
+    # All snapshots saved as float32 for compactness; shape (n_snaps, N, N)
+    # or (n_snaps, N, N, N) for 3D.  Reload with np.load("fields.npz").
     save_dict: dict[str, np.ndarray] = {}
     for i, el in enumerate(ind_elements):
         # full history: shape (n_snapshots, N[, N[, N]])
@@ -318,7 +318,6 @@ def run(cfg: dict) -> SimResult:
     print(f"  Raw fields saved → fields.npz  ({size_mb:.1f} MB, "
           f"{len(result.time_history)} snapshots)")
 
-    # ── save elastic field snapshots (optional) ───────────────────────────────
     if el_cfg.get("enabled", False) and el_cfg.get("save_fields", False):
         if result.mu_el_history:
             el_dict = {

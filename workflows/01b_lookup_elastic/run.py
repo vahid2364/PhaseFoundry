@@ -1,10 +1,21 @@
 """
-Step 1b — Lookup elastic constants from SQS/DFT CSV
-=====================================================
-Reads the SQS/DFT elastic constants CSV, filters to the active element
+Step 1b — Elastic constants: compute with an MLIP or look up from CSV
+=======================================================================
+Obtains the SQS elastic-constant table, filters to the active element
 subspace, interpolates C11/C12/C44 and lattice parameter at the requested
 matrix and precipitate compositions, validates Born stability criteria, and
 writes ``elastic_params.yaml`` to the output directory.
+
+The table comes from ``elastic.source``:
+    csv   — read ``elastic.elastic_csv`` (default)
+    mlip  — compute SQS relaxations + cubic elastic constants with the MLIP in
+            the ``mlip`` config section (MaterialsFramework), cached under
+            ``output.data_dir`` and resumed on re-run
+
+With ``elastic.lattice_model: bond`` the lattice parameter a(x) — and so the
+Vegard coefficients α_k — come from the bond-length model (Tandoc et al.
+2025) instead of the SQS table; its bond matrix is computed with the MLIP on
+first use.
 
 Supports any system dimensionality:
     Binary   (e.g. NbV)    — 1-D interpolation in x_Nb
@@ -49,10 +60,15 @@ from phasefoundry.elasticity.sqs_interpolant import (
     build_interpolators,
     query_composition,
 )
+from phasefoundry.elasticity.sources import (
+    elastic_source,
+    elastic_table_path,
+    lattice_model_name,
+    load_lattice_model,
+)
 
 
-# ── Born stability criteria (cubic crystal) ───────────────────────────────────
-
+# Born stability criteria (cubic crystal)
 def born_check(C11: float, C12: float, C44: float) -> dict:
     return {
         "C44_positive":   bool(C44 > 0),
@@ -71,8 +87,6 @@ def born_summary(label: str, C11: float, C12: float, C44: float) -> str:
     return "\n".join(lines)
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
-
 def run(cfg: dict) -> Path:
     """
     Perform elastic constant lookup and write elastic_params.yaml.
@@ -83,18 +97,29 @@ def run(cfg: dict) -> Path:
     ref_el      = cfg["system"]["reference_element"].upper()
     ind_elements = [e for e in elements if e != ref_el]
 
-    # ── validate config ───────────────────────────────────────────────────────
     if el_cfg.get("stiffness_model", "isotropic") != "cubic_csv":
         raise ValueError(
             "elastic.stiffness_model must be 'cubic_csv' to use this step. "
             f"Got: {el_cfg.get('stiffness_model')!r}"
         )
 
-    csv_path = Path(cfg["elastic_csv_path"])
+    source = elastic_source(cfg)
+    if source == "mlip":
+        from phasefoundry.atomistic import ensure_elastic_table
+        csv_path = ensure_elastic_table(cfg, _ROOT)
+    else:
+        csv_path = elastic_table_path(cfg, _ROOT)
     if not csv_path.exists():
         raise FileNotFoundError(f"Elastic CSV not found: {csv_path}")
 
-    # ── parse endpoint compositions ───────────────────────────────────────────
+    lattice_model = lattice_model_name(cfg)
+    if lattice_model == "bond":
+        bond_cfg = el_cfg.get("bond", {}) or {}
+        if not bond_cfg.get("table") or cfg.get("mlip"):
+            from phasefoundry.atomistic import ensure_bond_table
+            ensure_bond_table(cfg, _ROOT)
+        bond_model = load_lattice_model(cfg, _ROOT)
+
     def parse_comp(key: str) -> dict:
         """Parse c_mat or c_ppt from config as {ELEMENT: fraction}."""
         raw = el_cfg.get(key, {})
@@ -110,20 +135,23 @@ def run(cfg: dict) -> Path:
     comp_ppt = parse_comp("c_ppt")
 
     print(f"\n  System:   {' – '.join(elements)}  (ref: {ref_el})")
-    print(f"  CSV:      {csv_path.name}  ({len(pd.read_csv(csv_path))} rows total)")
+    print(f"  Table:    {csv_path.name}  ({len(pd.read_csv(csv_path))} rows total, "
+          f"source: {source})")
+    print(f"  a(x):     {'bond-length model' if lattice_model == 'bond' else 'SQS table'}")
     print(f"  c_mat:    {comp_mat}")
     print(f"  c_ppt:    {comp_ppt}")
 
-    # ── load & filter CSV ─────────────────────────────────────────────────────
     df = load_and_filter(csv_path, elements)
     print(f"  Subspace: {len(df)} rows after filtering to {sorted(elements)}")
 
-    # ── build N-D interpolators ───────────────────────────────────────────────
     print(f"  Interpolation: {len(ind_elements)}-D "
           f"({'×'.join(ind_elements)} space, LinearND + NearestND fallback)")
     interps = build_interpolators(df, ind_elements)
+    if lattice_model == "bond":
+        # Bond model a(x) is a quadratic form, so the central differences below are exact
+        interps["a_relaxed_A"] = lambda x: float(
+            bond_model.a_ind(np.atleast_1d(x), ind_elements, ref_el)[0])
 
-    # ── query at endpoints ────────────────────────────────────────────────────
     props_mat = query_composition(interps, comp_mat, ind_elements)
     props_ppt = query_composition(interps, comp_ppt, ind_elements)
 
@@ -137,7 +165,6 @@ def run(cfg: dict) -> Path:
     A_Z_mat = 2 * C44_mat / (C11_mat - C12_mat) if (C11_mat - C12_mat) != 0 else float("nan")
     A_Z_ppt = 2 * C44_ppt / (C11_ppt - C12_ppt) if (C11_ppt - C12_ppt) != 0 else float("nan")
 
-    # ── Born stability check ──────────────────────────────────────────────────
     print("\n  Born stability check:")
     print(born_summary("C_mat", C11_mat, C12_mat, C44_mat))
     print(born_summary("C_ppt", C11_ppt, C12_ppt, C44_ppt))
@@ -150,7 +177,6 @@ def run(cfg: dict) -> Path:
         warnings.warn("C_ppt fails Born stability — elastic solver may diverge. "
                       "Consider increasing x_Nb in c_ppt.", stacklevel=1)
 
-    # ── Vegard tensor: per-element α_k coefficients ───────────────────────────
     # α_k = (∂a/∂x_k) / a_ref  via central finite difference on the interpolant.
     # Evaluated at the midpoint between endpoints as the reference composition.
     c_mid_ind = np.array([
@@ -166,7 +192,7 @@ def run(cfg: dict) -> Path:
         da_dxk = (interps["a_relaxed_A"](x_p) - interps["a_relaxed_A"](x_m)) / (2 * delta_fd)
         alpha[el] = round(float(da_dxk / a_ref_val), 8)
 
-    # ── Optional eps_T override (rescales α_k, keeps C_mat/C_ppt unchanged) ──────
+    # Optional eps_T override (rescales α_k, keeps C_mat/C_ppt unchanged)
     eps_T_override = el_cfg.get("eps_T_override", None)
     if eps_T_override is not None:
         eps_T_override = float(eps_T_override)
@@ -179,7 +205,6 @@ def run(cfg: dict) -> Path:
             print(f"    Rescaling α_k by {scale:.4f}  (original eps_T = {eps_T*100:.2f}%)")
             eps_T = eps_T_override   # update for output
 
-    # ── Vegard eigenstrain summary ────────────────────────────────────────────
     print(f"\n  Vegard eigenstrain (tensorial Λ):")
     print(f"    a_mat = {a_mat:.4f} Å  |  a_ppt = {a_ppt:.4f} Å")
     print(f"    eps_T (endpoints) = {eps_T:.5f} ({eps_T*100:.2f}%)  [for reference]")
@@ -193,11 +218,12 @@ def run(cfg: dict) -> Path:
     else:
         print(f"    A_Z > 1 → square morphology expected (⟨100⟩ faces)")
 
-    # ── assemble output dict ──────────────────────────────────────────────────
     out = {
         "meta": {
             "generated_by": "workflows/01b_lookup_elastic/run.py",
             "csv_source":   str(csv_path),
+            "elastic_source": source,
+            "lattice_model":  lattice_model,
             "system":       elements,
             "reference_element": ref_el,
             "interpolation_dim": len(ind_elements),
@@ -237,7 +263,6 @@ def run(cfg: dict) -> Path:
         },
     }
 
-    # ── write elastic_params.yaml into the run-specific output folder ────────
     sim = cfg["simulation"]
     T_folder   = f"{sim['temperature_C']}C"
     run_folder = results_dir = Path(cfg["output"]["results_dir"]) \
@@ -251,11 +276,9 @@ def run(cfg: dict) -> Path:
     return out_path
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Step 1b — Lookup elastic constants from SQS/DFT CSV"
+        description="Step 1b — Elastic constants: compute with an MLIP or look up from CSV"
     )
     parser.add_argument("--config", required=True, help="Path to YAML config file")
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
@@ -266,11 +289,6 @@ if __name__ == "__main__":
     if args.set:
         cfg = apply_overrides(cfg, args.set)
     cfg = resolve_paths(cfg, _ROOT)
-
-    # resolve elastic_csv path
-    el_cfg = cfg["simulation"].get("elastic", {})
-    csv_rel = el_cfg.get("elastic_csv", "")
-    cfg["elastic_csv_path"] = str(_ROOT / csv_rel) if csv_rel else ""
 
     print("=" * 60)
     print("Step 1b — Elastic Constants Lookup")

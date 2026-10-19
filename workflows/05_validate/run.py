@@ -21,7 +21,7 @@ Run standalone
 
 Called from the main pipeline
 ------------------------------
-    python workflows/run_all.py --config configs/nb_v.yaml --validate
+    python workflows/run_all.py --config configs/nb_v.yaml --only 5
 """
 
 from __future__ import annotations
@@ -66,8 +66,6 @@ SPINODAL_COLOR = "#ffd966"
 SPINODAL_ALPHA = 0.40
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
 def _load_best_table(data_dir: Path, T_target: float) -> tuple[Path, dict]:
     tables = sorted(data_dir.glob("*.h5"))
     if not tables:
@@ -98,8 +96,6 @@ def _shade_spinodal(ax, x_lo, x_hi, label=True):
                color=SPINODAL_COLOR, alpha=SPINODAL_ALPHA,
                zorder=0, label="Spinodal" if label else "_nolegend_")
 
-
-# ── plot 1: thermodynamic properties ─────────────────────────────────────────
 
 def plot_thermo_properties(cfg: dict, out_dir: Path) -> None:
     """G_m, chemical potentials, and Hessian diagonal for the primary element."""
@@ -204,8 +200,6 @@ def plot_thermo_properties(cfg: dict, out_dir: Path) -> None:
     plt.close(fig)
 
 
-# ── plot 2: derivative method comparison ─────────────────────────────────────
-
 def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
     """Compare FD / Jansson / hybrid interpolants against raw CALPHAD data."""
     data_dir = Path(cfg["output"]["data_dir"])
@@ -234,7 +228,6 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
         x_ref_raw[order], x_nb_raw[order],
         gm_raw[order], mu_raw[order], h_raw[order])
 
-    # build interpolants
     methods = ["fd", "jansson", "hybrid"]
     print("  Building interpolants ...")
     interps = {}
@@ -243,7 +236,6 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
             [best], elements=elements, reference_element=ref_el,
             temperature_K=T_K, derivative_method=m)
 
-    # dense scan
     xnb_scan = np.linspace(x_nb_raw.min() + 1e-4, x_nb_raw.max() - 1e-4, 500)
     xref_scan = 1.0 - xnb_scan
     c_scan    = xnb_scan.reshape(1, -1)
@@ -260,7 +252,6 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
     spinodal_mask = h_ref < 0
     sp_lo, sp_hi  = _spinodal_bounds(xref_scan, h_ref)
 
-    # style
     COLORS = {"calphad": "#888888", "fd": "#0077BB",
                "jansson": "#EE7733", "hybrid": "#009988"}
     LABELS = {"calphad": "CALPHAD data",
@@ -345,7 +336,6 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
                frameon=True, fontsize=7.5,
                handlelength=2.0, columnspacing=1.2)
 
-    # residual summary
     print(f"\n  {'Method':<10}  {'RMSE G_m':>12}  {'RMSE μ':>12}  {'RMSE H':>12}  J/mol")
     x_eval = x_nb_raw.reshape(1, -1)
     for m, interp in interps.items():
@@ -363,8 +353,6 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
         print(f"  Saved: {out}")
     plt.close(fig)
 
-
-# ── main entry point ──────────────────────────────────────────────────────────
 
 def run(cfg: dict) -> None:
     T_label = f"{cfg['simulation']['temperature_C']}C"

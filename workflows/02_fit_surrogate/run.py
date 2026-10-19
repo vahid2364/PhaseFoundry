@@ -52,7 +52,6 @@ def _glob_tables(cfg: dict) -> list[Path]:
             f"No HDF5 tables matching '{name}_*C.h5' in {data_dir}. "
             "Run step 1 first.")
 
-    # Deduplicate by temperature — keep most recently modified file per T
     by_temp: dict[float, Path] = {}
     for p in all_paths:
         T = float(load_table(p)["metadata"]["temperature"])
@@ -80,7 +79,7 @@ def run(cfg: dict) -> None:
     paths = _glob_tables(cfg)
     print(f"  Found {len(paths)} temperature table(s).")
 
-    # ── binary: use existing spline + phase diagram code ─────────────────────
+    # binary: use existing spline + phase diagram code
     if n_ind == 1:
         _run_binary(cfg, paths, results_dir, ref_el, sim_T_C)
     else:
@@ -89,8 +88,6 @@ def run(cfg: dict) -> None:
 
     print(f"  Outputs saved → {results_dir}")
 
-
-# ── binary path ───────────────────────────────────────────────────────────────
 
 def _run_binary(cfg, paths, results_dir, ref_el, sim_T_C):
     from phasefoundry.thermodynamics.fitting import build_gm_spline_surrogate
@@ -166,8 +163,6 @@ def _run_binary(cfg, paths, results_dir, ref_el, sim_T_C):
     plot_spinodal(sp, x_element=x_el,
                   save_path=thermo_sim / "spinodal.png", show=False)
 
-
-# ── multicomponent path ───────────────────────────────────────────────────────
 
 def _run_multicomponent(cfg, paths, results_dir, elements, ref_el,
                         n_ind, sim_T_C):

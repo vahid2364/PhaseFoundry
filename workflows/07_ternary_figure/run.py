@@ -2,26 +2,29 @@
 Figure: Ternary Nb--Hf--V microstructure summary.
 
 Layout:
-  Left block  — 3 rows of phase-field panels:
-    Row 1 (4 panels) — Hf composition sweep at 500°C, chemical only
-                       Hf=5%, 10%, 20%, 25%
-    Row 2 (2 panels) — Chemical vs elasto-chemical, 25%Hf, 500°C
-    Row 3 (2 panels) — Temperature dependence, Nb50Hf5V45: 500°C | 600°C
+  Left block  — 2 rows of phase-field panels:
+    Row 1 (2 panels) — Chemical vs elasto-chemical, 25%Hf, 500°C
+    Row 2 (2 panels) — Temperature dependence, Nb50Hf5V45: 500°C | 600°C
 
   Right block — pfm_ternary.png (ternary miscibility-gap phase diagram)
 
   One shared colorbar on the far right of the left block.
   Row labels as figure-level text, left of the left block.
 
+The Hf composition sweep at 500°C (Hf=5%, 10%, 20%, 25%, 35%, 45%) is drawn
+as separate single-row figures, chemical only and elasto-chemical.
+
 Output: paper/.../figs/ternary_summary.{pdf,png}
+        paper/.../figs/hf_sweep.{pdf,png}
+        paper/.../figs/hf_sweep_elastic.{pdf,png}
 
 Data sources:
   Hf sweep   : results/HfNbTiV_BCC_PhaseForge_v2/NbHfV/500C/kinetics/
-                  pf_2d_c50Nb{05,10,20,25}Hf_kappa1e12_M5e21_tdbv2/fields.npz
+                  pf_2d_c50Nb{05,10,20,25,35,45}Hf_kappa1e12_M5e21_tdbv2[_elastic]/fields.npz
   Elastic    : results/HfNbTiV_BCC_PhaseForge_v2/NbHfV/500C/kinetics/
                   pf_2d_c50Nb25Hf_kappa1e12_M5e21_tdbv2_elastic/fields.npz
   T-dep 500°C: results/HfNbTiV_BCC_PhaseForge_v2/NbHfV/500C/kinetics/
-                  pf_2d_c50Nb05Hf_kappa1e12_M5e21_tdbv2/fields.npz  (snap idx 2 → t≈2000s)
+                  pf_2d_c50Nb05Hf_kappa1e12_M5e21_tdbv2/fields.npz  (snap idx 3 → t≈3000s)
   T-dep 600°C: results/HfNbTiV_BCC_PhaseForge_v2_Tdep/NbHfV/600C/snapshots.npz
 """
 
@@ -47,7 +50,6 @@ matplotlib.rcParams.update({
     "ytick.labelsize":   6.5,
 })
 
-# ── paths ──────────────────────────────────────────────────────────────────
 ROOT     = pathlib.Path(__file__).resolve().parents[2]
 RES_V2   = ROOT / "results" / "HfNbTiV_BCC_PhaseForge_v2" / "NbHfV" / "500C" / "kinetics"
 RES_TDEP = ROOT / "results" / "HfNbTiV_BCC_PhaseForge_v2_Tdep" / "NbHfV"
@@ -77,8 +79,6 @@ TDEP_600 = RES_TDEP / "600C" / "snapshots.npz"
 PFM_IMG  = FIGS / "pfm_ternary.png"
 
 
-# ── data loaders ───────────────────────────────────────────────────────────
-
 def _load_fields(path: pathlib.Path, snap_idx: int = -1):
     d   = np.load(path)
     idx = snap_idx % len(d["x_nb"])
@@ -98,8 +98,6 @@ def _load_tdep(path: pathlib.Path, snap_idx: int = -1):
     Lx   = float(d["Lx"]) * 1e6 if "Lx" in d else 1.0
     return xnb, t_s, Lx
 
-
-# ── panel helper ───────────────────────────────────────────────────────────
 
 def _draw_panel(ax, field, Lx_um, t_s, cmap, vmin, vmax,
                 show_xlabel=False, show_ylabel=False, title=""):
@@ -131,14 +129,11 @@ def _draw_panel(ax, field, Lx_um, t_s, cmap, vmin, vmax,
     return im
 
 
-# ── main ───────────────────────────────────────────────────────────────────
-
 def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     cmap = "coolwarm"
 
-    # load
     sweep = []
     for entry in HF_SWEEP_PATHS:
         lbl, p = entry[0], entry[1]
@@ -147,7 +142,7 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
         else:
             xnb, t_s, Lx = _load_fields(p, entry[2])
             sweep.append((lbl, xnb, t_s, Lx))
-    # sweep items: (xnb, t_s, Lx, label)
+    # sweep items: (label, xnb, t_s, Lx)
     xnb_c25, t_c25, Lx_c25 = _load_fields(CHEM_25, -1)
     xnb_e25, t_e25, Lx_e25 = _load_fields(ELAS_25, -1)
     xnb_500, t_500, Lx_500 = _load_fields(TDEP_500, 3)   # t≈3000s, more developed
@@ -161,7 +156,6 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
     half  = max(0.5 - vmin, vmax - 0.5)
     vmin, vmax = 0.5 - half, 0.5 + half
 
-    # ── figure geometry ────────────────────────────────────────────────────
     FIG_W, FIG_H = 7.2, 5.6
 
     # horizontal zones (figure fractions)
@@ -178,7 +172,7 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
     BOT  = 0.04
     RGAP = 0.035   # gap between rows
 
-    # 3 rows of equal height
+    # 2 rows of equal height
     n_rows  = 2
     total_h = TOP - BOT - (n_rows - 1) * RGAP
     ROW_H   = total_h / n_rows
@@ -215,7 +209,6 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
                  fontsize=6.5, fontweight="bold", rotation=90,
                  transform=fig.transFigure)
 
-    # ── Row 1: Chemical vs Elastic (2 panels) ──────────────────────────────
     axes2, bot2, h2 = make_axes_row(0, 2)
     for ax, (xnb, t_s, Lx, title) in zip(axes2, [
         (xnb_c25, t_c25, Lx_c25, "Chemical only"),
@@ -229,7 +222,6 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
         last_im = im
     row_label(0, "Elastic effect\n25%Hf, 500°C")
 
-    # ── Row 2: Temperature (2 panels) ──────────────────────────────────────
     axes3, bot3, h3 = make_axes_row(1, 2)
     for ax, (xnb, t_s, Lx, title) in zip(axes3, [
         (xnb_500, t_500, Lx_500, "500°C"),
@@ -243,7 +235,6 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
         last_im = im
     row_label(1, "T dependence\nNb$_{50}$Hf$_5$V$_{45}$")
 
-    # ── shared colorbar ────────────────────────────────────────────────────
     cb_ax = fig.add_axes([LEFT_R + CB_GAP, BOT, CB_W, TOP - BOT])
     cb    = fig.colorbar(last_im, cax=cb_ax)
     cb.set_label("$x_{\\rm Nb}$", fontsize=8, labelpad=3)
@@ -252,7 +243,6 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
                   round((vmin + vmax) / 2, 2),
                   round(vmax - 0.02, 2)])
 
-    # ── right panel: pfm_ternary ───────────────────────────────────────────
     ax_r = fig.add_axes([RIGHT_L, BOT + 0.05, RIGHT_R - RIGHT_L, TOP - BOT - 0.05])
     ax_r.imshow(pfm_img, aspect="equal")
     ax_r.set_axis_off()
@@ -260,7 +250,6 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
                    fontsize=7.5, pad=5)
     label_ax(ax_r)
 
-    # ── save ───────────────────────────────────────────────────────────────
     for ext in ("pdf", "png"):
         p = out_dir / f"ternary_summary.{ext}"
         fig.savefig(p, dpi=300, bbox_inches="tight",
@@ -271,7 +260,7 @@ def make_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
 
 
 def make_hf_sweep_figure(out_dir: pathlib.Path = FIGS) -> pathlib.Path:
-    """Standalone figure: Hf composition sweep row (5 panels + colorbar)."""
+    """Standalone figure: Hf composition sweep row (6 panels + colorbar)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     cmap = "coolwarm"
 

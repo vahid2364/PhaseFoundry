@@ -1,5 +1,5 @@
 """
-Generate quaternary composition figures at t=60000 s:
+Generate quaternary composition figures at the latest saved snapshot:
   quaternary_chem_step600k     — chemical-only PFM (panel a)
   quaternary_elastic_step600k  — elasto-chemical PFM (panel b)
 
@@ -151,10 +151,11 @@ def make_figure(npz_path: pathlib.Path) -> plt.Figure:
     return fig
 
 
-for stem, npz in RUNS.items():
-    fig = make_figure(npz)
-    for ext in ('pdf', 'png'):
-        out = FIGS / f'{stem}.{ext}'
-        fig.savefig(out, bbox_inches='tight', dpi=200, facecolor='white')
-        print('saved', out)
-    plt.close(fig)
+if __name__ == '__main__':
+    for stem, npz in RUNS.items():
+        fig = make_figure(npz)
+        for ext in ('pdf', 'png'):
+            out = FIGS / f'{stem}.{ext}'
+            fig.savefig(out, bbox_inches='tight', dpi=200, facecolor='white')
+            print('saved', out)
+        plt.close(fig)

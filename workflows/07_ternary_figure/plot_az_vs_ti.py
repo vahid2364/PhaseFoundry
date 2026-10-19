@@ -1,7 +1,6 @@
 """
-Plot A_Z vs. Ti fraction along the compositional path from
-ternary Nb70Hf10V20 matrix to the quaternary matrix composition,
-for three ORB-MLIP database versions.
+Plot A_Z vs. x_V along three compositional paths, Nb(50-x)Vx,
+Nb50Hf(50-x)Vx and Nb25Hf25VxTi(50-x), for the ORB-v2 MLIP database.
 """
 import pathlib
 import numpy as np
@@ -81,7 +80,6 @@ def load_binary_points(csv_path):
     AZ = b['c44_gpa'].values / ((b['c11_gpa'].values - b['c12_gpa'].values) / 2)
     return b[v_col].values, AZ   # mole fraction
 
-# ── Single combined figure ────────────────────────────────────────
 CURVES = [
     # (comps, x_param, label, color, ls, is_binary)
     (comps_C, xv_bin,     r'Nb$_{50-x}$V$_{x}$  ($x_{\rm V}$)',             '#2ca02c', '--',  True),
@@ -126,9 +124,9 @@ ax.legend(fontsize=7.5, frameon=False, loc='upper left')
 
 fig.tight_layout()
 
-for ext in ('pdf', 'png'):
-    out = FIGS / f'az_vs_ti.{ext}'
-    fig.savefig(out, dpi=200, bbox_inches='tight', facecolor='white')
-    print('saved', out)
-
-plt.close(fig)
+if __name__ == '__main__':
+    for ext in ('pdf', 'png'):
+        out = FIGS / f'az_vs_ti.{ext}'
+        fig.savefig(out, dpi=200, bbox_inches='tight', facecolor='white')
+        print('saved', out)
+    plt.close(fig)
