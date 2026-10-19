@@ -1,41 +1,37 @@
-"""Step 0 — Generate the CALPHAD TDB from MLIP SQS energies (PhaseForge)
-======================================================================
-Fits a TDB with ATAT's sqs2tdb, computing every SQS energy with the MLIP from
-the ``mlip`` config section (MaterialsFramework ``Sqs2tdb``), and writes it
-to ``system.db_path`` so steps 1–5 pick it up unchanged.
+"""Step 0: generate the CALPHAD TDB from MLIP SQS energies, following PhaseForge.
 
-Skipped when the config has no ``tdb_generation`` section, when
-``tdb_generation.enabled`` is false, or when the output TDB already exists
-(set ``tdb_generation.overwrite: true`` to refit).
+The step fits a TDB with ATAT ``sqs2tdb``, computing every SQS energy with the MLIP from the
+``mlip`` config section through MaterialsFramework's ``Sqs2tdb``. The TDB goes to
+``tdb_generation.output`` if set and to ``system.db_path`` otherwise, where steps 1 to 5 read
+it. The step is skipped when the config has no ``tdb_generation`` section, when
+``tdb_generation.enabled`` is false, or when the TDB exists and ``tdb_generation.overwrite``
+is not true.
 
-Requirements
-------------
-ATAT with ``sqs2tdb`` on PATH and ``~/.atat.rc`` set, and
-``pip install -e '.[mlip]'`` plus the potential's extra
-(e.g. ``materialsframework[orb]``).
+It needs ATAT with ``sqs2tdb`` on PATH and ``~/.atat.rc`` set, plus the ``mlip`` extra and
+the potential's extra, for example ``materialsframework[orb]``.
 
-Config
-------
-    mlip:
-      calculator: orb
-      params: {model: orb-v2, device: cpu}
+```yaml
+mlip:
+  calculator: orb
+  params: {model: orb-v2, device: cpu}
 
-    tdb_generation:
-      enabled:  true
-      lattices: [BCC_A2]         # default: every lattice in the ATAT SQS database
-      level:    1                # SQS composition mesh level
-      t_min:    298.15
-      t_max:    10000
-      fmax:     0.001            # relaxation force tolerance [eV/Å]
-      # sro, bv, phonon, open_calphad, terms, verbose, md_* → Sqs2tdb
-      # species:  [NB, V]        # default: system.elements
-      # output:   data/tdb/...   # default: system.db_path
-      # work_dir: ...            # default: <output.results_dir>/sqs2tdb
-      # overwrite: false
+tdb_generation:
+  enabled: true
+  lattices: [BCC_A2]   # default: every lattice in the ATAT SQS database
+  level: 1             # SQS composition mesh level
+  t_min: 298.15
+  t_max: 10000
+  fmax: 0.001          # relaxation force tolerance in eV/Å
+```
 
-Usage
------
-    python workflows/00_generate_tdb/run.py --config configs/nb_v_mlip.yaml
+``species`` (default ``system.elements``), ``output``, ``work_dir`` (default
+``<output.results_dir>/sqs2tdb``) and ``overwrite`` are read by this step; any other key,
+such as ``sro``, ``bv``, ``phonon``, ``open_calphad``, ``terms``, ``verbose`` or ``md_*``,
+is passed to ``Sqs2tdb``.
+
+```bash
+python workflows/00_generate_tdb/run.py --config configs/nb_v_mlip_c50.yaml
+```
 """
 
 from __future__ import annotations
@@ -45,23 +41,31 @@ import logging
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_ROOT))
-
 from phasefoundry.atomistic.settings import mlip_settings
 from phasefoundry.config import apply_overrides, load_config, resolve_paths, summary
 
-# tdb_generation keys handled here rather than forwarded to Sqs2tdb
+_ROOT = Path(__file__).resolve().parents[2]
+
 _LOCAL_KEYS = {"enabled", "species", "output", "work_dir", "overwrite", "calculator", "params"}
+"""Keys of ``tdb_generation`` used by this step instead of being passed to ``Sqs2tdb``."""
 
 
 def _resolve(path, root: Path) -> Path:
+    """Join a relative path to ``root`` and leave an absolute path unchanged."""
     path = Path(path)
     return path if path.is_absolute() else root / path
 
 
 def run(cfg: dict) -> Path | None:
-    """Generate the TDB if configured and missing. Returns its path, or None if skipped."""
+    """Generate the TDB if the config asks for it and it does not exist yet.
+
+    Args:
+        cfg: Resolved config dict.
+
+    Returns:
+        Path of the existing or newly fitted TDB, or ``None`` if ``tdb_generation`` is
+        missing or disabled.
+    """
     tdb_cfg = cfg.get("tdb_generation") or {}
     if not tdb_cfg or not tdb_cfg.get("enabled", True):
         print("  No tdb_generation section enabled — using system.db_path as given.")

@@ -1,32 +1,18 @@
-"""Integrated Phase-Field Pipeline
-================================
-Runs all workflow steps end-to-end for any alloy system, driven entirely
-by a YAML config file.  No code changes are needed to switch systems —
-only the config file changes.
+"""Run the CALPHAD and phase-field pipeline end to end from one YAML config.
 
-Usage
------
-    # Full pipeline — binary Nb-V
-    python workflows/run_all.py --config configs/nb_v.yaml
+Steps 0 to 5 run in order: TDB generation from MLIP energies (skipped unless the config has
+a ``tdb_generation`` section), thermodynamic tables, surrogate fitting, the phase-field
+simulation, post-processing and validation. Each step is a ``run.py`` under ``workflows/``,
+and another alloy system only needs another config file. Steps 1b, 1c, 1d, 6 and 7 are
+separate scripts that this driver does not run.
 
-    # Full pipeline — ternary Nb-Hf-V
-    python workflows/run_all.py --config configs/nb_hf_v.yaml
-
-    # Resume from step 2
-    python workflows/run_all.py --config configs/nb_v.yaml --from 2
-
-    # Run only step 3
-    python workflows/run_all.py --config configs/nb_v.yaml --only 3
-
-    # Override config values on the fly (no file editing needed)
-    python workflows/run_all.py --config configs/nb_v.yaml \
-        --set simulation.kappa=1e-10 simulation.n_steps=10000 \
-              output.run_name=pf_nb_v_500C_kappa1e10_test
-
-    # New alloy system — just create a new config file
-    cp configs/nb_v.yaml configs/ti_v.yaml
-    # edit configs/ti_v.yaml, then:
-    python workflows/run_all.py --config configs/ti_v.yaml
+```bash
+python workflows/run_all.py --config configs/nb_v_pipeline_test.yaml
+python workflows/run_all.py --config configs/nb_hf_v_pipeline_test.yaml
+python workflows/run_all.py --config configs/nb_v_pipeline_test.yaml --from 2
+python workflows/run_all.py --config configs/nb_v_pipeline_test.yaml --only 3
+python workflows/run_all.py --config configs/nb_v_pipeline_test.yaml --set simulation.kappa=1e-10 simulation.n_steps=10000
+```
 """
 
 from __future__ import annotations
@@ -37,12 +23,11 @@ import logging
 import sys
 from pathlib import Path
 
-import pycalphad  # noqa: F401 — must be imported first
-
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT))
+import pycalphad  # noqa: F401
 
 from phasefoundry.config import apply_overrides, load_config, resolve_paths, summary
+
+_ROOT = Path(__file__).resolve().parent.parent
 
 STEP_SCRIPTS = {
     0: _ROOT / "workflows" / "00_generate_tdb" / "run.py",
@@ -63,6 +48,7 @@ STEP_LABELS = {
 
 
 def _load_step(path: Path):
+    """Import a step script by path and return it as a module."""
     spec = importlib.util.spec_from_file_location("step", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -70,6 +56,7 @@ def _load_step(path: Path):
 
 
 def main():
+    """Parse the command line, load and override the config, and run the selected steps."""
     parser = argparse.ArgumentParser(
         description="Integrated CALPHAD / phase-field pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -61,10 +61,11 @@ markers = [
 ]
 
 [tool.ruff]
-include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py"]
+include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "workflows/**/*.py"]
 line-length = 130
 target-version = "py312"
-extend-exclude = ["*.md"]
+extend-exclude = ["*.md", "runs"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = [
