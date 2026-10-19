@@ -638,7 +638,7 @@ def solve_cahn_hilliard(
             assert _model is not None and _C_mat is not None and _C_ppt is not None
             c_el = np.clip(c, 0.0, 1.0)
             row_sum = c_el.sum(axis=0, keepdims=True)
-            c_el = np.where(row_sum > 1.0, c_el / row_sum, c_el)
+            c_el = c_el / np.fmax(row_sum, 1.0)
             eps_star = _model.eps_star_field(c_el, ndim)
             C_eff_ov = _model.C_eff(_C_mat, _C_ppt)
             C_field_ov = _model.C_field(c_el, _C_mat, _C_ppt)

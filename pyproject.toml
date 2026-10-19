@@ -59,6 +59,11 @@ markers = [
     "slow: marks slow tests (deselect with '-m \"not slow\"')",
     "mlip: requires MaterialsFramework",
 ]
+filterwarnings = [
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+    "ignore:Only FixAtoms and FixCartesian is supported by Pymatgen:UserWarning",
+    "ignore:The type definition character:UserWarning",
+]
 
 [tool.ruff]
 include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "workflows/**/*.py"]
