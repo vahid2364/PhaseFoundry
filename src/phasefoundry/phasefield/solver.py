@@ -1,43 +1,33 @@
-"""General N-component Cahn-Hilliard Solver
-==========================================
-Solves the conserved Cahn-Hilliard equation for systems with any number of
-components (binary, ternary, quaternary, …) using a pseudo-spectral
-semi-implicit scheme.
+"""General N-component Cahn-Hilliard solver.
 
-For N components there are N−1 independent composition fields c₁, …, c_{N-1}.
-The reference component satisfies c_ref = 1 − Σcᵢ.
+Solves the conserved Cahn-Hilliard equation for any number of components with a
+pseudo-spectral semi-implicit scheme. For N components there are N − 1 independent
+composition fields c₁, …, c_{N−1}, and the reference component is c_ref = 1 − Σ cᵢ.
 
-Governing equations
--------------------
-    ∂cᵢ/∂t = ∇ · Σⱼ Mᵢⱼ(c) ∇μⱼ        i = 1 … N−1
+The governing equations are
 
-    μⱼ = ∂G/∂cⱼ − κⱼ ∇²cⱼ             (variational derivative)
+    ∂cᵢ/∂t = ∇ · Σⱼ Mᵢⱼ(c) ∇μⱼ,   i = 1 … N − 1
+    μⱼ = ∂G/∂cⱼ − κⱼ ∇²cⱼ
 
-Mobility
---------
-    Mᵢⱼ(c) = M̊ᵢⱼ · c₁ · c₂ · … · c_N   (degenerate — vanishes in pure phases)
+with the degenerate mobility Mᵢⱼ(c) = M̊ᵢⱼ c₁ c₂ … c_N, which vanishes in pure phases. M̊
+is the constant mobility matrix supplied by the caller. The scheme replaces the
+degenerate factor by its spatial average, M̄ᵢⱼ = M̊ᵢⱼ ⟨c₁ c₂ … c_N⟩, treats the diagonal
+terms implicitly with an Eyre stabilization constant Aᵢ, and treats the off-diagonal
+terms explicitly. With k2 = −|k|² the Fourier symbol of ∇² and k4 = k2²:
 
-where M̊ is the constant mobility matrix supplied by the user.
+    ĉᵢⁿ⁺¹ = [ĉᵢⁿ + Δt k2 (M̄ᵢᵢ (μ̂ᵢ − Aᵢ ĉᵢⁿ) + Σⱼ≠ᵢ M̄ᵢⱼ μ̂ⱼ) − Δt k4 Σⱼ≠ᵢ M̄ᵢⱼ κⱼ ĉⱼⁿ]
+            / [1 − Δt k2 M̄ᵢᵢ Aᵢ + Δt k4 M̄ᵢᵢ κᵢ]
 
-Numerical method (pseudo-spectral semi-implicit)
--------------------------------------------------
-Diagonal mobility terms are treated implicitly; off-diagonal (cross) terms
-are treated explicitly:
+Here μ̂ is the transform of the bulk chemical potential ∂G/∂cᵢ, plus the elastic term
+μ_el when elasticity is enabled. For a binary system with Aᵢ = 0 the update is the one in
+``solve_cahn_hilliard_binary``.
 
-    ĉᵢⁿ⁺¹ = [ ĉᵢⁿ + Δt k² Σⱼ M̄ᵢⱼ μ̂ⱼ_bulk − Δt k⁴ Σⱼ≠ᵢ M̄ᵢⱼ κⱼ ĉⱼⁿ ]
-             / [ 1 + Δt k⁴ M̄ᵢᵢ κᵢ ]
+The default time step is
 
-where M̄ᵢⱼ = M̊ᵢⱼ · ⟨c₁ · c₂ · … · c_N⟩  (spatially averaged).
+    dt_stable = 0.3 dx² / (M̊_max |H|_max)
 
-For binary (N=2, diagonal M) this reduces exactly to the existing
-solve_cahn_hilliard_binary() scheme.
-
-Stability dt
-------------
-    dt_stable = 0.3 · dx² / ( M̊_max · |f''|_max )
-
-where M̊_max is the largest diagonal entry and |f''|_max is the maximum
-absolute Hessian eigenvalue over a coarse composition scan.
+where M̊_max is the largest diagonal mobility entry and |H|_max is the largest absolute
+Hessian eigenvalue over a coarse composition scan around c0 (see ``stable_dt``).
 """
 
 from __future__ import annotations
@@ -65,7 +55,17 @@ except ImportError:
 
 
 def _get_fft_backend(use_gpu: bool):
-    """Return (xp, fftn, ifftn) for the requested backend."""
+    """Return the array module and FFT functions of NumPy or CuPy.
+
+    Args:
+        use_gpu: Use CuPy instead of NumPy.
+
+    Returns:
+        ``(xp, fftn, ifftn)``.
+
+    Raises:
+        RuntimeError: If ``use_gpu`` is True and CuPy is not installed.
+    """
     if use_gpu:
         if not _CUPY_AVAILABLE:
             raise RuntimeError(
@@ -87,40 +87,33 @@ from .spectral import laplacian_operator
 
 @dataclass
 class SimResult:
-    """Output of ``solve_cahn_hilliard``.
+    """Result of ``solve_cahn_hilliard``.
+
+    ``grid`` is the spatial grid shape, ``(N, N)`` or ``(N, N, N)``, and ``d`` its
+    dimension. The four elastic histories are filled only when ``elastic_enabled`` and
+    ``elastic_save_fields`` are both set; they skip the initial snapshot and are stored as
+    float32.
 
     Attributes:
-    ----------
-    compositions : ndarray, shape (N_ind, N, N)
-        Final composition fields for each independent element.
-    compositions_history : list of ndarray, shape (N_ind, N, N)
-        Snapshots saved every ``save_every`` steps.
-    time_history : list[float]
-        Physical time [s] at each snapshot.
-    free_energy_history : list[float]
-        Total free energy F = F_bulk + F_grad at each snapshot [J/mol].
-    bulk_energy_history : list[float]
-        Bulk contribution F_bulk [J/mol].
-    grad_energy_history : list[float]
-        Gradient contribution F_grad [J/mol].
-    params : dict
-        Full parameter set for reproducibility.
-    elapsed_seconds : float
-    ind_elements : list[str]
-        Names of the independent composition fields (same order as axis 0
-        of ``compositions``).
-    mu_ch_history : list of ndarray, shape (N_ind, N, N)
-        Snapshots of chemical potential [J/mol]. Non-empty only when
-        elastic_save_fields=True.
-    mu_el_history : list of ndarray, shape (N_ind, N, N)
-        Snapshots of elastic chemical potential [J/mol]. Non-empty only when
-        elastic_save_fields=True.
-    stress_history : list of ndarray, shape (N, N, 2, 2)
-        Snapshots of Cauchy stress [Pa]. Non-empty only when
-        elastic_save_fields=True.
-    strain_history : list of ndarray, shape (N, N, 2, 2)
-        Snapshots of total strain [-]. Non-empty only when
-        elastic_save_fields=True.
+        compositions: Final composition fields of the independent elements, shape
+            ``(n_ind, *grid)``.
+        compositions_history: Composition snapshots, each of shape ``(n_ind, *grid)``. The
+            first one is the initial state.
+        time_history: Physical time in s of each snapshot.
+        free_energy_history: Domain-averaged free energy F = F_bulk + F_grad in J/mol at
+            each snapshot. The elastic energy is not included.
+        bulk_energy_history: Bulk part F_bulk, the domain average of G_m, in J/mol.
+        grad_energy_history: Gradient part F_grad = Σᵢ κᵢ ⟨|∇cᵢ|²⟩ / 2 in J/mol.
+        params: Main run parameters (grid, mobility, kappa, c0, noise, seed, time step and
+            step counts, plus the isotropic elastic settings when elasticity is on).
+            ``dt`` is the time step at the end of the run, which differs from the initial
+            one in adaptive mode.
+        elapsed_seconds: Wall-clock time of the time-stepping loop in s.
+        ind_elements: Independent elements, in the order of axis 0 of ``compositions``.
+        mu_ch_history: Chemical potential snapshots in J/mol, shape ``(n_ind, *grid)``.
+        mu_el_history: Elastic chemical potential snapshots, shape ``(n_ind, *grid)``.
+        stress_history: Cauchy stress snapshots, shape ``(*grid, d, d)``.
+        strain_history: Total strain snapshots, shape ``(*grid, d, d)``.
     """
 
     compositions: np.ndarray
@@ -140,10 +133,12 @@ class SimResult:
     # convenience: min/max across all fields
     @property
     def c_min(self) -> float:
+        """Smallest value in the final composition fields."""
         return float(self.compositions.min())
 
     @property
     def c_max(self) -> float:
+        """Largest value in the final composition fields."""
         return float(self.compositions.max())
 
 
@@ -153,9 +148,22 @@ def _hessian_scan(
     c0_window: float = 0.3,
     n_scan: int = 20,
 ) -> np.ndarray:
-    """Return the Hessian array (N_ind, N_ind, n_valid_pts) evaluated on a coarse
-    composition grid centred on c0 ± c0_window, clipped to simplex interior.
-    Used by both stable_dt and the A_i stabilization calculation.
+    """Evaluate the Hessian of G on a coarse composition grid.
+
+    Each axis spans the interpolant's grid bounds (0.01 to 0.99 if it has none), shrunk by
+    1e-4 at both ends and, when ``c0`` is given, limited to ``c0 ± c0_window``. Points with
+    Σ cᵢ ≥ 0.99 or any cᵢ ≤ 0.001 are dropped; if none remain, the equimolar point is used.
+    ``stable_dt`` and the stabilization constants of ``solve_cahn_hilliard`` both use this
+    scan.
+
+    Args:
+        interpolant: Free-energy interpolant.
+        c0: Centre of the scan, shape ``(n_ind,)``. ``None`` scans the whole grid.
+        c0_window: Half-width of the scan along each axis, in mole fraction.
+        n_scan: Points per axis.
+
+    Returns:
+        Hessian at the kept points, shape ``(n_ind, n_ind, n_points)``.
     """
     N_ind = interpolant.N_ind
     axes_1d = []
@@ -191,16 +199,25 @@ def stable_dt(
     n_scan: int = 20,
     safety: float = 0.3,
 ) -> float:
-    """CFL-style stable time step for the semi-implicit CH scheme.
+    """Return a stable time step for the semi-implicit scheme.
 
-        dt = safety · dx² / ( M_max · |H_max| )
+    dt = safety · dx² / (M_max |H|_max), where M_max is the largest entry of ``M_diag`` and
+    |H|_max is the largest absolute Hessian eigenvalue from ``_hessian_scan``. Centring the
+    scan on ``c0`` keeps it away from the simplex corners, where |H| is very large but the
+    simulation never goes. Points with NaN Hessians are skipped, and |H|_max is set to 1 if
+    no eigenvalue is found.
 
-    where |H_max| is the max absolute Hessian eigenvalue over a coarse scan.
+    Args:
+        M_diag: Diagonal mobility entries, or a scalar.
+        dx: Grid spacing in m.
+        interpolant: Free-energy interpolant.
+        c0: Mean initial composition, shape ``(n_ind,)``. ``None`` scans the whole grid.
+        c0_window: Half-width of the scan along each axis, in mole fraction.
+        n_scan: Scan points per axis.
+        safety: Safety factor.
 
-    The scan is centred on ``c0`` (the mean initial composition) with a window
-    of ±``c0_window`` per axis, clipped to the interpolant grid bounds.  This
-    avoids the scan reaching simplex corners where |H| is enormous but the
-    simulation never visits.
+    Returns:
+        Time step, in s when the inputs use the units of ``solve_cahn_hilliard``.
     """
     M_diag = np.atleast_1d(np.asarray(M_diag, dtype=float))
     M_max = float(M_diag.max())
@@ -232,7 +249,12 @@ def _flush_npz_checkpoint(
     ind_elements: list,
     meta: dict,
 ) -> None:
-    """Write (overwrite) a checkpoint NPZ with all snapshots accumulated so far."""
+    """Write a checkpoint NPZ with every snapshot so far, replacing any earlier file.
+
+    The file holds ``x_<el>`` (all snapshots, float32) and ``x_<el>_final`` for each
+    independent element in lowercase, ``time``, ``free_energy`` and the entries of
+    ``meta``.
+    """
     save_dict: dict = {}
     for i, el in enumerate(ind_elements):
         history = np.array([s[i] for s in comp_hist], dtype=np.float32)
@@ -293,110 +315,96 @@ def solve_cahn_hilliard(
     incremental_npz: bool = False,
     npz_meta: dict | None = None,
 ) -> SimResult:
-    """General Cahn-Hilliard phase-field solver.
+    """Run a Cahn-Hilliard simulation for any number of components.
 
-    Parameters
-    ----------
-    interpolant : GmInterpolant
-        Built by ``build_interpolant()``.  Provides ``mu(c)`` and ``gm(c)``.
-    M : float or (N_ind, N_ind) array
-        Constant mobility matrix [m⁵/(J·s)].  A scalar is broadcast to a
-        diagonal matrix; a 1-D array of length N_ind is treated as diagonal.
-    kappa : float or length-N_ind array
-        Gradient energy coefficient(s) [J·m²/mol].  A scalar is broadcast.
-    c0 : float or length-N_ind array
-        Mean initial composition(s) (mol fraction of each independent element).
-    N : int
-        Number of grid points per side (domain is N × N).
-    Lx : float
-        Physical domain size [m].
-    noise : float
-        Amplitude of the initial random perturbation.
-    seed : int
-        Random seed.
-    dt : float or None
-        Time step [s].  If None, computed from ``stable_dt()``.
-    n_steps : int
-        Number of time steps.
-    save_every : int
-        Save a snapshot every this many steps.
-    output_dir : path or None
-        Directory for PNG frames and log files.  Created if needed.
-    save_frames : bool
-        Whether to write PNG frames.
-    adaptive_dt : bool
-        Enable adaptive time-stepping (default: False).  When True the step
-        size is adjusted after every step based on the maximum field change
-        ``dc_max = max |c_new - c_old|``:
+    The initial field is ``c0`` plus uniform noise. Snapshots are recorded at the start,
+    every ``save_every`` steps and at the end. With ``output_dir`` set, the run also writes
+    PNG frames, ``free_energy_log.txt``, ``free_energy_history.png``,
+    ``composition_evolution.png`` and ``sim_params.txt`` there.
 
-          * dc_max < dc_tol_lo  →  dt *= 2   (dynamics are slow, take bigger steps)
-          * dc_max > dc_tol_hi  →  dt /= 2   (dynamics are fast, take smaller steps)
-          * otherwise           →  dt unchanged
-
-        The step size is clamped to [dt_min, dt_max].  Because the total
-        simulation time t_total = n_steps × dt₀ is held fixed, the loop
-        runs until that physical end-time is reached, so the number of
-        steps taken can differ from ``n_steps``.
-    dt_min : float or None
-        Lower bound for adaptive dt.  Defaults to dt₀ / 100.
-    dt_max : float or None
-        Upper bound for adaptive dt.  Defaults to dt₀ × 20.
-    dc_tol_lo : float
-        Field-change threshold below which dt is doubled (default: 1e-4).
-    dc_tol_hi : float
-        Field-change threshold above which dt is halved (default: 2e-2).
-    ndim : int
-        Spatial dimension — 2 (default, N×N grid) or 3 (N×N×N grid).
-        Existing 2-D runs are completely unaffected by this parameter.
-        In 3-D, ``_save_frame`` writes the mid-plane slice (z = N//2)
-        as a PNG so frame output still works without modification.
-    use_gpu : bool
-        Use CuPy GPU-accelerated FFT instead of NumPy (default: False).
-        Requires CuPy to be installed (``pip install cupy-cuda12x``).
-        Falls back gracefully to CPU if CuPy is unavailable and this flag
-        is False; raises RuntimeError if True and CuPy is not found.
-    elastic_enabled : bool
-        Couple an elastic contribution mu_el (Gururajan & Abinandanan, 2007,
-        Eq. 36) into the chemical potential: mu_total = mu_ch + mu_el.
-        Default False — when False, none of the other ``elastic_*``
-        parameters are read, ``solve_elasticity`` is never called, and the
-        timestep loop is byte-for-byte identical to the no-elasticity path
-        (zero overhead, zero behavior change for existing configs).
-        Supports ndim=2 and ndim=3; binary and multi-component systems.
-    elastic_G_matrix : float or None
-        Matrix shear modulus G^m [Pa].  Required if elastic_enabled=True
-        and elastic_C_mat/elastic_C_ppt are not given.
-    elastic_delta : float
-        Inhomogeneity ratio delta = G^precipitate / G^matrix (default 1.0,
-        elastically homogeneous).
-    elastic_nu : float
-        Poisson's ratio (same for both phases; default 0.3).
-    elastic_Lambda : ndarray (N_ind, ndim, ndim) or None
-        Vegard eigenstrain coefficient tensor, built with
-        ``build_vegard_tensor``.  Required if elastic_enabled=True.
-    elastic_sigma_applied : ndarray (ndim, ndim) or None
-        Applied far-field stress.  Default None (zero, stress-free BC).
-    elastic_solve_every : int
-        Re-solve mechanical equilibrium every this many CH steps (default 1
-        = every step).  Elastic relaxation is much faster than diffusion,
-        so values > 1 trade some accuracy for speed by reusing mu_el across
-        several CH steps (quasi-static approximation).
-    elastic_warm_start : bool
-        If True (default), pass the displacement field from the previous
-        elastic solve as the initial guess for the next one.  This cuts
-        iteration count significantly for small composition changes between
-        CH steps.  Set False for a cold start from zero each time.
-    elastic_tol : float
-        Convergence tolerance for the inner elastic solve (default 1e-8).
-    elastic_max_iter : int
-        Max iterations for the inner elastic solve (default 500).
-    elastic_N_V : float
-        Molar-volume-like normalization for mu_el, matching the convention
-        used for mu_ch (default 1.0).
+    Args:
+        interpolant: Free-energy interpolant from ``build_interpolant``, providing ``mu``,
+            ``gm`` and ``d2g``.
+        M: Constant mobility matrix M̊ in m²·mol/(J·s), consistent with μ in J/mol and κ in
+            J·m²/mol. A scalar gives a diagonal matrix with that value, a length-``n_ind``
+            vector gives a diagonal matrix, and an ``(n_ind, n_ind)`` array is used as is.
+        kappa: Gradient energy coefficient of each independent element in J·m²/mol. A
+            scalar applies to all of them.
+        c0: Mean initial mole fraction of each independent element. A scalar applies to
+            all of them.
+        N: Grid points along each axis.
+        Lx: Domain edge length in m.
+        noise: Width of the initial perturbation. Each grid point gets ``c0`` plus a
+            uniform random value in [−noise/2, noise/2), clipped to [1e-6, 1 − 1e-6].
+        seed: Seed of the random number generator for the initial noise.
+        dt: Time step in s. ``None`` uses ``stable_dt`` with the scan centred on ``c0``.
+        n_steps: Number of time steps. In adaptive mode the run instead lasts
+            ``n_steps × dt`` of physical time, with ``dt`` the initial step.
+        save_every: Steps between snapshots. In adaptive mode the ``n_steps // save_every``
+            snapshots are instead spaced evenly in physical time.
+        output_dir: Directory for frames, logs and plots. It is created if needed, and any
+            ``frame_*.png`` already in it is deleted. ``None`` writes nothing.
+        save_frames: Write a PNG frame at each snapshot when ``output_dir`` is set.
+        stabilization: Eyre stabilization constant Aᵢ in J/mol, applied to every component.
+            ``None`` sets Aᵢ = max(0, −H_ii) over a Hessian scan around ``c0``, separately
+            for each component.
+        snapshot_callback: Function called as ``snapshot_callback(c, t)`` after every
+            snapshot except the initial one, with the composition array and the physical
+            time in s.
+        adaptive_dt: Adapt the time step to dc_max, the largest change of any composition
+            value in a step. Below ``dc_tol_lo`` the step doubles and above ``dc_tol_hi``
+            it halves, within ``[dt_min, dt_max]``. Every step is accepted and the new
+            value applies from the next step. The last step is shortened to end at the
+            final time.
+        dt_min: Smallest adaptive time step in s. Defaults to the initial ``dt`` / 100.
+        dt_max: Largest adaptive time step in s. Defaults to the initial ``dt`` × 20.
+        dc_tol_lo: Value of dc_max below which the time step doubles.
+        dc_tol_hi: Value of dc_max above which the time step halves.
+        ndim: Spatial dimension, 2 (grid ``N × N``) or 3 (grid ``N × N × N``). In 3-D the
+            PNG frames show the mid-plane slice along the last axis.
+        use_gpu: Compute the FFTs with CuPy instead of NumPy.
+        elastic_enabled: Add the elastic contribution μ_el (Gururajan and Abinandanan 2007,
+            Eq. 36) to the chemical potential. When False, the ``elastic_*`` arguments are
+            ignored and ``solve_elasticity`` is never called. Works in 2-D and 3-D.
+        elastic_model: Eigenstrain model, e.g. from ``build_eigenstrain_model``, that
+            supplies ε*, μ_el and the stiffness fields. ``None`` uses a
+            ``FixedVegardModel`` built from ``elastic_Lambda`` and the stiffness tensors.
+        elastic_C_mat: Matrix stiffness tensor in Pa, shape ``(3, 3, 3, 3)``. When this
+            and ``elastic_C_ppt`` are both given, the isotropic settings are not used.
+        elastic_C_ppt: Precipitate stiffness tensor in Pa, shape ``(3, 3, 3, 3)``.
+        elastic_G_matrix: Matrix shear modulus in Pa for isotropic stiffness tensors, used
+            when ``elastic_C_mat`` or ``elastic_C_ppt`` is missing.
+        elastic_delta: Ratio of precipitate to matrix shear modulus for the isotropic
+            tensors. 1.0 is elastically homogeneous.
+        elastic_nu: Poisson's ratio of both phases for the isotropic tensors.
+        elastic_Lambda: Vegard tensor from ``build_vegard_tensor``, shape
+            ``(n_ind, ndim, ndim)``. Required when ``elastic_enabled`` is set, even with
+            ``elastic_model``.
+        elastic_sigma_applied: Average applied stress, shape ``(ndim, ndim)``. ``None``
+            means zero (traction-free).
+        elastic_solve_every: Solve mechanical equilibrium every this many steps and reuse
+            μ_el in between (quasi-static approximation). The first step always solves.
+        elastic_warm_start: Start each elastic solve from the previous displacement instead
+            of zero.
+        elastic_tol: Convergence tolerance of each elastic solve.
+        elastic_max_iter: Iteration limit of each elastic solve.
+        elastic_N_V: Molar density in mol/m³ that converts μ_el from Pa to J/mol. The
+            default of 1.0 leaves μ_el in Pa.
+        elastic_save_fields: Store μ_ch, μ_el, stress and strain at each snapshot in the
+            result.
+        incremental_npz: Rewrite ``output_dir/fields_checkpoint.npz`` with all snapshots at
+            every snapshot, so an interrupted run keeps its data. Needs ``output_dir``.
+        npz_meta: Extra entries for the checkpoint file.
 
     Returns:
-    -------
-    SimResult
+        The final fields, snapshot histories and run parameters.
+
+    Raises:
+        ValueError: If ``ndim`` is not 2 or 3, if ``M``, ``kappa`` or ``c0`` has the wrong
+            size, or if ``elastic_enabled`` is set without stiffness tensors (or
+            ``elastic_G_matrix``) or without ``elastic_Lambda``.
+        RuntimeError: If ``use_gpu`` is set and CuPy is not installed, or if μ_el contains
+            NaN or Inf because the elastic solve diverged.
     """
     if ndim not in (2, 3):
         raise ValueError(f"ndim must be 2 or 3, got {ndim}.")
@@ -558,7 +566,11 @@ def solve_cahn_hilliard(
     strain_hist: list[np.ndarray] = []
 
     def _snapshot(c_arr: np.ndarray, step: int, mu_ch_snap=None, mu_el_snap=None, stress_snap=None, strain_snap=None) -> None:
-        """Save a snapshot of the current state."""
+        """Record the composition, time, energies and composition statistics.
+
+        Also stores the elastic fields when they are given, and writes the PNG frame and
+        the NPZ checkpoint if those are enabled.
+        """
         nonlocal t_phys
         comp_hist.append(c_arr.copy())
         time_hist.append(t_phys)
@@ -832,6 +844,7 @@ def solve_cahn_hilliard(
 
 
 _CMAP_FIELD = "RdBu_r"
+"""Colormap of the composition frames."""
 
 
 def _save_frame(
@@ -841,9 +854,18 @@ def _save_frame(
     elements: list[str],
     reference_element: str | None = None,
 ) -> None:
-    """Save a PNG frame showing all composition fields + reference element.
+    """Save a PNG frame of every composition field, including the reference element.
 
-    For 3-D fields (shape N×N×N) the mid-plane slice (z = N//2) is shown.
+    The file is ``frame_<step>.png`` with the step zero-padded to 7 digits. For 3-D fields
+    the frame shows the mid-plane slice along the last axis. Each panel has its own colour
+    range.
+
+    Args:
+        c: Composition fields, shape ``(n_ind, *grid)``.
+        step: Step number, used in the title and the file name.
+        out_dir: Output directory.
+        elements: Independent elements, in the order of ``c``.
+        reference_element: Reference element, shown as 1 − Σ cᵢ. ``None`` leaves it out.
     """
     N_ind = c.shape[0]
     ndim = c.ndim - 1  # spatial dims = total dims minus element axis
@@ -890,6 +912,12 @@ def _save_log(
     cmean_hist: dict,
     cmax_hist: dict,
 ) -> None:
+    """Write ``free_energy_log.txt`` with one row per snapshot.
+
+    The columns are the step, the time in s, F_total, F_bulk, F_grad, and the minimum, mean
+    and maximum of every element. The step is the snapshot index times ``save_every``,
+    which is the true step only for fixed-step snapshots on multiples of ``save_every``.
+    """
     path = out_dir / "free_energy_log.txt"
     # header: fixed columns + per-element triplet (min, mean, max)
     el_cols = "  ".join(f"{'x' + el + '_min':>12}  {'x' + el + '_mean':>12}  {'x' + el + '_max':>12}" for el in elements)
@@ -916,6 +944,12 @@ def _plot_energy(
     cmean_hist: dict | None = None,
     cmax_hist: dict | None = None,
 ) -> None:
+    """Plot the free-energy history and, if statistics are given, the composition history.
+
+    Writes ``free_energy_history.png`` (|F_total|, |F_bulk| and F_grad on a log scale) and,
+    when ``elements`` and ``cmin_hist`` are given, ``composition_evolution.png`` with the
+    minimum, mean and maximum of each element over time.
+    """
     t = np.array(t_hist)
 
     fig, ax = plt.subplots(figsize=(6, 4.5))
@@ -1008,6 +1042,13 @@ def _write_params(
     steps_actual: int = 0,
     ndim: int = 2,
 ) -> None:
+    """Write ``sim_params.txt``, a text summary of the run.
+
+    The summary lists the domain and physical parameters, the Hessian at ``c0``, length
+    scales derived from κ and the most negative Hessian eigenvalue (interface width,
+    fastest-growing and critical wavelengths), the time integration settings, and the
+    stability ratio M_ii |H|_max dt / (4 dx²) of each field.
+    """
     N_ind = interp.N_ind
     t_total = dt * n_steps
 
@@ -1122,7 +1163,11 @@ def _write_params(
 
 
 def _to_vector(x, N: int) -> np.ndarray:
-    """Broadcast scalar or sequence to a 1-D array of length N."""
+    """Return ``x`` as a length-``N`` float array, repeating a scalar.
+
+    Raises:
+        ValueError: If ``x`` has more than one value but not ``N``.
+    """
     x = np.atleast_1d(np.asarray(x, dtype=float))
     if x.size == 1:
         return np.full(N, x.item())
@@ -1132,10 +1177,13 @@ def _to_vector(x, N: int) -> np.ndarray:
 
 
 def _to_matrix(M, N: int) -> np.ndarray:
-    """Broadcast M to an (N, N) array.
-    scalar    → M * I
-    1-D len N → diag(M)
-    2-D (N,N) → as-is
+    """Return ``M`` as an ``(N, N)`` mobility matrix.
+
+    A scalar or single value gives M I, a length-``N`` vector gives diag(M), and an
+    ``(N, N)`` array is copied.
+
+    Raises:
+        ValueError: If ``M`` has any other shape.
     """
     M = np.asarray(M, dtype=float)
     if M.ndim == 0:

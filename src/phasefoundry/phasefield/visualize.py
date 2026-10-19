@@ -1,13 +1,10 @@
-"""Visualization utilities for Cahn-Hilliard phase-field simulations.
+"""Images of phase-field composition fields.
 
-Functions
----------
-save_slices_2d      Save three orthogonal mid-plane slices as a matplotlib figure.
-save_pyvista_3d     Save PyVista renders: orthogonal slices, smooth outer surface,
-                    and isosurface at the mean composition.
+``save_slices_2d`` saves a 2-D field, or three mid-plane slices of a 3-D field, as a
+matplotlib PNG. ``save_pyvista_3d`` saves PyVista renders of a 3-D field. PyVista is
+optional: without it, ``save_pyvista_3d`` prints a message and saves nothing.
 
-PyVista is an optional dependency.  All PyVista functions degrade gracefully
-with an informative message when the package is not installed.
+Importing this module switches matplotlib to the non-interactive Agg backend.
 """
 
 from __future__ import annotations
@@ -22,7 +19,7 @@ import numpy as np
 
 
 def _mid_slices(field_3d: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return XY, XZ, YZ mid-plane slices of a 3-D field."""
+    """Return the XY, XZ and YZ mid-plane slices of a cubic 3-D field."""
     N = field_3d.shape[0]
     mid = N // 2
     return field_3d[:, :, mid], field_3d[:, mid, :], field_3d[mid, :, :]
@@ -37,21 +34,22 @@ def save_slices_2d(
     cmap: str = "RdBu_r",
     dpi: int = 150,
 ) -> Path:
-    """Save three orthogonal mid-plane slices of a 3D composition field.
+    """Save a composition field as a PNG: the field itself in 2-D, or three mid-plane slices in 3-D.
 
-    Parameters
-    ----------
-    c_3d    : np.ndarray  shape (N, N, N)
-    t_s     : float       physical time in seconds
-    out_dir : Path        output directory (created if absent)
-    label   : str         axis / colorbar label
-    title   : str         figure suptitle prefix (e.g. "Nb50V50 500 °C")
-    cmap    : str         matplotlib colormap
-    dpi     : int         figure resolution
+    All panels share one colour scale, from the field's minimum to its maximum.
+
+    Args:
+        c_3d: Composition field, shape ``(N, N)`` or ``(N, N, N)``.
+        t_s: Physical time in seconds, shown in the titles and the file name.
+        out_dir: Output directory, created if missing.
+        label: Field name used in the panel titles and the file name.
+        title: Prefix of the figure title, e.g. ``"Nb50V50 500 °C"``.
+        cmap: Matplotlib colormap name.
+        dpi: Image resolution.
 
     Returns:
-    -------
-    Path to the saved PNG file.
+        Path of the saved file, ``slices_<label>_t<t_s>s.png`` with underscores and spaces
+        removed from the label.
     """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -94,7 +92,7 @@ def save_slices_2d(
 
 
 def _scalar_bar_kwargs(bar_title: str) -> dict:
-    """Consistent horizontal bottom-right scalar bar for all 3D PyVista plots."""
+    """Return PyVista scalar-bar settings: a horizontal bar at the bottom right titled ``bar_title``."""
     return dict(
         title=f"{bar_title}\n",
         vertical=False,
@@ -110,6 +108,7 @@ def _scalar_bar_kwargs(bar_title: str) -> dict:
 
 
 def _show_bounds(pl: object) -> None:
+    """Show the outer axis bounds, labelled x, y and z, on a PyVista plotter."""
     pl.show_bounds(
         grid=False,
         location="outer",
@@ -132,28 +131,26 @@ def save_pyvista_3d(
     cmap: str = "RdBu_r",
     window_size: tuple[int, int] = (900, 800),
 ) -> list[Path]:
-    """Render the 3D composition field with PyVista and save PNG files.
+    """Render a 3-D composition field off-screen with PyVista and save PNG files.
 
-    Three renders are produced:
+    Three images are saved: ``pyvista_slices_*`` with the three orthogonal mid-planes in
+    3-D, ``pyvista_surface_*`` with the smooth-shaded outer surface of the cube, and
+    ``pyvista_iso_*`` with the isosurface at the mean composition. If the isosurface
+    fails, a message is printed and that image is skipped. The grid has unit spacing, so
+    the axes are in grid points.
 
-    1. ``pyvista_slices_*``  — three orthogonal mid-plane meshes in 3D space
-    2. ``pyvista_surface_*`` — smooth-shaded outer surface of the cube
-    3. ``pyvista_iso_*``     — isosurface at the mean composition
-
-    Parameters
-    ----------
-    c_3d       : np.ndarray  shape (N, N, N)
-    t_s        : float       physical time in seconds
-    out_dir    : Path        output directory (created if absent)
-    label      : str         scalar field key used in file names
-    bar_title  : str         colorbar title shown in the figure
-    title      : str         figure title prefix
-    cmap       : str         PyVista colormap name
-    window_size: tuple       off-screen render resolution in pixels
+    Args:
+        c_3d: Composition field, shape ``(N, N, N)``.
+        t_s: Physical time in seconds, shown in the titles and the file names.
+        out_dir: Output directory, created if missing.
+        label: Name of the scalar field on the grid, also used in the file names.
+        bar_title: Title of the colour bar.
+        title: Prefix of the image titles.
+        cmap: Colormap name.
+        window_size: Image size in pixels.
 
     Returns:
-    -------
-    List of Path objects for each saved PNG (empty if PyVista is unavailable).
+        Paths of the saved images, or an empty list if PyVista is not installed.
     """
     try:
         import pyvista as pv

@@ -1,44 +1,31 @@
-"""Binary Cahn-Hilliard Phase-Field Solver
-========================================
+"""Binary Cahn-Hilliard solver on a 2-D periodic grid.
 
-Solves the conserved Cahn-Hilliard (C-H) equation for a binary system:
+The solver integrates the conserved Cahn-Hilliard equation for one composition field c:
 
-    ∂c/∂t = ∇ · ( M ∇μ )
+    ∂c/∂t = ∇ · (M ∇μ),   μ = df/dc − κ ∇²c
 
-where the chemical potential is the variational derivative of the
-Ginzburg-Landau free energy functional:
+The bulk driving force df/dc comes from one of four models: ``"double_well"``, a
+synthetic double well that needs no thermodynamic data; ``"calphad"``, the exchange
+chemical potential Δμ = μ_i − μ_ref from a polynomial surrogate; and
+``"calphad_spline"`` and ``"calphad_gm_spline"``, which use cubic-spline surrogates of Δμ
+or G_m from ``thermodynamics.fitting``. For ``"calphad"`` and ``"calphad_spline"``, c is
+the mole fraction of the independent element; for ``"calphad_gm_spline"`` it is the mole
+fraction of the reference element.
 
-    μ = dF/dc − κ ∇²c
+Time stepping is pseudo-spectral and semi-implicit (Chen 2002):
 
-The bulk driving force dF/dc is provided by one of these models:
+    ĉⁿ⁺¹ = (ĉⁿ + M_eff Δt k² μ̂_bulk) / (1 + M_eff κ Δt k⁴)
 
-    'double_well'   Synthetic symmetric double-well (for benchmarking and
-                    pedagogical use). Does not require thermodynamic data.
-
-    'calphad'       CALPHAD-derived exchange chemical potential
-                    Δμ = μ_i − μ_ref, evaluated via a pre-fitted polynomial
-                    surrogate produced by thermodynamics.fitting.
-
-    'calphad_spline', 'calphad_gm_spline'
-                    Same, via CubicSpline surrogates of Δμ or G_m.
-
-Numerical method
-----------------
-Pseudo-spectral semi-implicit scheme [1]:
-
-    ĉⁿ⁺¹ = ( ĉⁿ + M Δt k² μ̂_bulk ) / ( 1 + M κ Δt k⁴ )
-
-where k² is the Laplacian operator in Fourier space (real-negative) and
-k⁴ = (k²)² the Bi-Laplacian. The gradient energy term is treated
-implicitly, giving unconditional stability with respect to the
-interfacial terms. The bulk free energy term is explicit.
+where k² is the Fourier-space Laplacian (real and negative) and k⁴ = (k²)². The mobility
+is degenerate, M(c) = M₀ c (1 − c), and the scheme uses its spatial average
+M_eff = ⟨M₀ c (1 − c)⟩, recomputed every step. The gradient term is implicit, which makes
+the step unconditionally stable with respect to it; the bulk term is explicit.
 
 References:
-----------
-[1] Chen, L.-Q. (2002). Phase-field models for microstructure evolution.
-    Annual Review of Materials Research, 32(1), 113–140.
-[2] Provatas, N., & Elder, K. (2010). Phase-Field Methods in Materials
-    Science and Engineering. Wiley-VCH.
+    1. Chen, L.-Q. (2002). Phase-field models for microstructure evolution. Annual Review
+       of Materials Research, 32(1), 113-140.
+    2. Provatas, N., and Elder, K. (2010). Phase-Field Methods in Materials Science and
+       Engineering. Wiley-VCH.
 """
 
 from __future__ import annotations
@@ -73,34 +60,32 @@ def stable_dt(
     temperature_K: float,
     safety: float = 0.5,
 ) -> float:
-    """Compute the largest time step that satisfies the explicit bulk-term
-    stability criterion for the semi-implicit Cahn-Hilliard solver:
+    """Return the largest time step that keeps the explicit bulk term stable.
 
-        (M/4) · |d²G/dx²|_max · Δt / Δx²  <  safety
+    The criterion is
 
-    The second derivative is estimated from the surrogate by sampling
-    1000 points over the full composition range [0, 1].
+        (M/4) · |d²G/dx²|_max · Δt / Δx² < safety
 
-    Parameters
-    ----------
-    M : float
-        Interfacial mobility [m⁵/(J·s)].
-    dx : float
-        Grid spacing [m].
-    calphad_fit : dict
-        Output of ``build_gm_spline_surrogate``, ``build_spline_surrogate``,
-        or ``load_fits``.  All three store a spline or polynomial that can
-        be numerically differentiated.
-    temperature_K : float
-        Temperature in Kelvin (must be present in ``calphad_fit``).
-    safety : float
-        Safety factor applied to the criterion (default 0.5, i.e. right
-        at the stability boundary).  Use 0.4 or lower for extra margin.
+    where M/4 is the largest value of the degenerate mobility M c (1 − c), reached at
+    c = 0.5. |d²G/dx²|_max is taken over 1000 points on [0.01, 0.99]. For the G_m spline
+    and the Δμ spline it is the analytic derivative of the spline. For the polynomial
+    surrogate it is the second finite difference of the polynomial built from
+    ``coefficients`` alone, ignoring ``feature_powers`` and ``intercept``; that is a third
+    derivative of G_m, not the second.
+
+    Args:
+        M: Mobility prefactor M₀. With μ in J/mol and lengths in m, its unit is
+            m²·mol/(J·s).
+        dx: Grid spacing in m.
+        calphad_fit: Output of ``build_gm_spline_surrogate``, ``build_spline_surrogate``
+            or ``load_fits``.
+        temperature_K: Temperature in K. The closest stored temperature is used, without
+            a tolerance check.
+        safety: Right-hand side of the criterion. 0.5 is the stability limit itself;
+            smaller values leave a margin.
 
     Returns:
-    -------
-    float
-        Maximum stable time step in seconds.
+        The largest stable time step, in s for SI inputs.
     """
     stored_T = np.array(calphad_fit["temperatures_K"])
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
@@ -142,35 +127,40 @@ def write_simulation_params(
     temperature_K: float,
     dt_stable: float | None = None,
 ) -> Path:
-    """Write a human-readable parameter summary to ``sim_params.txt`` in
-    ``output_dir``.
+    """Write a human-readable parameter summary to ``sim_params.txt`` in ``output_dir``.
 
-    Computed quantities
-    -------------------
-    dx          Grid spacing  Δx = Lx / N
-    delta       Diffuse interface width  δ ≈ sqrt(κ / |d²G/dx²|_max)
-    lambda_star Most unstable spinodal wavelength
-                λ* = 4π · sqrt(κ / |d²G/dx²|_c0)  (at the most negative d²G/dx²)
-    lambda_crit Critical (onset) wavelength
-                λ_c = 2π · sqrt(2κ / |d²G/dx²|_c0)
-    sigma       Approximate interface energy  σ ≈ ∫ sqrt(2κ · ΔG_mix) dc [J/m²]
-    t_total     Total simulated physical time  n_steps × dt
+    Besides the inputs, the file lists derived quantities, with d²G/dx² sampled at 2000
+    points on [0.01, 0.99]:
 
-    Parameters
-    ----------
-    output_dir : path
-        Directory where ``sim_params.txt`` is written.
-    N, Lx, kappa, M, dt, n_steps : simulation parameters
-    calphad_fit : dict
-        Surrogate fit (needed to evaluate d²G/dx²).
-    temperature_K : float
-    dt_stable : float, optional
-        The auto-computed stable dt (for reference); printed alongside
-        the actual dt used.
+    - grid spacing Δx = Lx / N;
+    - interface width δ = sqrt(κ / |d²G/dx²|_max);
+    - fastest-growing spinodal wavelength λ* = 4π sqrt(κ / |d²G/dx²|_min), using the most
+      negative d²G/dx²;
+    - critical wavelength λ_c = 2π sqrt(2κ / |d²G/dx²|_min);
+    - interface energy σ = ∫ sqrt(2κ ΔG_mix) dc, with ΔG_mix measured from the chord
+      between the spinodal edges. It needs G_m, so it is only computed for the spline
+      surrogates and reads "n/a" otherwise;
+    - total time n_steps · dt and the stability ratio (M/4) |d²G/dx²|_max dt / Δx².
+
+    For the polynomial surrogate, d²G/dx² is estimated as in ``stable_dt``, from
+    ``coefficients`` alone.
+
+    Args:
+        output_dir: Directory for ``sim_params.txt``. It is created if missing.
+        N: Grid points along each axis.
+        Lx: Domain edge length in m.
+        kappa: Gradient energy coefficient κ in J·m²/mol.
+        M: Mobility prefactor M₀.
+        dt: Time step used, in s.
+        n_steps: Number of time steps.
+        save_every: Snapshot interval in steps.
+        calphad_fit: Surrogate fit used to evaluate G_m and d²G/dx².
+        temperature_K: Temperature in K. The closest stored temperature is used.
+        dt_stable: Automatic stable time step, listed next to ``dt`` if given. The file
+            labels it "safety=0.4" whatever safety factor produced it.
 
     Returns:
-    -------
-    Path to the written file.
+        Path to the written file.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -287,30 +277,27 @@ def write_simulation_params(
 
 @dataclass
 class CHResult:
-    """Output of :func:`solve_cahn_hilliard_binary`.
+    """Output of ``solve_cahn_hilliard_binary``.
+
+    The energies are averages over the domain, i.e. energies per unit volume (J/mol for
+    the CALPHAD models).
 
     Attributes:
-    ----------
-    composition : np.ndarray, shape (N, N)
-        Final composition field c(x,y).
-    composition_history : list of np.ndarray
-        Composition snapshots saved at ``save_every`` intervals.
-    time_history : list of float
-        Physical times corresponding to each snapshot.
-    free_energy_history : list of float
-        Total free energy F = ∫(f_bulk + κ/2 |∇c|²) dV at each snapshot.
-    bulk_energy_history : list of float
-        Bulk contribution F_bulk = ∫f_bulk dV at each snapshot.
-    grad_energy_history : list of float
-        Gradient contribution F_grad = κ/2 ∫|∇c|² dV at each snapshot.
-    mix_energy_history : list of float
-        Mixing free energy ΔG_mix = ∫(G_m - linear_ref) dV, where
-        linear_ref is the mechanical mixture line between the pure endpoints.
-        Only populated for CALPHAD G_m spline models; empty list otherwise.
-    params : dict
-        All input parameters (for reproducibility).
-    elapsed_seconds : float
-        Wall-clock runtime.
+        composition: Final composition field, shape ``(N, N)``.
+        composition_history: Snapshots of the field at step 0, every ``save_every`` steps
+            and at the last step.
+        time_history: Time of each snapshot, step · dt.
+        free_energy_history: Total free energy ⟨f_bulk⟩ + ⟨κ/2 |∇c|²⟩ at each snapshot.
+        bulk_energy_history: Bulk part ⟨f_bulk⟩ at each snapshot.
+        grad_energy_history: Gradient part ⟨κ/2 |∇c|²⟩ at each snapshot, computed in
+            Fourier space with Parseval's theorem.
+        mix_energy_history: Mixing energy ⟨G_m(c) − G_ref(c)⟩, where G_ref is the line
+            between G_m(0) and G_m(1). Filled only for ``"calphad_gm_spline"``; empty
+            otherwise.
+        params: Run parameters: the model, grid and time-stepping settings, ``c0``,
+            ``noise``, ``seed`` and the ``dt`` actually used, plus the double-well
+            parameters or the temperature and fit metadata.
+        elapsed_seconds: Wall-clock time of the time-stepping loop.
     """
 
     composition: np.ndarray
@@ -347,106 +334,89 @@ def solve_cahn_hilliard_binary(
     output_dir: str | Path | None = None,
     save_frames: bool = False,
 ) -> CHResult:
-    """Solve the binary Cahn-Hilliard equation on a 2-D periodic domain.
+    """Solve the binary Cahn-Hilliard equation on a 2-D periodic grid.
 
-    Parameters
-    ----------
-    free_energy : {'double_well', 'calphad', 'calphad_spline', 'calphad_gm_spline'}
-        Free energy model to use:
+    The initial field is c0 plus uniform noise in [−noise/2, noise/2), clipped to [0, 1].
+    The mobility is the spatial average of M c (1 − c), recomputed every step. Units are
+    SI for the CALPHAD models and arbitrary for the double well.
 
-        * ``'double_well'`` — synthetic polynomial double-well, suitable
-          for benchmarking and parameter studies. No thermodynamic data
-          required.
-        * ``'calphad'`` — CALPHAD-derived exchange chemical potential
-          Δμ = μ_i − μ_ref via a pre-fitted polynomial surrogate. Requires
-          ``calphad_fit`` (output of ``thermodynamics.fitting.load_fits``)
-          and ``temperature_K``.
-        * ``'calphad_spline'`` / ``'calphad_gm_spline'`` — same, using the
-          CubicSpline surrogates from ``build_spline_surrogate`` /
-          ``build_gm_spline_surrogate``.
-
-    N : int
-        Number of grid points along each spatial dimension.
-    Lx : float
-        Physical domain length [m for CALPHAD, arbitrary units for
-        double-well].
-    kappa : float
-        Gradient energy coefficient κ [J·m²/mol for CALPHAD;
-        arbitrary units for double-well].
-    M : float
-        Interfacial mobility [m⁵/(J·s) for CALPHAD; arbitrary for
-        double-well].
-    c0 : float
-        Mean initial composition (mole fraction).
-    noise : float
-        Amplitude of random initial perturbation around c0.
-    seed : int
-        Random seed for reproducibility.
-    dt : float
-        Time step [s for CALPHAD; arbitrary for double-well].
-    n_steps : int
-        Total number of time steps.
-    rho_s : float
-        Free energy barrier height for the double-well model.
-    c_a, c_b : float
-        Equilibrium compositions (well minima) for the double-well model.
-    calphad_fit : dict
-        Surrogate from ``thermodynamics.fitting`` (``load_fits``, or the
-        spline builders for the spline models).
-        Required for all ``'calphad*'`` models.
-    temperature_K : float
-        Simulation temperature in Kelvin.
-        Required for all ``'calphad*'`` models.
-    save_every : int
-        Save a composition snapshot every this many steps.
-    output_dir : str or Path, optional
-        If given, save logs, plots and PNG frames to this directory
-        (old .png/.txt/.npy files there are deleted first).
-    save_frames : bool
-        If True and output_dir is set, save a PNG at each snapshot step.
+    Args:
+        free_energy: Bulk model. ``"double_well"`` needs no thermodynamic data;
+            ``"calphad"`` uses the polynomial Δμ surrogate from
+            ``thermodynamics.fitting.load_fits``; ``"calphad_spline"`` and
+            ``"calphad_gm_spline"`` use the surrogates from ``build_spline_surrogate`` and
+            ``build_gm_spline_surrogate``. With ``"calphad_gm_spline"``, c is the mole
+            fraction of the reference element; with the other CALPHAD models it is the
+            mole fraction of the independent element.
+        N: Grid points along each axis.
+        Lx: Domain edge length (m for the CALPHAD models).
+        kappa: Gradient energy coefficient κ (J·m²/mol for the CALPHAD models).
+        M: Mobility prefactor M₀ of M(c) = M₀ c (1 − c).
+        c0: Mean initial composition.
+        noise: Width of the uniform initial noise around ``c0``.
+        seed: Seed of the random number generator.
+        dt: Time step. ``None`` picks one automatically: ``stable_dt(..., safety=0.4)``
+            times ``dt_scale`` for the CALPHAD models and ``0.1 * dt_scale`` for the double
+            well. A given ``dt`` larger than ``stable_dt(..., safety=0.5)`` raises a
+            ``UserWarning`` for the CALPHAD models.
+        dt_scale: Factor applied to the automatic time step. Ignored when ``dt`` is given.
+        n_steps: Number of time steps.
+        rho_s: Energy scale of the double well.
+        c_a: First well minimum of the double well.
+        c_b: Second well minimum of the double well.
+        calphad_fit: Surrogate fit for the CALPHAD models, matching ``free_energy``.
+        temperature_K: Temperature in K, required for the CALPHAD models.
+        save_every: Snapshot interval in steps. Step 0 and the last step are always kept.
+        output_dir: If given, the directory is created, ``.png``, ``.txt`` and ``.npy``
+            files already in it are deleted, and ``free_energy_log.txt`` and
+            ``free_energy_history.png`` are written there, plus ``sim_params.txt`` for the
+            CALPHAD models.
+        save_frames: Also save a PNG of the field at each snapshot, if ``output_dir`` is
+            set.
 
     Returns:
-    -------
-    CHResult
-        Dataclass containing the final field, full history, and metadata.
+        The final field, the snapshot and energy histories, and the run parameters.
 
     Raises:
-    ------
-    ValueError
-        If a ``'calphad*'`` model is chosen but ``calphad_fit`` or
-        ``temperature_K`` are not provided.
+        ValueError: If ``free_energy`` is not one of the four models, or a CALPHAD model
+            is chosen without ``calphad_fit`` or ``temperature_K``.
 
     Examples:
-    --------
-    Double-well (no thermodynamic data required):
+        Double well, with no thermodynamic data:
 
-    >>> result = solve_cahn_hilliard_binary(
-    ...     free_energy="double_well",
-    ...     N=256,
-    ...     Lx=200,
-    ...     kappa=0.5,
-    ...     M=1.0,
-    ...     c0=0.4,
-    ...     dt=0.1,
-    ...     n_steps=2000,
-    ... )
+        ```python
+        result = solve_cahn_hilliard_binary(
+            free_energy="double_well",
+            N=256,
+            Lx=200,
+            kappa=0.5,
+            M=1.0,
+            c0=0.4,
+            dt=0.1,
+            n_steps=2000,
+        )
+        ```
 
-    CALPHAD-coupled (Nb-V at 500 °C):
+        Nb-V at 500 °C with a polynomial fit written by
+        ``thermodynamics.fitting.save_fits``:
 
-    >>> from phasefoundry.thermodynamics.fitting import load_fits
-    >>> fit = load_fits("pipelines/output/nb_v/delta_mu_fits.h5")
-    >>> result = solve_cahn_hilliard_binary(
-    ...     free_energy="calphad",
-    ...     N=256,
-    ...     Lx=100e-6,
-    ...     kappa=40e-19,
-    ...     M=1.0,
-    ...     c0=0.4,
-    ...     dt=5e-7,
-    ...     n_steps=2000,
-    ...     calphad_fit=fit,
-    ...     temperature_K=773.15,
-    ... )
+        ```python
+        from phasefoundry.thermodynamics.fitting import load_fits
+
+        fit = load_fits("nb_v_delta_mu_fits.h5")
+        result = solve_cahn_hilliard_binary(
+            free_energy="calphad",
+            N=256,
+            Lx=100e-6,
+            kappa=40e-19,
+            M=1.0,
+            c0=0.4,
+            dt=5e-7,
+            n_steps=2000,
+            calphad_fit=fit,
+            temperature_K=773.15,
+        )
+        ```
     """
     if free_energy not in ("double_well", "calphad", "calphad_spline", "calphad_gm_spline"):
         raise ValueError(f"free_energy must be 'double_well', 'calphad', or 'calphad_spline', got '{free_energy}'.")
@@ -592,6 +562,7 @@ def solve_cahn_hilliard_binary(
     mix_energy_history = []
 
     def _snapshot(c: np.ndarray, step: int) -> None:
+        """Record the energies and a copy of ``c`` at ``step``, and save a frame if asked."""
         t_phys = step * dt
         F_bulk = bulk_f(c)
 
@@ -703,15 +674,15 @@ def plot_result(
     output_dir: str | Path | None = None,
     show: bool = True,
 ) -> None:
-    """Plot the final composition field and free energy evolution.
+    """Plot the final composition field and the free energy history.
 
-    Parameters
-    ----------
-    result : CHResult
-    output_dir : str or Path, optional
-        Directory to save figures.
-    show : bool
-        Call plt.show().
+    The left panel shows the final field; the right panel shows the total, bulk and
+    gradient energies against time.
+
+    Args:
+        result: Output of ``solve_cahn_hilliard_binary``.
+        output_dir: If given, the figure is saved there as ``result_summary.png``.
+        show: Call ``plt.show()`` before closing the figure.
     """
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
@@ -763,6 +734,7 @@ def _save_frame(
     t_phys: float,
     output_dir: Path,
 ) -> None:
+    """Save the field at one snapshot as ``frame_<step>.png`` in ``output_dir``."""
     fig, ax = plt.subplots(figsize=(5, 5))
     vmin, vmax = c.min(), c.max()
     im = ax.imshow(c, cmap="PuOr", origin="lower", vmin=vmin, vmax=vmax)
@@ -787,7 +759,15 @@ def _save_energy_log(
     save_every: int,
     dt: float,
 ) -> Path:
-    """Write free energy log to ``free_energy_log.txt`` in output_dir."""
+    """Write the energy history to ``free_energy_log.txt`` in ``output_dir``.
+
+    Each row holds the step, time, total, bulk and gradient energies, the minimum and
+    maximum of the field, and ΔG_mix when it was recorded. The step is written as
+    ``i * save_every`` for the i-th snapshot.
+
+    Returns:
+        Path to the log file.
+    """
     path = output_dir / "free_energy_log.txt"
     has_mix = len(mix_energy_history) > 0
     header = f"{'step':>10}  {'time_s':>14}  {'F_total':>16}  {'F_bulk':>16}  {'F_grad':>16}  {'c_min':>10}  {'c_max':>10}"
@@ -817,15 +797,16 @@ def plot_free_energy_history(
     output_dir: str | Path | None = None,
     show: bool = False,
 ) -> None:
-    """Plot bulk, interfacial (gradient), and total free energy vs time.
+    """Plot the energy contributions and the composition range against time.
 
-    Parameters
-    ----------
-    result : CHResult
-    output_dir : path, optional
-        If given, saves ``free_energy_history.png`` there.
-    show : bool
-        Call plt.show().
+    The left panel shows |F_total|, |F_bulk|, |F_grad| and, when recorded, |ΔG_mix| on a
+    log scale. The right panel shows the minimum and maximum of the field at each
+    snapshot, labelled as x_V for the Nb-V system.
+
+    Args:
+        result: Output of ``solve_cahn_hilliard_binary``.
+        output_dir: If given, the figure is saved there as ``free_energy_history.png``.
+        show: Call ``plt.show()`` before closing the figure.
     """
     t = result.time_history
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
@@ -952,25 +933,23 @@ def plot_gm_with_pfm(
     output_dir: str | Path | None = None,
     show: bool = False,
 ) -> None:
-    """Combined figure: G_m landscape (left) + final PFM composition field (right).
+    """Plot the G_m curve next to the final phase-field composition field.
 
-    The left panel shows the molar Gibbs energy G_m(c) from the CALPHAD spline,
-    with the spinodal region shaded and vertical lines marking the initial mean
-    composition c0, and the min/max compositions reached at the final snapshot.
-    The right panel shows the final composition field from the PFM simulation.
+    The left panel shows G_m(x) from the CALPHAD spline with the line between G_m(0) and
+    G_m(1), shades where ΔG_mix < 0 and where d²G/dx² < 0, and marks the mean initial
+    composition and the minimum and maximum of the final field. The right panel shows the
+    final field. Labels and title assume the Nb-V BCC system.
 
-    Parameters
-    ----------
-    result : CHResult
-        Output of solve_cahn_hilliard_binary().
-    calphad_fit : dict
-        Output of build_gm_spline_surrogate() — must contain spline_gm.
-    temperature_K : float
-        Temperature used in the simulation (for labelling).
-    output_dir : str or Path, optional
-        If given, saves ``gm_pfm_combined.png`` there.
-    show : bool
-        Call plt.show().
+    Args:
+        result: Output of ``solve_cahn_hilliard_binary``.
+        calphad_fit: Output of ``build_gm_spline_surrogate``, with ``spline_gm`` and
+            ``spline_dfdx``.
+        temperature_K: Temperature in K, used to pick the fit and label the plot.
+        output_dir: If given, the figure is saved there as ``gm_pfm_combined.png``.
+        show: Call ``plt.show()`` before closing the figure.
+
+    Raises:
+        ValueError: If the fit at that temperature has no ``spline_gm`` or ``spline_dfdx``.
     """
     stored_T = np.array(calphad_fit["temperatures_K"])
     T_K = stored_T[int(np.argmin(np.abs(stored_T - temperature_K)))]

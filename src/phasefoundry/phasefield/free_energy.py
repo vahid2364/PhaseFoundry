@@ -1,22 +1,18 @@
-"""Free energy models for the binary Cahn-Hilliard equation.
+"""Bulk free energy models for the binary Cahn-Hilliard solver.
 
-Each model exposes a driving-force function (and a matching f(c)):
+Each model has a driving-force function, which returns dF/dc at every point of the
+composition field ``c``, and a matching free energy function. Both return arrays of the
+shape of ``c``.
 
-    df_dc(c, **params) -> np.ndarray
+- Double well: f(c) = ρ_s (c − c_a)² (c − c_b)², a synthetic model for benchmarks.
+- CALPHAD polynomial: Δμ = μ_i − μ_ref from the polynomial fit read by
+  ``thermodynamics.fitting.load_fits``.
+- CALPHAD splines: Δμ or G_m from the cubic-spline surrogates built by
+  ``thermodynamics.fitting.build_spline_surrogate`` and ``build_gm_spline_surrogate``.
 
-which returns the bulk chemical potential driving force dF/dc at every
-grid point, given the composition field c (shape N×N, values in [0,1]).
-
-Available models
-----------------
-double_well   : Symmetric polynomial double-well
-                f(c) = ρ_s (c − c_a)² (c − c_b)²
-                Parameters: rho_s, c_a, c_b
-
-calphad       : CALPHAD-derived Δμ from polynomial surrogate
-                Δμ(c) = μ_component − μ_reference
-                Parameters: fit (dict from thermodynamics.fitting.load_fits),
-                            temperature_K (float)
+The CALPHAD functions use the stored temperature closest to ``temperature_K`` and raise
+``ValueError`` if it is more than 1 K away. They read only the first fitted element, so
+they are meant for binary systems.
 """
 
 from __future__ import annotations
@@ -30,27 +26,21 @@ def double_well_df_dc(
     c_a: float = 0.3,
     c_b: float = 0.7,
 ) -> np.ndarray:
-    """Bulk chemical potential for a symmetric double-well free energy.
+    """Return the driving force df/dc of the double-well free energy.
 
-    Free energy density:
-        f(c) = ρ_s (c − c_a)² (c − c_b)²
+    For f(c) = ρ_s (c − c_a)² (c − c_b)² the derivative is
 
-    Derivative (analytic):
-        df/dc = 2 ρ_s (c − c_a)(c − c_b)(c_a + c_b − 2c)
-              = −2 ρ_s (c − c_a)(c − c_b)(2c − c_a − c_b)
+        df/dc = 2 ρ_s (c − c_a)(c − c_b)(2c − c_a − c_b)
 
-    Parameters
-    ----------
-    c : np.ndarray
-        Composition field.
-    rho_s : float
-        Free energy barrier height.
-    c_a, c_b : float
-        Equilibrium compositions of the two phases (well minima).
+    Args:
+        c: Composition field, any shape.
+        rho_s: Energy scale ρ_s. The barrier at c = (c_a + c_b) / 2 is
+            ρ_s ((c_b − c_a) / 2)⁴.
+        c_a: Composition of the first well minimum.
+        c_b: Composition of the second well minimum.
 
     Returns:
-    -------
-    np.ndarray  dF/dc  (same shape as c)
+        df/dc, same shape as ``c``.
     """
     return -2.0 * rho_s * (c - c_a) * (c - c_b) * (c_a + c_b - 2.0 * c)
 
@@ -61,7 +51,17 @@ def double_well_f(
     c_a: float = 0.3,
     c_b: float = 0.7,
 ) -> np.ndarray:
-    """Free energy density f(c) = ρ_s (c − c_a)² (c − c_b)²."""
+    """Return the double-well free energy density f(c) = ρ_s (c − c_a)² (c − c_b)².
+
+    Args:
+        c: Composition field, any shape.
+        rho_s: Energy scale ρ_s.
+        c_a: Composition of the first well minimum.
+        c_b: Composition of the second well minimum.
+
+    Returns:
+        f(c), same shape as ``c``.
+    """
     return rho_s * (c - c_a) ** 2 * (c - c_b) ** 2
 
 
@@ -71,28 +71,24 @@ def calphad_df_dc(
     temperature_K: float,
     x_element_col: int = 0,
 ) -> np.ndarray:
-    """Bulk chemical potential Δμ from a CALPHAD polynomial surrogate.
+    """Return Δμ = μ_i − μ_ref from the CALPHAD polynomial surrogate.
 
-    Retrieves Δμ = μ_i − μ_ref at every composition point using the
-    polynomial coefficients stored by thermodynamics.fitting.save_fits().
-    The surrogate is evaluated without sklearn — only NumPy is required.
+    The polynomial in the independent element's mole fraction is evaluated from the stored
+    ``coefficients``, ``feature_powers`` and ``intercept`` with NumPy alone, so scikit-learn
+    is not needed.
 
-    Parameters
-    ----------
-    c : np.ndarray, shape (N, N)
-        Composition field (mole fraction of the independent element).
-    fit : dict
-        Output of ``thermodynamics.fitting.load_fits()``.
-        Must contain the requested temperature.
-    temperature_K : float
-        Temperature in Kelvin. Must match one of the stored temperatures.
-    x_element_col : int
-        Column index of the composition variable in the surrogate
-        (always 0 for a binary system).
+    Args:
+        c: Mole fraction of the independent element, any shape.
+        fit: Output of ``thermodynamics.fitting.load_fits``.
+        temperature_K: Temperature in K. The closest stored temperature is used.
+        x_element_col: Not used. The first column of ``feature_powers`` is always read,
+            which is the only column for a binary system.
 
     Returns:
-    -------
-    np.ndarray  Δμ  [J/mol]  (same shape as c)
+        Δμ in J/mol, same shape as ``c``.
+
+    Raises:
+        ValueError: If no stored temperature is within 1 K of ``temperature_K``.
     """
     stored_T = np.array(fit["temperatures_K"])
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
@@ -132,23 +128,22 @@ def calphad_df_dc_gm_spline(
     gm_spline_fit: dict,
     temperature_K: float,
 ) -> np.ndarray:
-    """Bulk driving force dG_m/dx_V from a CubicSpline fitted directly to G_m.
+    """Return dG_m/dx_ref from a cubic spline fitted to G_m.
 
-    Uses the analytic derivative of the G_m spline — no integration error.
-    This is the recommended driving force for CALPHAD-PFM coupling because
-    the double-well shape of G_m is preserved exactly.
+    The driving force is the analytic derivative of the G_m spline, so no integration is
+    involved, and the spline passes through the tabulated G_m, so its double-well shape
+    is kept.
 
-    Parameters
-    ----------
-    c : np.ndarray, shape (N, N)
-        Composition field (mol fraction of reference element, e.g. x_V).
-    gm_spline_fit : dict
-        Output of ``build_gm_spline_surrogate()``.
-    temperature_K : float
+    Args:
+        c: Mole fraction of the reference element (e.g. x_V), any shape.
+        gm_spline_fit: Output of ``thermodynamics.fitting.build_gm_spline_surrogate``.
+        temperature_K: Temperature in K. The closest stored temperature is used.
 
     Returns:
-    -------
-    np.ndarray  dG_m/dx_V  [J/mol]  (same shape as c)
+        dG_m/dx_ref in J/mol, same shape as ``c``.
+
+    Raises:
+        ValueError: If no stored temperature is within 1 K of ``temperature_K``.
     """
     stored_T = np.array(gm_spline_fit["temperatures_K"])
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
@@ -170,19 +165,18 @@ def calphad_f_gm_spline(
     gm_spline_fit: dict,
     temperature_K: float,
 ) -> np.ndarray:
-    """Bulk free energy G_m from a CubicSpline fitted directly to pycalphad G_m.
+    """Return G_m from a cubic spline fitted to the pycalphad G_m.
 
-    Parameters
-    ----------
-    c : np.ndarray
-        Composition field (mol fraction of reference element, e.g. x_V).
-    gm_spline_fit : dict
-        Output of ``build_gm_spline_surrogate()``.
-    temperature_K : float
+    Args:
+        c: Mole fraction of the reference element (e.g. x_V), any shape.
+        gm_spline_fit: Output of ``thermodynamics.fitting.build_gm_spline_surrogate``.
+        temperature_K: Temperature in K. The closest stored temperature is used.
 
     Returns:
-    -------
-    np.ndarray  G_m  [J/mol]  (same shape as c)
+        G_m in J/mol, same shape as ``c``.
+
+    Raises:
+        ValueError: If no stored temperature is within 1 K of ``temperature_K``.
     """
     stored_T = np.array(gm_spline_fit["temperatures_K"])
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
@@ -204,22 +198,20 @@ def calphad_df_dc_spline(
     spline_fit: dict,
     temperature_K: float,
 ) -> np.ndarray:
-    """Bulk chemical potential Δμ from a CubicSpline surrogate.
+    """Return Δμ = μ_i − μ_ref from the cubic-spline surrogate.
 
-    Drop-in replacement for :func:`calphad_df_dc` using the spline
-    surrogate built by ``thermodynamics.fitting.build_spline_surrogate``.
+    This is the spline counterpart of ``calphad_df_dc``.
 
-    Parameters
-    ----------
-    c : np.ndarray, shape (N, N)
-        Composition field (mole fraction of the independent element).
-    spline_fit : dict
-        Output of ``build_spline_surrogate()``.
-    temperature_K : float
+    Args:
+        c: Mole fraction of the independent element, any shape.
+        spline_fit: Output of ``thermodynamics.fitting.build_spline_surrogate``.
+        temperature_K: Temperature in K. The closest stored temperature is used.
 
     Returns:
-    -------
-    np.ndarray  Δμ  [J/mol]  (same shape as c)
+        Δμ in J/mol, same shape as ``c``.
+
+    Raises:
+        ValueError: If no stored temperature is within 1 K of ``temperature_K``.
     """
     stored_T = np.array(spline_fit["temperatures_K"])
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
@@ -241,22 +233,21 @@ def calphad_f_spline(
     spline_fit: dict,
     temperature_K: float,
 ) -> np.ndarray:
-    """Bulk free energy density G_m from the CubicSpline surrogate.
+    """Return G_m from the cubic-spline surrogate of Δμ.
 
-    Uses the analytic antiderivative of the spline (PPoly) so G_m is
-    exact — no numerical integration required.
+    G_m is the analytic antiderivative of the Δμ spline (a ``PPoly``), so no numerical
+    integration is involved.
 
-    Parameters
-    ----------
-    c : np.ndarray
-        Composition field.
-    spline_fit : dict
-        Output of ``build_spline_surrogate()``.
-    temperature_K : float
+    Args:
+        c: Mole fraction of the independent element, any shape.
+        spline_fit: Output of ``thermodynamics.fitting.build_spline_surrogate``.
+        temperature_K: Temperature in K. The closest stored temperature is used.
 
     Returns:
-    -------
-    np.ndarray  G_m  [J/mol]  (same shape as c, up to additive constant)
+        G_m in J/mol up to an additive constant, same shape as ``c``.
+
+    Raises:
+        ValueError: If no stored temperature is within 1 K of ``temperature_K``.
     """
     stored_T = np.array(spline_fit["temperatures_K"])
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
@@ -278,37 +269,26 @@ def calphad_f(
     fit: dict,
     temperature_K: float,
 ) -> np.ndarray:
-    """Bulk free energy density G_m from the CALPHAD polynomial surrogate.
+    """Return G_m from the CALPHAD polynomial surrogate.
 
-    Uses the thermodynamic identity for a binary system.
+    The polynomial is fitted in the mole fraction x of the independent element, and in a
+    binary system dG_m/dx = μ_i − μ_ref = Δμ. With Δμ = Σ_k a_k x^p_k + b, G_m is the
+    analytic antiderivative
 
-    The surrogate polynomial is fitted in x_NB space (x_NB is the
-    independent element), so:
+        G_m(x) = Σ_k a_k / (p_k + 1) x^(p_k + 1) + b x
 
-        dG_m / dx_NB = μ_NB − μ_V = Δμ
+    The constant of integration is left out; it does not affect energy changes.
 
-    Therefore:
-
-        G_m(x_NB) = +∫ Δμ(x) dx  (+ arbitrary constant, omitted)
-
-    Since Δμ = Σ_k aₖ · x^{pₖ}, the antiderivative is analytic:
-
-        ∫ Δμ dx = Σ_k aₖ / (pₖ + 1) · x^{pₖ+1}
-
-    The constant of integration is irrelevant for tracking energy changes.
-
-    Parameters
-    ----------
-    c : np.ndarray, shape (N, N)
-        Composition field (mole fraction of NB, the independent element).
-    fit : dict
-        Output of ``thermodynamics.fitting.load_fits()``.
-    temperature_K : float
-        Temperature in Kelvin.
+    Args:
+        c: Mole fraction of the independent element, any shape.
+        fit: Output of ``thermodynamics.fitting.load_fits``.
+        temperature_K: Temperature in K. The closest stored temperature is used.
 
     Returns:
-    -------
-    np.ndarray  G_m  [J/mol]  (same shape as c, up to additive constant)
+        G_m in J/mol up to an additive constant, same shape as ``c``.
+
+    Raises:
+        ValueError: If no stored temperature is within 1 K of ``temperature_K``.
     """
     stored_T = np.array(fit["temperatures_K"])
     idx = int(np.argmin(np.abs(stored_T - temperature_K)))
