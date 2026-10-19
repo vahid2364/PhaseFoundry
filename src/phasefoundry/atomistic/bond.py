@@ -59,7 +59,7 @@ def compute_bond_table(
         f"  Bond-length model ({structure.upper()}, {'-'.join(symbols)}): "
         f"{len(symbols)} pure + {len(symbols) * (len(symbols) - 1) // 2} binary relaxations"
     )
-    blp = BondLatticeParameter(structure, symbols, initial_a=initial_a, calculator=calculator)
+    blp = BondLatticeParameter(structure, symbols, initial_a=initial_a, calculator=calculator)  # ty: ignore[invalid-argument-type]
     bonds = blp.calculate()["bonds"]
 
     D = np.array([[bonds[tuple(sorted((ei, ej)))] for ej in symbols] for ei in symbols])

@@ -375,7 +375,7 @@ def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20, label: str = "
         bounds_error=False,
         fill_value=None,  # extrapolate at boundary rather than NaN
     )
-    rgi._grid_bounds = [(float(a.min()), float(a.max())) for a in axes]
+    rgi._grid_bounds = [(float(a.min()), float(a.max())) for a in axes]  # ty: ignore[unresolved-attribute]
 
     print(f"    RBF→RGI built for {label!r} ({N_ind}-D, {n_grid} pts/axis).", flush=True)
     return rgi
@@ -584,7 +584,7 @@ class GmInterpolant:
 
             return H.reshape((self.N_ind, self.N_ind) + shape)
 
-    def min_eigenvalue(self, c: np.ndarray) -> np.ndarray:
+    def min_eigenvalue(self, c: np.ndarray) -> np.ndarray | float:
         """Return the smallest eigenvalue of the Hessian at each point.
 
         A negative value means the composition is spinodally unstable. Points whose Hessian

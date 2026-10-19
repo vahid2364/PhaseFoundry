@@ -298,9 +298,9 @@ def build_eigenstrain_model(
     ind_elements: list[str],
     c0: list | np.ndarray,
     ndim: int,
-    Lambda: np.ndarray,
-    C_mat: np.ndarray,
-    C_ppt: np.ndarray,
+    Lambda: np.ndarray | None,
+    C_mat: np.ndarray | None,
+    C_ppt: np.ndarray | None,
     all_elements: list[str] | None = None,
     table_path: str | Path | None = None,
     lattice_model: BondLatticeModel | None = None,
@@ -334,12 +334,15 @@ def build_eigenstrain_model(
 
     Raises:
         FileNotFoundError: If ``local_vegard`` is chosen and the SQS table does not exist.
-        ValueError: If ``model_name`` is unknown, or ``lattice_model`` is given without
+        ValueError: If ``model_name`` is unknown, ``fixed_vegard`` is chosen without ``Lambda``,
+            ``C_mat`` and ``C_ppt``, or ``lattice_model`` is given without
             ``reference_element``.
     """
     c0 = np.atleast_1d(np.asarray(c0, dtype=float))  # binary configs give a scalar c0
 
     if model_name in ("fixed_vegard", "uniform", "fixed"):
+        if Lambda is None or C_mat is None or C_ppt is None:
+            raise ValueError(f"{model_name} requires Lambda, C_mat and C_ppt")
         return FixedVegardModel(Lambda, C_mat, C_ppt)
 
     if model_name == "local_vegard":

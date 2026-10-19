@@ -161,7 +161,7 @@ class BatchInterp:
             Interpolated values, shape ``(n_pts,)``.
         """
         x = np.asarray(x, dtype=float)
-        if self._n_ind == 1:
+        if self._near is None:
             return self._lin(x[:, 0])
         v = self._lin(x)  # (n_pts,) — NaN outside hull
         nan_mask = np.isnan(v)

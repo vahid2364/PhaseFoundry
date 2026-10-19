@@ -52,6 +52,7 @@ from .spectral import laplacian_operator
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from ..elasticity.models import EigenstrainModel
     from ..thermodynamics.interpolant import GmInterpolant
 
 # Optional GPU backend via CuPy.  Falls back to NumPy transparently.
@@ -296,7 +297,7 @@ def solve_cahn_hilliard(
     # Model-based interface: supply a pre-built EigenstrainModel.
     # Controls how eps_star, mu_el, C_eff, and C_field are computed.
     # When None, falls back to FixedVegardModel built from Lambda/C_mat/C_ppt.
-    elastic_model: object | None = None,
+    elastic_model: EigenstrainModel | None = None,
     # pre-built stiffness tensors (from run.py)
     elastic_C_mat: np.ndarray | None = None,
     elastic_C_ppt: np.ndarray | None = None,
@@ -412,7 +413,7 @@ def solve_cahn_hilliard(
         raise ValueError(f"ndim must be 2 or 3, got {ndim}.")
 
     xp, _fftn, _ifftn = _get_fft_backend(use_gpu)
-    if use_gpu:
+    if use_gpu and _cp is not None:
         print(f"  FFT backend: CuPy (GPU)  device = {_cp.cuda.Device().id}")
     else:
         print("  FFT backend: NumPy (CPU)")
@@ -676,6 +677,7 @@ def solve_cahn_hilliard(
         # nearest-neighbour outside [0,1], which can amplify overshoot.
         # Mass conservation is unaffected: the stored field c is never modified.
         if elastic_enabled and (step % elastic_solve_every == 0 or _mu_el_cache is None):
+            assert _model is not None and _C_mat is not None and _C_ppt is not None
             c_el = np.clip(c, 0.0, 1.0)
             # re-normalise so rows still sum to ≤ 1 on the simplex
             row_sum = c_el.sum(axis=0, keepdims=True)
@@ -972,7 +974,7 @@ def _plot_energy(
     fig.savefig(out_dir / "free_energy_history.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
 
-    if elements is None or cmin_hist is None:
+    if elements is None or cmin_hist is None or cmean_hist is None or cmax_hist is None:
         return
     n_el = len(elements)
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]

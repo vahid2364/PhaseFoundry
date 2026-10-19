@@ -214,7 +214,7 @@ def build_elastic_table(
 
     path = Path(path)
     symbols = [e.capitalize() for e in elements]
-    supercell = tuple(int(n) for n in supercell)
+    supercell = (int(supercell[0]), int(supercell[1]), int(supercell[2]))
     meta = {
         "elements": symbols,
         "calculator": settings,
@@ -245,9 +245,13 @@ def build_elastic_table(
 
     if calculator is None:
         calculator = build_calculator(settings)
-    sqs_kwargs = {} if sqs_iterations is None else {"iterations": int(sqs_iterations)}
-    sqs_generator = SqsGenerator(**sqs_kwargs)
-    analyzer = CubicElasticConstantsAnalyzer(eos_name=eos, delta_max=delta_max, step_size=strain_step, calculator=calculator)
+    sqs_generator = SqsGenerator() if sqs_iterations is None else SqsGenerator(iterations=int(sqs_iterations))
+    analyzer = CubicElasticConstantsAnalyzer(
+        eos_name=eos,  # ty: ignore[invalid-argument-type]
+        delta_max=delta_max,
+        step_size=strain_step,
+        calculator=calculator,
+    )
 
     failed = []
     for x in tqdm(todo, desc="  SQS + elastic", unit="comp"):

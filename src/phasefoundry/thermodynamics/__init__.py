@@ -29,7 +29,7 @@ Examples:
 """
 
 from .fitting import build_gm_spline_surrogate, build_spline_surrogate, eval_delta_mu, fit_delta_mu, load_fits, save_fits
-from .generate import compute_table
+from .generate import Quantities, compute_table
 from .grid import grid_summary, simplex_grid
 from .interpolant import GmInterpolant, build_interpolant
 from .plot import (
@@ -62,9 +62,7 @@ def generate_table(
     pressure: float = 101325.0,
     output_path: str = "thermodynamic_table.h5",
     n_workers: int = 1,
-    quantities: tuple[str, ...] = ("GM", "MU", "dMU"),
-    sampling: str = "grid",
-    seed: int = 42,
+    quantities: Quantities = ("GM", "MU", "dMU"),
 ) -> dict:
     """Build a composition grid, evaluate it with pycalphad and save the table to HDF5.
 
@@ -78,23 +76,17 @@ def generate_table(
         composition_ranges: ``(min, max)`` mole fraction of each independent element (every
             element except the reference), e.g. ``{"HF": (0.05, 0.60), "NB": (0.05, 0.60)}``.
         reference_element: Dependent element, with x_ref = 1 − Σ x_i.
-        n_points: With ``sampling="grid"``, the number of grid points along each
-            independent axis. With ``"sobol"`` or ``"dirichlet"``, the number of valid
-            points returned.
+        n_points: Number of grid points along each independent axis.
         temperature: Temperature in K.
         pressure: Pressure in Pa.
         output_path: Path of the HDF5 file to write.
         n_workers: Number of worker processes. ``1`` runs serially.
         quantities: Subset of ``("GM", "MU", "dMU")`` to compute.
-        sampling: Composition sampling: ``"grid"`` for a regular grid along each
-            independent axis, ``"sobol"`` for quasi-random coverage of the constrained
-            simplex, or ``"dirichlet"`` for pseudo-random uniform samples of the simplex.
-        seed: Random seed for ``"sobol"`` and ``"dirichlet"``.
 
     Returns:
         The saved table, as returned by ``load_table(output_path)``.
     """
-    grid = simplex_grid(elements, composition_ranges, reference_element, n_points, sampling=sampling, seed=seed)
+    grid = simplex_grid(elements, composition_ranges, reference_element, n_points)
     print(grid_summary(grid, elements))
 
     # Ensure reference element is last in the list (required by compute_table)

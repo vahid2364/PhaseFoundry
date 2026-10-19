@@ -29,7 +29,7 @@ class _FakeInterpolant:
     reference_element: str = "B"
     grid_bounds: object = None
     derivative_method: str = "analytic"
-    temperature_K: float = 500.0  # noqa: N815  (mirrors GmInterpolant.temperature_K)
+    temperature_K: float = 500.0  # noqa: N815
 
     def gm(self, c):
         """Return g(c)."""

@@ -157,7 +157,7 @@ class TestElastic3DIntegration:
             reference_element: str = "B"
             grid_bounds: object = None
             derivative_method: str = "analytic"
-            temperature_K: float = 773.0  # noqa: N815  (mirrors GmInterpolant.temperature_K)
+            temperature_K: float = 773.0  # noqa: N815
 
             def gm(self, c):
                 """Return g(c)."""
@@ -182,7 +182,7 @@ class TestElastic3DIntegration:
         Lambda = build_vegard_tensor({"A": 0.05}, ["A"], ndim=3)
 
         result = solve_cahn_hilliard(
-            interpolant=_FakeInterp3D(),
+            interpolant=_FakeInterp3D(),  # ty: ignore[invalid-argument-type]
             M=1e-2,
             kappa=1e-3,
             c0=0.5,

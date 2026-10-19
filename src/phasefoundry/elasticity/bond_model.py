@@ -27,9 +27,13 @@ MaterialsFramework installed.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
 
 STRUCTURE_FACTOR = {
     "bcc": 2.0 / np.sqrt(3.0),
@@ -52,7 +56,7 @@ class BondLatticeModel:
         K: Structure factor from ``STRUCTURE_FACTOR``.
     """
 
-    def __init__(self, elements: list[str], bonds: np.ndarray, structure: str = "bcc") -> None:
+    def __init__(self, elements: list[str], bonds: ArrayLike, structure: str = "bcc") -> None:
         """Initialize the model and check the bond matrix.
 
         Args:
@@ -133,7 +137,7 @@ class BondLatticeModel:
         except KeyError:
             raise KeyError(f"Element {el!r} not in bond table {self.elements}") from None
 
-    def a(self, x: np.ndarray) -> np.ndarray:
+    def a(self, x: ArrayLike) -> np.ndarray:
         """Return the lattice parameter in Å for full compositions.
 
         Args:

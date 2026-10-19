@@ -385,7 +385,7 @@ def plot_ternary_spinodal(
         cs = ax_tmp.tricontour(triang, vals_aug, levels=[level])
         paths = []
         for path in cs.get_paths():
-            tern = [_tern(v[0], v[1]) for v in path.vertices]
+            tern = [_tern(v[0], v[1]) for v in np.asarray(path.vertices)]
             paths.append(tern)
         plt.close(fig_tmp)
         return paths
@@ -481,7 +481,7 @@ def plot_ternary_spinodal(
         cs = ax_tmp.tricontour(triang, values, levels=[level])
         paths = []
         for path in cs.get_paths():
-            tern = [_tern(v[0], v[1]) for v in path.vertices]
+            tern = [_tern(v[0], v[1]) for v in np.asarray(path.vertices)]
             paths.append(tern)
         plt.close(fig_tmp)
         return paths
@@ -489,9 +489,6 @@ def plot_ternary_spinodal(
     lam_valid = np.isfinite(lam_fine)
     sp_paths = _simple_contour(fine_pts[lam_valid, 0], fine_pts[lam_valid, 1], lam_fine[lam_valid], level=0.0)
     _plot_contour(sp_paths, color="k", linewidth=1.5, linestyle="--")
-
-    # Binodal line: disabled. It was drawn with _augmented_contour on the multiphase
-    # indicator (region_fine != "single") at level 0.5; see git history for the call.
 
     for tt in tie_triangles:
         tern_verts = [_tern(tt[i, 0], tt[i, 1]) for i in range(3)]

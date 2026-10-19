@@ -10,12 +10,17 @@ Importing this module switches matplotlib to the non-interactive Agg backend.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib as mpl
 
 mpl.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+
+if TYPE_CHECKING:
+    import pyvista as pv
+    from pyvista.plotting._typing import ColormapOptions, ScalarBarArgs
 
 
 def _mid_slices(field_3d: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -91,7 +96,7 @@ def save_slices_2d(
     return fname
 
 
-def _scalar_bar_kwargs(bar_title: str) -> dict:
+def _scalar_bar_kwargs(bar_title: str) -> ScalarBarArgs:
     """Return PyVista scalar-bar settings: a horizontal bar at the bottom right titled ``bar_title``."""
     return {
         "title": f"{bar_title}\n",
@@ -107,9 +112,9 @@ def _scalar_bar_kwargs(bar_title: str) -> dict:
     }
 
 
-def _show_bounds(pl: object) -> None:
+def _show_bounds(pl: pv.Plotter) -> None:
     """Show the outer axis bounds, labelled x, y and z, on a PyVista plotter."""
-    pl.show_bounds(
+    pl.show_bounds(  # ty: ignore[missing-argument]
         grid=False,
         location="outer",
         ticks="both",
@@ -128,7 +133,7 @@ def save_pyvista_3d(
     label: str = "x_Nb",
     bar_title: str = "Nb Composition",
     title: str = "",
-    cmap: str = "RdBu_r",
+    cmap: ColormapOptions = "RdBu_r",
     window_size: tuple[int, int] = (900, 800),
 ) -> list[Path]:
     """Render a 3-D composition field off-screen with PyVista and save PNG files.

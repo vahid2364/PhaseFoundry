@@ -52,7 +52,6 @@ def _coerce(value: str) -> Any:
         return _LITERALS[value.lower()]
     if "," in value:
         return [_coerce(v.strip()) for v in value.split(",")]
-    # int first, then float (handles 1e-10, 1.5e3, etc.)
     for convert in (int, float):
         try:
             return convert(value)

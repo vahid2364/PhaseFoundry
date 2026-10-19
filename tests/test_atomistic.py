@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -21,7 +22,7 @@ import pytest
 from phasefoundry.atomistic.elastic import simplex_compositions
 from phasefoundry.atomistic.settings import mlip_label, mlip_settings
 from phasefoundry.elasticity.bond_model import BondLatticeModel
-from phasefoundry.elasticity.models import build_eigenstrain_model
+from phasefoundry.elasticity.models import LocalVegardModel, build_eigenstrain_model
 from phasefoundry.elasticity.sources import (
     bond_table_path,
     elastic_table_path,
@@ -171,7 +172,9 @@ def test_load_lattice_model(bond_model, tmp_path):
     with pytest.raises(FileNotFoundError, match="Bond-length table"):
         load_lattice_model(cfg, tmp_path)
     bond_model.to_csv(tmp_path / "bonds.csv")
-    assert load_lattice_model(cfg, tmp_path).elements == ["Hf", "Nb", "V"]
+    model = load_lattice_model(cfg, tmp_path)
+    assert model is not None
+    assert model.elements == ["Hf", "Nb", "V"]
 
 
 @pytest.mark.skipif(not ORB_CSV.exists(), reason="ORB-v2 SQS table not present")
@@ -194,6 +197,7 @@ def test_local_vegard_uses_bond_model(bond_model):
         lattice_model=bond_model,
         reference_element=ref,
     )
+    assert isinstance(model, LocalVegardModel)
     a0 = bond_model.a_ind(c0[None, :], ind, ref)[0]
     assert model._a_ref == pytest.approx(a0 * 1e-10, rel=1e-12)
     alpha = bond_model.grad_a_ind(c0[None, :], ind, ref)[0] / a0
@@ -244,7 +248,7 @@ def test_elastic_table_emt(emt_calculator, tmp_path, monkeypatch):
     from phasefoundry.atomistic import elastic as el
 
     path = tmp_path / "el.csv"
-    kw = {"step": 0.5, "crystal_structure": "fcc", "supercell": (2, 2, 2), "calculator": emt_calculator}
+    kw: dict[str, Any] = {"step": 0.5, "crystal_structure": "fcc", "supercell": (2, 2, 2), "calculator": emt_calculator}
     df = el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **kw)
 
     assert list(df.columns[:4]) == ["x_Cu", "x_Ni", "m_Cu", "m_Ni"]
@@ -260,12 +264,14 @@ def test_elastic_table_emt(emt_calculator, tmp_path, monkeypatch):
     computed = []
     real = el._compute_point
     monkeypatch.setattr(el, "_compute_point", lambda *a, **k: computed.append(1) or real(*a, **k))
-    df = el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **{**kw, "step": 0.25})
+    finer: dict[str, Any] = {**kw, "step": 0.25}
+    df = el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **finer)
     assert len(computed) == 2 and len(df) == 5
 
     # different settings → refuse to extend
+    bigger: dict[str, Any] = {**kw, "supercell": (3, 3, 3)}
     with pytest.raises(ValueError, match="different settings"):
-        el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **{**kw, "supercell": (3, 3, 3)})
+        el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **bigger)
 
 
 def test_bond_table_emt(emt_calculator, tmp_path):

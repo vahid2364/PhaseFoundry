@@ -101,7 +101,7 @@ def binodal_boundary_binary(
 
         def residuals(xy):
             xa, xb = xy
-            return [f_A(xa) - f_A(xb), f_B(xa) - f_B(xb)]  # noqa: B023  (called within this iteration)
+            return [f_A(xa) - f_A(xb), f_B(xa) - f_B(xb)]  # noqa: B023
 
         found_lo = found_hi = None
 

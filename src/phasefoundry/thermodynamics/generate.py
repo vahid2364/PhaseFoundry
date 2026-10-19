@@ -62,7 +62,7 @@ def _eval_point(
         result: dict = {"idx": idx, "composition": comp_row}
 
         if "GM" in quantities:
-            gm = wks.get(ip("GM")).squeeze()
+            gm = wks.get(ip("GM")).squeeze()  # ty: ignore[invalid-argument-type]
             if not np.isfinite(gm):
                 return idx, None
             result["GM"] = float(gm)
@@ -70,7 +70,7 @@ def _eval_point(
         if "MU" in quantities:
             mus = {}
             for el in elements:
-                mu = wks.get(ip(f"MU({el})")).squeeze()
+                mu = wks.get(ip(f"MU({el})")).squeeze()  # ty: ignore[invalid-argument-type]
                 if not np.isfinite(mu):
                     return idx, None
                 mus[el] = float(mu)
@@ -80,7 +80,7 @@ def _eval_point(
             dmus = {}
             for el1 in elements:
                 for el2 in elements[:-1]:  # derivatives w.r.t. independent elements only
-                    dmu = wks.get(ip(f"MU({el1}).X({el2})")).squeeze()
+                    dmu = wks.get(ip(f"MU({el1}).X({el2})")).squeeze()  # ty: ignore[invalid-argument-type]
                     dmus[f"{el1}_{el2}"] = float(dmu) if np.isfinite(dmu) else np.nan
             result["dMU"] = dmus
 

@@ -437,6 +437,9 @@ def solve_cahn_hilliard_binary(
         if temperature_K is None:
             raise ValueError(f"temperature_K (in Kelvin) is required when free_energy='{free_energy}'.")
 
+    fit = calphad_fit if calphad_fit is not None else {}
+    T_K = temperature_K if temperature_K is not None else float("nan")
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -452,7 +455,7 @@ def solve_cahn_hilliard_binary(
     dt_stable_val = None
     if dt is None:
         if free_energy in ("calphad", "calphad_spline", "calphad_gm_spline"):
-            dt_stable_val = stable_dt(M=M, dx=dx, calphad_fit=calphad_fit, temperature_K=temperature_K, safety=0.4)
+            dt_stable_val = stable_dt(M=M, dx=dx, calphad_fit=fit, temperature_K=T_K, safety=0.4)
             dt = dt_stable_val * dt_scale
             if dt_scale == 1.0:
                 print(f"  auto dt = {dt:.4e} s  (stability criterion, safety=0.4)")
@@ -463,7 +466,7 @@ def solve_cahn_hilliard_binary(
             print(f"  auto dt = {dt:.4e} s  (double-well default × dt_scale={dt_scale:.3g})")
     # Warn if user-supplied dt violates stability for CALPHAD models
     elif free_energy in ("calphad", "calphad_spline", "calphad_gm_spline"):
-        dt_stable_val = stable_dt(M=M, dx=dx, calphad_fit=calphad_fit, temperature_K=temperature_K, safety=0.5)
+        dt_stable_val = stable_dt(M=M, dx=dx, calphad_fit=fit, temperature_K=T_K, safety=0.5)
         if dt > dt_stable_val:
             import warnings
 
@@ -485,8 +488,8 @@ def solve_cahn_hilliard_binary(
             dt=dt,
             n_steps=n_steps,
             save_every=save_every,
-            calphad_fit=calphad_fit,
-            temperature_K=temperature_K,
+            calphad_fit=fit,
+            temperature_K=T_K,
             dt_stable=dt_stable_val,
         )
 
@@ -519,37 +522,37 @@ def solve_cahn_hilliard_binary(
     elif free_energy == "calphad":
 
         def bulk_mu(c: np.ndarray) -> np.ndarray:
-            return calphad_df_dc(c, fit=calphad_fit, temperature_K=temperature_K)
+            return calphad_df_dc(c, fit=fit, temperature_K=T_K)
 
         def bulk_f(c: np.ndarray) -> float:
-            return float(np.mean(calphad_f(c, fit=calphad_fit, temperature_K=temperature_K)))
+            return float(np.mean(calphad_f(c, fit=fit, temperature_K=T_K)))
 
         bulk_gm = None
 
     elif free_energy == "calphad_spline":
 
         def bulk_mu(c: np.ndarray) -> np.ndarray:
-            return calphad_df_dc_spline(c, spline_fit=calphad_fit, temperature_K=temperature_K)
+            return calphad_df_dc_spline(c, spline_fit=fit, temperature_K=T_K)
 
         def bulk_f(c: np.ndarray) -> float:
-            return float(np.mean(calphad_f_spline(c, spline_fit=calphad_fit, temperature_K=temperature_K)))
+            return float(np.mean(calphad_f_spline(c, spline_fit=fit, temperature_K=T_K)))
 
         bulk_gm = None
 
     else:  # calphad_gm_spline
 
         def bulk_mu(c: np.ndarray) -> np.ndarray:
-            return calphad_df_dc_gm_spline(c, gm_spline_fit=calphad_fit, temperature_K=temperature_K)
+            return calphad_df_dc_gm_spline(c, gm_spline_fit=fit, temperature_K=T_K)
 
         def bulk_f(c: np.ndarray) -> float:
-            return float(np.mean(calphad_f_gm_spline(c, gm_spline_fit=calphad_fit, temperature_K=temperature_K)))
+            return float(np.mean(calphad_f_gm_spline(c, gm_spline_fit=fit, temperature_K=T_K)))
 
         # G_m spline — build mechanical mixture (linear) reference for ΔG_mix
-        stored_T = np.array(calphad_fit["temperatures_K"])
-        T_K_idx = int(np.argmin(np.abs(stored_T - temperature_K)))
+        stored_T = np.array(fit["temperatures_K"])
+        T_K_idx = int(np.argmin(np.abs(stored_T - T_K)))
         T_K_key = stored_T[T_K_idx]
-        el_key = list(calphad_fit["fits"][T_K_key]["models"].keys())[0]
-        spl_gm = calphad_fit["fits"][T_K_key]["models"][el_key]["spline_gm"]
+        el_key = list(fit["fits"][T_K_key]["models"].keys())[0]
+        spl_gm = fit["fits"][T_K_key]["models"][el_key]["spline_gm"]
         gm_at_0 = float(spl_gm(0.0))
         gm_at_1 = float(spl_gm(1.0))
 
@@ -648,8 +651,8 @@ def solve_cahn_hilliard_binary(
     if free_energy == "double_well":
         params.update(rho_s=rho_s, c_a=c_a, c_b=c_b)
     else:
-        meta = calphad_fit.get("metadata", {})
-        params["temperature_K"] = temperature_K
+        meta = fit.get("metadata", {})
+        params["temperature_K"] = T_K
         if "reference_element" in meta:
             params["reference_element"] = meta["reference_element"]
         if "x_variables" in meta:
