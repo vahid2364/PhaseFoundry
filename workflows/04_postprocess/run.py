@@ -147,7 +147,7 @@ if __name__ == "__main__":
     logging.basicConfig(format="%(message)s", stream=sys.stdout)
     logging.getLogger("phasefoundry").setLevel(logging.INFO)
     parser = argparse.ArgumentParser(description="Step 4 — Post-processing (general, any N-component system)")
-    parser.add_argument("--config", default="configs/nb_v.yaml", help="Path to YAML config file")
+    parser.add_argument("--config", required=True, help="Path to YAML config file")
     parser.add_argument(
         "--set",
         nargs="*",

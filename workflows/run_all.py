@@ -62,7 +62,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
-    parser.add_argument("--config", default="configs/nb_v.yaml", help="Path to YAML config file  (default: configs/nb_v.yaml)")
+    parser.add_argument("--config", required=True, help="Path to YAML config file")
     parser.add_argument("--from", dest="from_step", type=int, default=0, metavar="N", help="Start from step N  (0–5)")
     parser.add_argument("--only", dest="only_step", type=int, default=None, metavar="N", help="Run only step N  (0–5)")
     parser.add_argument(
