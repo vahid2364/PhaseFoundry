@@ -41,7 +41,7 @@ simulation:
   Lx:            5.0e-7              # 500 nm domain
 
   kappa:         1.0e-12             # [J·m²/mol]
-  M:             5.0e-21             # [m⁵/(J·s)]
+  M:             5.0e-21             # [m²·mol/(J·s)]
 
   c0:            0.50               # mean x_NB; x_V = 0.50
 

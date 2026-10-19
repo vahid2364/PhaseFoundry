@@ -31,7 +31,7 @@ simulation:
   # interface widths (δ ~ sqrt(κ/|H|)) for both elements.
   kappa:         [1.0e-12, 7.0e-12]
 
-  # Mobility matrix 2×2 [m⁵/(J·s)]
+  # Mobility matrix 2×2 [m²·mol/(J·s)]
   #   M[i][j] = mobility coupling field i to field j
   #   Diagonal = self-diffusion; off-diagonal = cross-diffusion
   # M_Hf ~100x smaller than M_Nb: Hf is larger (159 pm vs 146 pm for Nb)

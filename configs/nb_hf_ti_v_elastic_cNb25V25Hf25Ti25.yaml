@@ -38,7 +38,7 @@ simulation:
   #   kappa[0] → x_NB,  kappa[1] → x_HF,  kappa[2] → x_TI
   kappa:         [1.0e-12, 7.0e-12, 1.0e-12]
 
-  # Mobility matrix 3×3 [m⁵/(J·s)] — diagonal only (no cross-diffusion)
+  # Mobility matrix 3×3 [m²·mol/(J·s)] — diagonal only (no cross-diffusion)
   M:
     - [5.0e-21, 0.0,     0.0    ]         # M_NbNb, M_NbHf, M_NbTi
     - [0.0,     5.0e-23, 0.0    ]         # M_HfNb, M_HfHf, M_HfTi

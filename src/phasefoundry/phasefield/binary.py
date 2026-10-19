@@ -239,7 +239,7 @@ def write_simulation_params(
         "",
         "  ── Physical parameters ─────────────────────────────",
         f"  Gradient energy      κ        = {kappa:.3e} J·m²/mol",
-        f"  Mobility             M        = {M:.3e} m⁵/(J·s)",
+        f"  Mobility             M        = {M:.3e} m²·mol/(J·s)",
         "",
         "  ── Derived length scales ───────────────────────────",
         f"  |d²G/dx²|_max        f''_max  = {d2G_max:.3e} J/mol",

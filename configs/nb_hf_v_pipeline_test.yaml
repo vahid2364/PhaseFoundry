@@ -42,7 +42,7 @@ simulation:
   # Gradient energy [J·m²/mol] — one per independent field
   kappa:         [1.0e-12, 7.0e-12]  # κ_NB, κ_HF
 
-  # Mobility matrix [m⁵/(J·s)]
+  # Mobility matrix [m²·mol/(J·s)]
   M:
     - [5.0e-21, 0.0    ]             # M_NbNb, M_NbHf
     - [0.0,     5.0e-23]             # M_HfNb, M_HfHf

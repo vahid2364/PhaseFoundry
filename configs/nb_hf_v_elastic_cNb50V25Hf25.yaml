@@ -35,7 +35,7 @@ simulation:
   #   kappa[1] → x_HF field
   kappa:         [1.0e-12, 7.0e-12]
 
-  # Mobility matrix 2×2 [m⁵/(J·s)]
+  # Mobility matrix 2×2 [m²·mol/(J·s)]
   # M_HF ~100× smaller than M_NB: Hf is larger and diffuses slower at 500 °C.
   M:
     - [5.0e-21, 0.0    ]              # M_NbNb, M_NbHf

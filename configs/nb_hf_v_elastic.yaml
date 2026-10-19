@@ -30,7 +30,7 @@ simulation:
 
   kappa:         [1.0e-12, 7.0e-12]   # [J·m²/mol]: κ_NB, κ_HF
 
-  # Mobility matrix 2×2 [m⁵/(J·s)]: M_NbNb, M_NbHf / M_HfNb, M_HfHf
+  # Mobility matrix 2×2 [m²·mol/(J·s)]: M_NbNb, M_NbHf / M_HfNb, M_HfHf
   M:
     - [5.0e-21, 0.0    ]
     - [0.0,     5.0e-23]

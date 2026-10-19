@@ -34,7 +34,7 @@ simulation:
   # κ_TI matched to κ_NB as a first estimate (Ti diffuses comparably to Nb in BCC).
   kappa:         [1.0e-12, 7.0e-12, 1.0e-12]
 
-  # Mobility matrix 3×3 [m⁵/(J·s)] — diagonal only (no cross-diffusion)
+  # Mobility matrix 3×3 [m²·mol/(J·s)] — diagonal only (no cross-diffusion)
   # M_HF ~100× smaller than M_NB/M_TI: Hf is larger and diffuses slower at 500 °C.
   M:
     - [5.0e-21, 0.0,     0.0    ]         # M_NbNb, M_NbHf, M_NbTi

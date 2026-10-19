@@ -23,7 +23,7 @@ simulation:
   N:             96                # grid points per axis
   Lx:            1.0e-6            # domain size [m]
   kappa:         1.0e-12           # gradient energy coefficient [J·m²/mol]
-  M:             5.0e-21           # mobility [m⁵/(J·s)]
+  M:             5.0e-21           # mobility [m²·mol/(J·s)]
   c0:            0.6               # mean x_NB (independent field; x_V = 1 - x_NB)
   noise:         0.01              # initial perturbation amplitude
   seed:          42

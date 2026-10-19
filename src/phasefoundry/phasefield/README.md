@@ -60,7 +60,7 @@ result = solve_cahn_hilliard_binary(
     free_energy   = 'calphad_gm_spline',
     N=256, Lx=1e-6,          # 1 μm × 1 μm domain
     kappa=1e-12,             # gradient energy coefficient  [J·m²/mol]
-    M=5e-21,                 # mobility  [m⁵/(J·s)]
+    M=5e-21,                 # mobility  [m²·mol/(J·s)]
     c0=0.4,                  # mean composition  (mol fraction V)
     dt=None,                 # auto-select stable dt
     n_steps=30000, save_every=5000,
@@ -84,7 +84,7 @@ plot_free_energy_history(result, output_dir='results/nb_v/my_run')
 | Parameter | Symbol | Units | Notes |
 |---|---|---|---|
 | `kappa` | κ | J·m²/mol | Gradient energy coefficient. Controls interface width δ ≈ √(κ/\|d²G/dx²\|) |
-| `M` | M | m⁵/(J·s) | Interfacial mobility. Controls timescale |
+| `M` | M | m²·mol/(J·s) | Prefactor of the degenerate mobility M c (1 − c); sets the time scale |
 | `dt` | Δt | s | Time step. `None` = auto stable dt |
 | `Lx` | L | m | Domain size. Must contain several spinodal wavelengths λ* |
 | `N` | — | — | Grid points per dimension. Interface should span ≥ 5 grid points |
