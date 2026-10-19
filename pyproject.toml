@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Integrated CALPHAD / phase-field modelling toolkit for multicomponent alloys"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [
     { name = "Vahid Attari", email = "attari.v@gmail.com" },
