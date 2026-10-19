@@ -1,7 +1,5 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Nb-Hf-Ti-V Quaternary — Elasto-Chemical Spinodal Decomposition at 500 °C
 # Composition: x_NB = 0.25, x_HF = 0.25, x_TI = 0.25, x_V = 0.25
-# ─────────────────────────────────────────────────────────────────────────────
 # Elastic endpoints derived from An et al. (Mater. Horiz. 8, 948, 2021) XRD:
 #   a_mat = 3.313 Å  (β,  Nb/Ti-rich)    A_Z_mat ≈ 1.17  → ⟨100⟩ modulation
 #   a_ppt = 3.259 Å  (β*, Hf/V-rich)     A_Z_ppt ≈ 1.12  → ⟨100⟩ modulation
@@ -27,7 +25,7 @@ thermo:
     NB: [0.001, 0.999]
     HF: [0.001, 0.999]
     TI: [0.001, 0.999]
-  n_points:          10                    # 10×10×10 grid → ~220 valid simplex points
+  n_points:          10                    # 10×10×10 grid → ~165 valid simplex points
   temperatures_C:    [500]
 
 simulation:

@@ -1,13 +1,11 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Nb-V Binary — Elasto-Chemical Spinodal Decomposition at 500 °C  (c0 = 0.80)
-# ─────────────────────────────────────────────────────────────────────────────
-# Same as nb_v_elastic_c60.yaml but with mean composition c0 = 0.50 (symmetric
-# spinodal) instead of c0 = 0.60.  Thermodynamic data and elastic_params.yaml
-# are shared with the c0=0.60 run — no need to re-run steps 1 or 1b.
+# Same as nb_v_elastic_c60_3d.yaml but with mean composition c0 = 0.80 instead
+# of c0 = 0.60.  Thermodynamic data are shared with the c0=0.60 run — no need
+# to re-run step 1.
 #
 # Run steps in order:
 #   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_elastic_c60.yaml   # shared
-#   python workflows/01b_lookup_elastic/run.py      --config configs/nb_v_elastic_c60.yaml   # shared
+#   python workflows/01b_lookup_elastic/run.py      --config configs/nb_v_elastic_c80_3d.yaml
 #   python workflows/03_simulate/run.py             --config configs/nb_v_elastic_c80_3d.yaml
 
 system:
@@ -43,7 +41,6 @@ simulation:
   elastic:
     enabled:      true
 
-    # ── Stiffness model ───────────────────────────────────────────────────────
     # "isotropic"  — specify G_matrix, delta, nu manually
     # "cubic_csv"  — read C11/C12/C44 from SQS/DFT CSV (requires step 1b)
     stiffness_model: cubic_csv

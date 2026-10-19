@@ -1,0 +1,99 @@
+# Nb-V Binary — fully MLIP-driven elasto-chemical run at 500 °C  (c0 = 0.50)
+# Every atomistic input is computed inside PhaseFoundry with the MLIP below
+# (via MaterialsFramework) instead of being read from external files:
+#
+#   Step 0   TDB            ATAT sqs2tdb fit on ORB-v2 SQS energies (PhaseForge)
+#   Step 1b  SQS table      C11/C12/C44 + a_relaxed on a 5 at.% grid (21 SQS)
+#            bond lengths   Nb-Nb, V-V (pure BCC) and Nb-V (B2) for a(x)
+#
+# Results are cached under output.data_dir (and the TDB at system.db_path);
+# re-running a step reuses them, and an interrupted SQS sweep resumes.
+#
+# Requirements: Python 3.12, ATAT (sqs2tdb on PATH, ~/.atat.rc), and
+#   pip install -e '.[mlip]' 'materialsframework[orb]'
+#
+# Run steps in order:
+#   python workflows/00_generate_tdb/run.py         --config configs/nb_v_mlip_c50.yaml
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_mlip_c50.yaml
+#   python workflows/01b_lookup_elastic/run.py      --config configs/nb_v_mlip_c50.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_v_mlip_c50.yaml
+
+system:
+  name:              nb_v
+  db_path:           data/tdb/NbV_BCC_orb-v2.tdb     # written by step 0
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+# MLIP (any MaterialsFramework calculator; params go to its constructor)
+mlip:
+  calculator: orb
+  params:
+    model:  orb-v2
+    device: cpu          # cuda | mps | cpu
+    fmax:   0.01         # relaxation force tolerance [eV/Å]
+
+tdb_generation:
+  enabled:  true
+  lattices: [BCC_A2]
+  level:    2            # SQS at x = 0, 0.25, 0.5, 0.75, 1 → fits L0 and L1
+  fmax:     0.001        # tighter than mlip.params.fmax for formation energies
+  # overwrite: true      # refit even if system.db_path exists
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+  kappa:         1.0e-12
+  M:             5.0e-21
+  c0:            0.5
+  noise:         0.01
+  seed:          42
+  dt:            1.0e-2
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       100000
+  save_every:    10000
+
+  elastic:
+    enabled:           true
+    stiffness_model:   cubic_csv       # cubic C_ij from the SQS table
+    eigenstrain_model: local_vegard
+
+    source:        mlip                # compute the SQS table (step 1b) instead of elastic_csv
+    lattice_model: bond                # a(x) from the bond-length model (smooth, analytic ∂a/∂x)
+
+    sqs:
+      crystal_structure: bcc
+      supercell:         [4, 4, 4]     # 128-atom SQS
+      step:              0.05          # composition grid spacing → 21 points for a binary
+      # table: data/.../custom.csv     # default: <data_dir>/sqs_elastic_constants_<model>.csv
+      # calculator / params            # override the top-level mlip section
+
+    bond:
+      crystal_structure: bcc
+      # table: ...                     # default: <data_dir>/bond_lengths_<model>.csv
+      # calculator: grace              # e.g. GRACE bonds with ORB elastic constants
+      # params: {model: GRACE-2L-OMAT}
+
+    c_mat: {NB: 0.96, V: 0.04}
+    c_ppt: {NB: 0.36, V: 0.64}
+
+    solve_every:  10
+    warm_start:   true
+    tol:          1.0e-5
+    max_iter:     500
+    save_fields:  true
+
+output:
+  data_dir:      data/NbV_BCC_orb-v2/NbV
+  results_dir:   results/NbV_BCC_orb-v2/NbV
+  run_name:      auto

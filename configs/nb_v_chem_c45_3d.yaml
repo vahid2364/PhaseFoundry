@@ -1,11 +1,9 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# Nb-V Binary — Chemical-Only Spinodal Decomposition at 500 °C  (c0 = 0.50)
-# ─────────────────────────────────────────────────────────────────────────────
+# Nb-V Binary — Chemical-Only Spinodal Decomposition at 500 °C  (c0 = 0.45)
 # No elastic coupling. Thermodynamic data shared with other NbV v2 runs.
 #
 # Run steps in order:
-#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_chem_c50_3d.yaml  # shared
-#   python workflows/03_simulate/run.py             --config configs/nb_v_chem_c50_3d.yaml
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_chem_c45_3d.yaml  # shared
+#   python workflows/03_simulate/run.py             --config configs/nb_v_chem_c45_3d.yaml
 
 system:
   name:              nb_v

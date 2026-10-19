@@ -1,16 +1,14 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Pipeline integration test — Nb-Hf-Ti-V quaternary, chemical-only, 500 °C
 # Composition: x_NB=0.25, x_HF=0.25, x_TI=0.25, x_V=0.25
 #
 # Run the full pipeline in order:
 #
-#   pf-generate    --config configs/nb_hf_ti_v_pipeline_test.yaml
-#   pf-phase-map   --config configs/nb_hf_ti_v_pipeline_test.yaml
-#   pf-surrogate   --config configs/nb_hf_ti_v_pipeline_test.yaml
-#   pf-simulate    --config configs/nb_hf_ti_v_pipeline_test.yaml
-#   pf-postprocess --config configs/nb_hf_ti_v_pipeline_test.yaml
-#   pf-validate    --config configs/nb_hf_ti_v_pipeline_test.yaml
-# ─────────────────────────────────────────────────────────────────────────────
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   python workflows/01d_phase_map/run.py           --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   python workflows/04_postprocess/run.py          --config configs/nb_hf_ti_v_pipeline_test.yaml
+#   python workflows/05_validate/run.py             --config configs/nb_hf_ti_v_pipeline_test.yaml
 
 system:
   name:              nb_hf_ti_v_test
@@ -24,7 +22,7 @@ thermo:
     NB: [0.0, 1.0]
     HF: [0.0, 1.0]
     TI: [0.0, 1.0]
-  n_points:        45                  # simplex lattice: C(14,3)=364 pts before filtering
+  n_points:        45                  # simplex lattice: C(47,3)=16215 pts before filtering
   sampling:        grid
   seed:            42
   temperatures_C:  [500]

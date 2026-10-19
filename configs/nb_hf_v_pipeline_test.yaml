@@ -1,22 +1,20 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Pipeline integration test — Nb-Hf-V ternary, chemical-only, 500 °C
 # Composition: x_NB = 0.45, x_HF = 0.20, x_V = 0.35
 #
-# Uses PhaseForge v3 TDB (latest).
+# Uses PhaseForge v2 TDB (temperature-dependent).
 # All outputs go to data/pipeline_test/ and results/pipeline_test/ so this
 # run is fully isolated from production data.
 #
 # Run the full pipeline in order:
 #
-#   pf-generate    --config configs/nb_hf_v_pipeline_test.yaml
-#   pf-surrogate   --config configs/nb_hf_v_pipeline_test.yaml
-#   pf-simulate    --config configs/nb_hf_v_pipeline_test.yaml
-#   pf-postprocess --config configs/nb_hf_v_pipeline_test.yaml
-#   pf-validate    --config configs/nb_hf_v_pipeline_test.yaml
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_v_pipeline_test.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_v_pipeline_test.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_v_pipeline_test.yaml
+#   python workflows/04_postprocess/run.py          --config configs/nb_hf_v_pipeline_test.yaml
+#   python workflows/05_validate/run.py             --config configs/nb_hf_v_pipeline_test.yaml
 #
 # Or all at once:
-#   pf-run-all     --config configs/nb_hf_v_pipeline_test.yaml
-# ─────────────────────────────────────────────────────────────────────────────
+#   python workflows/run_all.py --config configs/nb_hf_v_pipeline_test.yaml
 
 system:
   name:              nb_hf_v_test
@@ -53,7 +51,7 @@ simulation:
 
   noise:              0.01
   seed:               42
-  dt:                 0.1            # auto from max|H_ii|
+  dt:                 0.1
   derivative_method:  jansson
   use_gpu:            false
   adaptive_dt:        false

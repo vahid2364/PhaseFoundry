@@ -1,7 +1,5 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Nb-Hf-Ti-V Quaternary — Chemical-Only Spinodal Decomposition at 500 °C
 # Composition: x_NB = 0.45, x_HF = 0.25, x_TI = 0.05, x_V = 0.25
-# ─────────────────────────────────────────────────────────────────────────────
 # No elastic coupling. Same kinetic and numerical parameters as binary NbV runs.
 #
 # Run steps in order:
@@ -21,7 +19,7 @@ thermo:
     NB: [0.001, 0.999]
     HF: [0.001, 0.999]
     TI: [0.001, 0.999]
-  n_points:          10                    # 10×10×10 grid → ~220 valid simplex points
+  n_points:          10                    # 10×10×10 grid → ~165 valid simplex points
   temperatures_C:    [500]
 
 simulation:

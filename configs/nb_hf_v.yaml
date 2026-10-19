@@ -1,6 +1,4 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Nb-Hf-V Ternary System — Pipeline Configuration
-# ─────────────────────────────────────────────────────────────────────────────
 # Run with the general workflow scripts:
 #   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_v.yaml
 #   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_v.yaml
@@ -43,7 +41,7 @@ simulation:
     - [0.0,     5.0e-23]              # M_HfNb, M_HfHf
 
   # Mean composition: [x_NB, x_HF]; x_V = 1 - 0.50 - 0.10 = 0.40
-  # Nb-V rich with small Hf addition — mirrors binary Nb-V c0=0.40 case
+  # Nb-V rich with small Hf addition — mirrors binary Nb-V x_V=0.40 case
   c0:            [0.50, 0.10]      # [x_NB, x_HF] (independent fields; x_V = 1 - x_NB - x_HF)
 
   noise:         0.01
@@ -53,7 +51,7 @@ simulation:
   # "jansson" requires /MU and /dMU datasets in the HDF5 table (step 1 default).
   derivative_method: fd
   use_gpu:           false             # use CuPy GPU FFT (requires CuPy)
-  adaptive_dt:       false             # adaptive time-stepping
+  adaptive_dt:       false
   n_steps:       30000
   save_every:    5000
 
@@ -83,5 +81,5 @@ simulation:
 output:
   data_dir:      data/HfNbTiV_BCC_PhaseForge_v3/NbHfV
   results_dir:   results/HfNbTiV_BCC_PhaseForge_v3/NbHfV
-  # run_name: pf_c{Nb mol%}Nb{Hf mol%}Hf_kappa{val}_{tdb_tag}
+  # run_name: pf_{ndim}d_c{Nb mol%}Nb{Hf mol%}Hf_kappa{val}_M{val}_{tdb_tag}
   run_name:      auto

@@ -1,6 +1,5 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Pipeline integration test — Nb-V binary, chemical-only
-# Simulation at 500 °C (x_NB = 0.50); thermodynamic tables at 100–1500 °C
+# Simulation at 500 °C (x_NB = 0.50); thermodynamic tables at 100–1002 °C
 # for spinodal/binodal phase diagram generation.
 #
 # Uses PhaseForge v2 TDB (temperature-dependent).
@@ -9,15 +8,14 @@
 #
 # Run the full pipeline in order:
 #
-#   pf-generate    --config configs/nb_v_pipeline_test.yaml
-#   pf-surrogate   --config configs/nb_v_pipeline_test.yaml
-#   pf-simulate    --config configs/nb_v_pipeline_test.yaml
-#   pf-postprocess --config configs/nb_v_pipeline_test.yaml
-#   pf-validate    --config configs/nb_v_pipeline_test.yaml
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_pipeline_test.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_v_pipeline_test.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_v_pipeline_test.yaml
+#   python workflows/04_postprocess/run.py          --config configs/nb_v_pipeline_test.yaml
+#   python workflows/05_validate/run.py             --config configs/nb_v_pipeline_test.yaml
 #
 # Or all at once:
-#   pf-run-all     --config configs/nb_v_pipeline_test.yaml
-# ─────────────────────────────────────────────────────────────────────────────
+#   python workflows/run_all.py --config configs/nb_v_pipeline_test.yaml
 
 system:
   name:              nb_v_test

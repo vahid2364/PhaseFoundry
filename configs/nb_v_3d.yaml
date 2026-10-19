@@ -1,9 +1,7 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Nb-V Binary System — Pipeline Configuration
-# ─────────────────────────────────────────────────────────────────────────────
 # All paths are relative to the repository root.
 # Override any value on the command line:
-#   python workflows/run_all.py --config configs/nb_v.yaml \
+#   python workflows/run_all.py --config configs/nb_v_3d.yaml \
 #       --set simulation.kappa=1e-10 simulation.n_steps=10000
 
 system:
@@ -28,7 +26,7 @@ simulation:
   M:             5.0e-21           # mobility [m⁵/(J·s)]
   c0:            0.6               # mean x_NB (independent field; x_V = 1 - x_NB)
   noise:         0.01              # initial perturbation amplitude
-  seed:          42                # random seed
+  seed:          42
   dt:            1.0e-2            # time step [s]  (None = auto stable dt)
   # Derivative method for chemical potentials and Hessian:
   #   "fd"      — finite differences on G_m interpolant (default, no extra data needed)
@@ -36,7 +34,7 @@ simulation:
   #   "hybrid"  — Jansson for μᵢ (accurate), FD for Hᵢⱼ (simpler)
   derivative_method: jansson
   use_gpu:           false             # use CuPy GPU FFT (requires CuPy)
-  adaptive_dt:       false             # adaptive time-stepping
+  adaptive_dt:       false
   n_steps:       5000
   save_every:    1000
 
@@ -45,8 +43,8 @@ output:
   results_dir:   results/HfNbTiV_BCC_PhaseForge_v3/NbV
   # Folder convention: results_dir / {temperature_C}C / thermodynamics/
   #                    results_dir / {temperature_C}C / kinetics / {run_name}/
-  # run_name pattern:  pf_c{mol%}_kappa{val}_{tdb_tag}
-  #   c50      = 50 mol% (mean initial composition x_V = 0.50)
+  # run_name pattern:  pf_{ndim}d_c{mol%}Nb_kappa{val}_M{val}_{tdb_tag}
+  #   c50Nb    = 50 mol% Nb (mean initial composition x_NB = 0.50)
   #   kappa1e12 = gradient energy coefficient κ = 1×10⁻¹² J·m²/mol
   #   tdbv3    = TDB version 3 (HfNbTiV_BCC_PhaseForge_v3.tdb)
   run_name:      auto

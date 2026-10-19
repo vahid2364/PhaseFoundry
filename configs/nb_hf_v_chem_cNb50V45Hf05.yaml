@@ -1,13 +1,11 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Nb-Hf-V Ternary — Chemical-Only Spinodal Decomposition at 500 °C
 # Composition: x_NB = 0.50, x_HF = 0.05, x_V = 0.45
-# ─────────────────────────────────────────────────────────────────────────────
 # No elastic coupling. Same kinetic and numerical parameters as binary NbV runs.
 #
 # Run steps in order:
-#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_v_chem_c50Nb05Hf.yaml
-#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_v_chem_c50Nb05Hf.yaml
-#   python workflows/03_simulate/run.py             --config configs/nb_hf_v_chem_c50Nb05Hf.yaml
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_v_chem_cNb50V45Hf05.yaml
+#   python workflows/02_fit_surrogate/run.py        --config configs/nb_hf_v_chem_cNb50V45Hf05.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_v_chem_cNb50V45Hf05.yaml
 
 system:
   name:              nb_hf_v

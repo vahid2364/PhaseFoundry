@@ -1,7 +1,5 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Nb-Hf-V Ternary — Elasto-Chemical Spinodal Decomposition at 500 °C
 # Composition: x_NB = 0.50, x_HF = 0.25, x_V = 0.25
-# ─────────────────────────────────────────────────────────────────────────────
 # Tensorial Vegard eigenstrain coupled to Cahn-Hilliard via CALPHAD (v2 TDB).
 # SQS/DFT elastic constants from PhaseForge v2 CSV.
 # Thermodynamic data shared with nb_hf_v_chem_cNb50V25Hf25.yaml (step 1 shared).
@@ -58,7 +56,6 @@ simulation:
   elastic:
     enabled:      true
 
-    # ── Stiffness model ───────────────────────────────────────────────────────
     stiffness_model: cubic_csv
     eigenstrain_model: local_vegard
     elastic_csv:  data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
