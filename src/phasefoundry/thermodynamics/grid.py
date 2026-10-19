@@ -47,7 +47,7 @@ def simplex_grid(
 
     rows = []
     for values in itertools.product(*axes):
-        x_ind = dict(zip(independent, values))
+        x_ind = dict(zip(independent, values, strict=True))
         x_ref = 1.0 - sum(values)
 
         if x_ref < 0.0 or x_ref > 1.0:

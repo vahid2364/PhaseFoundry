@@ -55,7 +55,7 @@ class TestHomogeneousEigenstrain:
         stress = result["stress"]
 
         # Expected: sigma_ij = C_ijkl * (-eps_T * delta_kl)  (summed over k,l)
-        expected_sigma_11 = sum(-C[0, 0, k_, l] * eps_T * (k_ == l) for k_ in range(ndim) for l in range(ndim))
+        expected_sigma_11 = sum(-C[0, 0, k_, l_] * eps_T * (k_ == l_) for k_ in range(ndim) for l_ in range(ndim))
         sigma_11_mean = float(stress[..., 0, 0].mean())
         assert abs(sigma_11_mean - expected_sigma_11) < 1e6, (
             f"ndim={ndim}: σ_11 = {sigma_11_mean:.3e}, expected {expected_sigma_11:.3e}"
@@ -157,7 +157,7 @@ class TestElastic3DIntegration:
             reference_element: str = "B"
             grid_bounds: object = None
             derivative_method: str = "analytic"
-            temperature_K: float = 773.0
+            temperature_K: float = 773.0  # noqa: N815  (mirrors GmInterpolant.temperature_K)
 
             def gm(self, c):
                 """Return g(c)."""

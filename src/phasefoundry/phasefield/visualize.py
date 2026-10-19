@@ -11,9 +11,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
+import matplotlib as mpl
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -75,7 +75,7 @@ def save_slices_2d(
             "XZ plane  (y = N/2)",
             "YZ plane  (x = N/2)",
         ]
-        for ax, data, ptitle in zip(axes, [xy, xz, yz], plane_titles):
+        for ax, data, ptitle in zip(axes, [xy, xz, yz], plane_titles, strict=True):
             im = ax.imshow(data, origin="lower", cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
             ax.set_title(f"{ptitle}\n{label},  t = {t_s:.1f} s", fontsize=9)
             ax.set_xticks([])
@@ -93,18 +93,18 @@ def save_slices_2d(
 
 def _scalar_bar_kwargs(bar_title: str) -> dict:
     """Return PyVista scalar-bar settings: a horizontal bar at the bottom right titled ``bar_title``."""
-    return dict(
-        title=f"{bar_title}\n",
-        vertical=False,
-        fmt="%.2f",
-        title_font_size=14,
-        label_font_size=11,
-        width=0.361,
-        height=0.0475,
-        position_x=0.595,
-        position_y=0.04,
-        color="black",
-    )
+    return {
+        "title": f"{bar_title}\n",
+        "vertical": False,
+        "fmt": "%.2f",
+        "title_font_size": 14,
+        "label_font_size": 11,
+        "width": 0.361,
+        "height": 0.0475,
+        "position_x": 0.595,
+        "position_y": 0.04,
+        "color": "black",
+    }
 
 
 def _show_bounds(pl: object) -> None:

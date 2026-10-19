@@ -67,7 +67,7 @@ def compute_bond_table(
 
     path = Path(path)
     model.to_csv(path)
-    with open(path.with_suffix(".meta.yaml"), "w") as fh:
+    with path.with_suffix(".meta.yaml").open("w") as fh:
         yaml.safe_dump({"elements": symbols, "structure": structure, "calculator": settings}, fh, sort_keys=False)
     print(f"    Written: {path}")
     return model

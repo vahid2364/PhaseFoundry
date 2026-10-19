@@ -11,14 +11,8 @@ derivative of the elastic energy, and the same at symmetric points on the interf
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
-
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT / "src"))
 
 from phasefoundry.elasticity import (
     build_isotropic_stiffness,
@@ -98,7 +92,6 @@ def test_finite_difference_consistency(delta):
         return float(np.sum(f_el) * dV)
 
     result0 = solve_elasticity(c, C_mat, C_ppt, EIGENSTRAIN, Lx=Lx, tol=1e-10, max_iter=5000, verbose=False)
-    F0 = total_F_el(c)
     mu_el = elastic_potential(c, result0["strain"], result0["stress"], C_mat, C_ppt, EIGENSTRAIN)
 
     # pick the interfacial pixel with the largest |mu_el| (most sensitive test)
@@ -132,7 +125,6 @@ def test_radial_symmetry():
     mu_el = compute_mu_el_from_result(c, result, C_mat, C_ppt, EIGENSTRAIN)
 
     # Compare mu_el at four symmetric points around the interface ring
-    cx = cy = Lx / 2.0
     dx = Lx / N
     r_interface_idx = int(round(R / dx))
     i0 = N // 2

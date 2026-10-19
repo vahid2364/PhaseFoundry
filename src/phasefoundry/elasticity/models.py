@@ -42,11 +42,10 @@ of the SQS interpolant.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 
-from .bond_model import BondLatticeModel
 from .fft_solver import _interp_stiffness, build_cubic_stiffness
 from .interpolation import get_scheme
 from .sqs_interpolant import (
@@ -54,6 +53,9 @@ from .sqs_interpolant import (
     build_batch_interpolators,
     load_and_filter,
 )
+
+if TYPE_CHECKING:
+    from .bond_model import BondLatticeModel
 
 
 @runtime_checkable
@@ -263,12 +265,11 @@ class LocalVegardModel:
         """Return ε*(x) = [a(c(x)) − a(c₀)] / a(c₀) I, shape ``(*spatial, ndim, ndim)``."""
         a_field = self._eval_a_field(c_all)  # (*spatial,) in m
         eps_T = (a_field - self._a_ref) / self._a_ref  # (*spatial,)
-        I = np.eye(ndim)
-        return eps_T[..., None, None] * I  # (*spatial, d, d)
+        identity = np.eye(ndim)
+        return eps_T[..., None, None] * identity  # (*spatial, d, d)
 
     def mu_el(self, sigma: np.ndarray, c_all: np.ndarray, N_V: float) -> np.ndarray:
         """Return μ_el,k = −α_k(c₀) tr(σ) / N_V, shape ``(n_ind, *spatial)``."""
-        d = sigma.shape[-1]
         tr_sigma = np.einsum("...ii->...", sigma)  # (*spatial,)
         # α_k at c₀ (fixed) — shape (N_ind, 1, ..., 1) for broadcasting
         alpha = self._alpha_c0  # (N_ind,)
@@ -286,7 +287,7 @@ class LocalVegardModel:
 
     def __repr__(self) -> str:  # pragma: no cover
         """Return a(c₀) in Å and the α_k(c₀) values."""
-        alphas = {el: round(a, 6) for el, a in zip(self._ind_elements, self._alpha_c0)}
+        alphas = {el: round(a, 6) for el, a in zip(self._ind_elements, self._alpha_c0, strict=True)}
         return f"LocalVegardModel(a_ref={self._a_ref * 1e10:.4f} Å, alpha_c0={alphas})"
 
 

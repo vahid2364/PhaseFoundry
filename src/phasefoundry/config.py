@@ -32,11 +32,15 @@ def load_config(path: str | Path) -> dict:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with open(path) as fh:
+    with path.open() as fh:
         cfg = yaml.safe_load(fh)
     if cfg is None:
         raise ValueError(f"Config file is empty: {path}")
     return cfg
+
+
+_LITERALS = {"true": True, "false": False, "none": None, "null": None}
+"""Override values, compared case-insensitively, that map to a Python constant."""
 
 
 def _coerce(value: str) -> Any:
@@ -44,23 +48,16 @@ def _coerce(value: str) -> Any:
 
     Comma-separated input gives a list whose items are converted the same way.
     """
-    if value.lower() == "true":
-        return True
-    if value.lower() == "false":
-        return False
-    if value.lower() in ("none", "null"):
-        return None
+    if value.lower() in _LITERALS:
+        return _LITERALS[value.lower()]
     if "," in value:
         return [_coerce(v.strip()) for v in value.split(",")]
-    try:
-        return int(value)
-    except ValueError:
-        pass
-    # float (handles 1e-10, 1.5e3, etc.)
-    try:
-        return float(value)
-    except ValueError:
-        pass
+    # int first, then float (handles 1e-10, 1.5e3, etc.)
+    for convert in (int, float):
+        try:
+            return convert(value)
+        except ValueError:
+            pass
     return value
 
 
@@ -138,7 +135,7 @@ def build_run_name(cfg: dict) -> str:
     if not isinstance(c0, list):
         c0 = [c0]
     parts = []
-    for xi, el in zip(c0, ind_els):
+    for xi, el in zip(c0, ind_els, strict=True):
         parts.append(f"{round(xi * 100):02d}{el.capitalize()}")
     comp_tag = "c" + "".join(parts)
 
@@ -182,10 +179,7 @@ def _sci_tag(value: float) -> str:
     mant = value / (10**exp)
     # round mantissa to avoid floating-point noise
     mant_r = round(mant, 6)
-    if abs(mant_r - round(mant_r)) < 1e-9:
-        mant_str = str(int(round(mant_r)))
-    else:
-        mant_str = f"{mant_r:.2g}".replace(".", "")
+    mant_str = str(int(round(mant_r))) if abs(mant_r - round(mant_r)) < 1e-09 else f"{mant_r:.2g}".replace(".", "")
     return f"{mant_str}e{abs(exp)}"
 
 

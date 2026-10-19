@@ -44,8 +44,8 @@ def build_isotropic_stiffness(G: float, nu: float) -> np.ndarray:
     for i in range(3):
         for j in range(3):
             for k in range(3):
-                for l in range(3):
-                    C[i, j, k, l] = lam * (i == j) * (k == l) + G * ((i == k) * (j == l) + (i == l) * (j == k))
+                for l_ in range(3):
+                    C[i, j, k, l_] = lam * (i == j) * (k == l_) + G * ((i == k) * (j == l_) + (i == l_) * (j == k))
     return C
 
 
@@ -136,10 +136,7 @@ def _voigt_setup(d: int):
         ``(pairs, tensor_to_voigt, voigt_to_tensor)``. The two functions convert a
         symmetric ``(d, d)`` tensor to its Voigt vector and back.
     """
-    if d == 2:
-        pairs = [(0, 0), (1, 1), (0, 1)]
-    else:
-        pairs = [(0, 0), (1, 1), (2, 2), (1, 2), (0, 2), (0, 1)]
+    pairs = [(0, 0), (1, 1), (0, 1)] if d == 2 else [(0, 0), (1, 1), (2, 2), (1, 2), (0, 2), (0, 1)]
 
     def tensor_to_voigt(T: np.ndarray) -> np.ndarray:
         return np.array([T[i, j] for i, j in pairs], dtype=np.float64)
@@ -231,10 +228,7 @@ def solve_elasticity(
     C_eff = C_eff_override if C_eff_override is not None else 0.5 * (C_mat + C_ppt)
 
     # Spatially varying stiffness  C(x)  — override from model or h(c) blend
-    if C_field_override is not None:
-        C_field = C_field_override
-    else:
-        C_field = _interp_stiffness(c, C_mat, C_ppt, scheme)
+    C_field = C_field_override if C_field_override is not None else _interp_stiffness(c, C_mat, C_ppt, scheme)
     # Restrict to in-plane/in-volume d×d×d×d block
     C_d = C_field[..., :d, :d, :d, :d]  # (*spatial, d, d, d, d)
     C_eff_d = C_eff[:d, :d, :d, :d]  # (d, d, d, d)
@@ -264,11 +258,9 @@ def solve_elasticity(
 
     # Voigt helpers for macroscopic strain update
     _, tensor_to_voigt, voigt_to_tensor = _voigt_setup(d)
-    n_voigt = 3 if d == 2 else 6
-    _, voigt_pairs, _ = _voigt_setup(d) if False else (None, None, None)
     pairs_list = [(0, 0), (1, 1), (0, 1)] if d == 2 else [(0, 0), (1, 1), (2, 2), (1, 2), (0, 2), (0, 1)]
     C_eff_V = np.array(
-        [[C_eff_d[i, j, k_, l] for (k_, l) in pairs_list] for (i, j) in pairs_list],
+        [[C_eff_d[i, j, k_, l_] for (k_, l_) in pairs_list] for (i, j) in pairs_list],
         dtype=np.float64,
     )
     S_eff_V = np.linalg.inv(C_eff_V)

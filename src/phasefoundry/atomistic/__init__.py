@@ -19,13 +19,13 @@ from .settings import build_calculator, mlip_label, mlip_settings
 from .tdb import generate_tdb
 
 __all__ = [
-    "mlip_settings",
-    "mlip_label",
     "build_calculator",
-    "simplex_compositions",
     "build_elastic_table",
-    "ensure_elastic_table",
     "compute_bond_table",
     "ensure_bond_table",
+    "ensure_elastic_table",
     "generate_tdb",
+    "mlip_label",
+    "mlip_settings",
+    "simplex_compositions",
 ]

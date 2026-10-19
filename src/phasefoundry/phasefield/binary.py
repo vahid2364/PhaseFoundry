@@ -102,7 +102,10 @@ def stable_dt(
         d2G = mdl["spline"].derivative()(x)
     else:  # polynomial: 2nd difference of the Δμ polynomial = d³G/dx³, not d²G/dx²
         h = 1e-5
-        mu = lambda v: np.polyval(mdl["coefficients"][::-1], v)  # placeholder
+
+        def mu(v):
+            return np.polyval(mdl["coefficients"][::-1], v)  # placeholder
+
         d2G = (mu(x + h) - 2 * mu(x) + mu(x - h)) / h**2
 
     d2G_max = float(np.max(np.abs(d2G)))
@@ -181,7 +184,10 @@ def write_simulation_params(
         d2G_arr = mdl["spline"].derivative()(x)
     else:
         h = 1e-5
-        mu = lambda v: np.polyval(mdl["coefficients"][::-1], v)
+
+        def mu(v):
+            return np.polyval(mdl["coefficients"][::-1], v)
+
         d2G_arr = (mu(x + h) - 2 * mu(x) + mu(x - h)) / h**2
         gm_arr = None
 
@@ -245,7 +251,8 @@ def write_simulation_params(
         f"  |d²G/dx²|_max        f''_max  = {d2G_max:.3e} J/mol",
         f"  Interface width      δ        = {delta:.3e} m  ({delta / dx:.2f} × dx){('  ' + warn_delta) if warn_delta else ''}",
         f"  Interface energy     σ        = {sigma_str}",
-        f"  Most unstable λ*     λ*       = {lambda_star:.3e} m  ({lambda_star / dx:.1f} × dx){('  ' + warn_lambda) if warn_lambda else ''}",
+        f"  Most unstable λ*     λ*       = {lambda_star:.3e} m  ({lambda_star / dx:.1f} × dx)"
+        f"{('  ' + warn_lambda) if warn_lambda else ''}",
         f"  Critical wavelength  λ_c      = {lambda_crit:.3e} m  ({lambda_crit / dx:.1f} × dx)",
         f"  Domain / λ*                   = {Lx / lambda_star:.1f}",
     ]
@@ -268,7 +275,7 @@ def write_simulation_params(
     ]
 
     out_path = output_dir / "sim_params.txt"
-    with open(out_path, "w") as fh:
+    with out_path.open("w") as fh:
         fh.write("\n".join(lines) + "\n")
 
     print(f"  Parameters written → {out_path}")
@@ -625,19 +632,19 @@ def solve_cahn_hilliard_binary(
         )
         # plot will be generated after CHResult is constructed — call separately
 
-    params = dict(
-        free_energy=free_energy,
-        N=N,
-        Lx=Lx,
-        kappa=kappa,
-        M=M,
-        c0=c0,
-        noise=noise,
-        seed=seed,
-        dt=dt,
-        n_steps=n_steps,
-        save_every=save_every,
-    )
+    params = {
+        "free_energy": free_energy,
+        "N": N,
+        "Lx": Lx,
+        "kappa": kappa,
+        "M": M,
+        "c0": c0,
+        "noise": noise,
+        "seed": seed,
+        "dt": dt,
+        "n_steps": n_steps,
+        "save_every": save_every,
+    }
     if free_energy == "double_well":
         params.update(rho_s=rho_s, c_a=c_a, c_b=c_b)
     else:
@@ -702,7 +709,7 @@ def plot_result(
     axes[0].set_yticks([])
     axes[0].grid(False)
 
-    mk = dict(marker="o", markersize=4, markerfacecolor="white", markeredgewidth=1.2)
+    mk = {"marker": "o", "markersize": 4, "markerfacecolor": "white", "markeredgewidth": 1.2}
     axes[1].plot(result.time_history, result.free_energy_history, color="#1f77b4", linewidth=1.8, label="$F_{total}$", **mk)
     axes[1].plot(
         result.time_history, result.bulk_energy_history, color="#d62728", linewidth=1.5, linestyle="--", label="$F_{bulk}$", **mk
@@ -773,7 +780,7 @@ def _save_energy_log(
     header = f"{'step':>10}  {'time_s':>14}  {'F_total':>16}  {'F_bulk':>16}  {'F_grad':>16}  {'c_min':>10}  {'c_max':>10}"
     if has_mix:
         header += f"  {'dG_mix':>16}"
-    with open(path, "w") as fh:
+    with path.open("w") as fh:
         fh.write(header + "\n")
         for i, (t, F, Fb, Fg, c) in enumerate(
             zip(
@@ -782,6 +789,7 @@ def _save_energy_log(
                 bulk_energy_history,
                 grad_energy_history,
                 composition_history,
+                strict=True,
             )
         ):
             step = i * save_every

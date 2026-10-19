@@ -27,8 +27,7 @@ derivatives are obtained:
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 from scipy.interpolate import (
@@ -40,6 +39,9 @@ from scipy.interpolate import (
 )
 
 from .storage import load_table
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 DerivativeMethod = Literal["fd", "jansson", "hybrid"]
 """Name of the derivative backend: ``"fd"``, ``"jansson"`` or ``"hybrid"``."""
@@ -98,10 +100,7 @@ def build_interpolant(
     col_idx = [el_list.index(e) for e in ind_elements]
 
     # build G_m interpolant (always needed)
-    if N_ind == 1:
-        gm_interp = _build_1d(comps, GM, col_idx[0])
-    else:
-        gm_interp = _build_nd(comps, GM, col_idx, N_ind)
+    gm_interp = _build_1d(comps, GM, col_idx[0]) if N_ind == 1 else _build_nd(comps, GM, col_idx, N_ind)
 
     # extract data bounds (per independent element axis)
     if N_ind == 1:

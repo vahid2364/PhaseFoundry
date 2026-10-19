@@ -33,14 +33,26 @@ Hessian eigenvalue over a coarse composition scan around c0 (see ``stable_dt``).
 from __future__ import annotations
 
 import time
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.fft import fftn as _np_fftn
 from numpy.fft import ifftn as _np_ifftn
+from tqdm import tqdm
+
+from ..elasticity import (
+    build_isotropic_stiffness,
+    solve_elasticity,
+)
+from .spectral import laplacian_operator
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from ..thermodynamics.interpolant import GmInterpolant
 
 # Optional GPU backend via CuPy.  Falls back to NumPy transparently.
 try:
@@ -73,16 +85,6 @@ def _get_fft_backend(use_gpu: bool):
             )
         return _cp, _cp_fftn, _cp_ifftn
     return np, _np_fftn, _np_ifftn
-
-
-from tqdm import tqdm
-
-from ..elasticity import (
-    build_isotropic_stiffness,
-    solve_elasticity,
-)
-from ..thermodynamics.interpolant import GmInterpolant
-from .spectral import laplacian_operator
 
 
 @dataclass
@@ -885,7 +887,7 @@ def _save_frame(
 
     n_panels = len(fields)
     fig, axes = plt.subplots(1, n_panels, figsize=(5 * n_panels, 4.5), squeeze=False)
-    for ax, (data, label) in zip(axes[0], fields):
+    for ax, (data, label) in zip(axes[0], fields, strict=True):
         im = ax.imshow(data, cmap=_CMAP_FIELD, vmin=data.min(), vmax=data.max(), origin="lower", interpolation="nearest")
         ax.set_title(
             f"$x_{{\\rm {label.capitalize()}}}${slice_label}  (step {step:,})",
@@ -922,9 +924,9 @@ def _save_log(
     # header: fixed columns + per-element triplet (min, mean, max)
     el_cols = "  ".join(f"{'x' + el + '_min':>12}  {'x' + el + '_mean':>12}  {'x' + el + '_max':>12}" for el in elements)
     header = f"{'step':>10}  {'time_s':>14}  {'F_total':>16}  {'F_bulk':>16}  {'F_grad':>16}  {el_cols}"
-    with open(path, "w") as fh:
+    with path.open("w") as fh:
         fh.write(header + "\n")
-        for k, (t, F, Fb, Fg) in enumerate(zip(t_hist, F_hist, Fb_hist, Fg_hist)):
+        for k, (t, F, Fb, Fg) in enumerate(zip(t_hist, F_hist, Fb_hist, Fg_hist, strict=True)):
             step = k * save_every
             el_vals = "  ".join(
                 f"{cmin_hist[el][k]:>12.5f}  {cmean_hist[el][k]:>12.5f}  {cmax_hist[el][k]:>12.5f}" for el in elements

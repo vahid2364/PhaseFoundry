@@ -201,7 +201,7 @@ def get_scheme(name: str = "cubic") -> InterpolationScheme:
     try:
         return _SCHEMES[name]
     except KeyError:
-        raise ValueError(f"Unknown interpolation scheme {name!r}. Available: {sorted(_SCHEMES)}")
+        raise ValueError(f"Unknown interpolation scheme {name!r}. Available: {sorted(_SCHEMES)}") from None
 
 
 def register_scheme(scheme: InterpolationScheme) -> None:

@@ -49,20 +49,21 @@ from .spectral import laplacian_operator, wavenumbers
 from .visualize import save_pyvista_3d, save_slices_2d
 
 __all__ = [
-    # general solver
-    "solve_cahn_hilliard",
-    "SimResult",
-    # visualization
-    "save_slices_2d",
-    "save_pyvista_3d",
-    # binary (legacy, kept for backward compatibility)
-    "solve_cahn_hilliard_binary",
-    "plot_result",
     "CHResult",
-    "stable_dt",
+    "SimResult",
+    "calphad_df_dc",
+    "calphad_f",
     "double_well_df_dc",
     "double_well_f",
-    "calphad_df_dc",
     "laplacian_operator",
+    "plot_free_energy_history",
+    "plot_gm_with_pfm",
+    "plot_result",
+    "save_pyvista_3d",
+    "save_slices_2d",
+    "solve_cahn_hilliard",
+    "solve_cahn_hilliard_binary",
+    "stable_dt",
     "wavenumbers",
+    "write_simulation_params",
 ]

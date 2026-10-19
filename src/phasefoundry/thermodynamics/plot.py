@@ -10,12 +10,15 @@ and colours the CALPHAD points by phase region.
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from .storage import load_table
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def plot_free_energy_vs_composition(
@@ -265,15 +268,14 @@ def plot_ternary_spinodal(
     fg = pr["fine_grid"]
     fine_pts = np.column_stack([fg["x0"], fg["x1"]])
     region_fine = fg["region"]
-    df_fine = fg["driving_force"]
 
     # Interpolate λ_min from the raw CALPHAD points onto the same fine grid.
     # Use LinearNDInterpolator for interior points; fill NaN (outside convex
     # hull of raw data) with NearestNDInterpolator away from the ternary edges.
     from scipy.interpolate import NearestNDInterpolator
 
-    lam_interp_lin = LinearNDInterpolator(list(zip(x0_raw, x1_raw)), lam_min_raw)
-    lam_interp_nn = NearestNDInterpolator(list(zip(x0_raw, x1_raw)), lam_min_raw)
+    lam_interp_lin = LinearNDInterpolator(list(zip(x0_raw, x1_raw, strict=True)), lam_min_raw)
+    lam_interp_nn = NearestNDInterpolator(list(zip(x0_raw, x1_raw, strict=True)), lam_min_raw)
     lam_fine = lam_interp_lin(fine_pts[:, 0], fine_pts[:, 1])
     nan_mask = np.isnan(lam_fine)
     if nan_mask.any():
@@ -296,12 +298,8 @@ def plot_ternary_spinodal(
         if len(boundary_nan_idx) > 0:
             lam_fine[boundary_nan_idx] = float(np.nanmax(lam_min_raw)) + 1.0
 
-    is_spinodal_fine = lam_fine < 0
-
     if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
-    else:
-        fig = ax.get_figure()
+        _, ax = plt.subplots(figsize=figsize)
 
     _, tax = ternary.figure(ax=ax, scale=1)
     tax.boundary(linewidth=1.2)
@@ -368,10 +366,7 @@ def plot_ternary_spinodal(
         """
         x0_aug = np.concatenate([x0_pts, edge_x0])
         x1_aug = np.concatenate([x1_pts, edge_x1])
-        if field == "lam":
-            fill = edge_val_lam * np.ones(len(edge_x0))
-        else:
-            fill = edge_val_bin * np.ones(len(edge_x0))
+        fill = edge_val_lam * np.ones(len(edge_x0)) if field == "lam" else edge_val_bin * np.ones(len(edge_x0))
         vals_aug = np.concatenate([values, fill])
 
         triang = mtri.Triangulation(x0_aug, x1_aug)
@@ -468,8 +463,6 @@ def plot_ternary_spinodal(
                 if len(seg) > 1:
                     tax.plot(seg, zorder=9, **kwargs)
 
-    lam_edge_val = float(np.nanmax(lam_fine)) + 1.0  # well above 0 → stable
-
     # Spinodal line: λ_min = 0 contour drawn on the fine grid alone (no edge
     # anchors).  The λ=0 boundary is a closed loop inside the diagram —
     # edge anchors would create spurious contours at the data domain boundary
@@ -497,14 +490,8 @@ def plot_ternary_spinodal(
     sp_paths = _simple_contour(fine_pts[lam_valid, 0], fine_pts[lam_valid, 1], lam_fine[lam_valid], level=0.0)
     _plot_contour(sp_paths, color="k", linewidth=1.5, linestyle="--")
 
-    # Binodal line: temporarily disabled
-    # is_multiphase = (region_fine != "single").astype(float)
-    # bin_paths = _augmented_contour(
-    #     fine_pts[:, 0], fine_pts[:, 1], is_multiphase,
-    #     edge_val_lam=lam_edge_val, edge_val_bin=0.0,
-    #     field="bin", level=0.5
-    # )
-    # _plot_contour(bin_paths, color="k", linewidth=1.5, linestyle="-")
+    # Binodal line: disabled. It was drawn with _augmented_contour on the multiphase
+    # indicator (region_fine != "single") at level 0.5; see git history for the call.
 
     for tt in tie_triangles:
         tern_verts = [_tern(tt[i, 0], tt[i, 1]) for i in range(3)]
@@ -517,7 +504,7 @@ def plot_ternary_spinodal(
         tax.scatter([_tern(sc_x0, sc_x1)], marker="*", s=50, color="k", zorder=10)
 
     if corner_labels is None:
-        # right = el0, top = el1, left = ref
+        # corners: el0 on the right, el1 at the top, ref on the left
         corner_labels = [
             independent_elements[0].title(),
             independent_elements[1].title(),
@@ -706,7 +693,7 @@ def plot_as_umap(
         )
 
     lab_els = corner_labels if corner_labels is not None else elements
-    for el, lab in zip(elements, lab_els):
+    for el, lab in zip(elements, lab_els, strict=True):
         ex, ey = pure_embs[el]
         ax.annotate(
             lab,
@@ -714,7 +701,7 @@ def plot_as_umap(
             fontsize=9,
             fontweight="bold",
             ha="center",
-            bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="0.7", alpha=0.85, lw=0.6),
+            bbox={"boxstyle": "round,pad=0.25", "fc": "white", "ec": "0.7", "alpha": 0.85, "lw": 0.6},
         )
 
     el_str = "–".join(e.title() for e in elements)
@@ -881,10 +868,7 @@ def _canonical_rotation(
     # Canonical starting angle and step:
     # n=4 → ■ orientation: vertices at 135°, 45°, -45°, -135°  (step = -90°)
     # all other n → vertex at top (90°), step = 360°/n clockwise
-    if n_el == 4:
-        canonical_start = 3.0 * np.pi / 4.0  # 135°
-    else:
-        canonical_start = np.pi / 2.0  # 90°
+    canonical_start = 3.0 * np.pi / 4.0 if n_el == 4 else np.pi / 2.0  # 135° for n = 4, else 90°
 
     canonical_angles = canonical_start - 2.0 * np.pi * np.arange(n_el) / n_el
 

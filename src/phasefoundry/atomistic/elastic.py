@@ -103,7 +103,7 @@ def _check_meta(path: Path, meta: dict) -> None:
             "PhaseFoundry and cannot be extended.  Read it with "
             "elastic.source: csv, or set elastic.sqs.table to a new path."
         )
-    with open(mpath) as fh:
+    with mpath.open() as fh:
         old = yaml.safe_load(fh) or {}
     diff = sorted(k for k in meta if old.get(k) != meta[k])
     if diff:
@@ -131,7 +131,7 @@ def _compute_point(
     """
     from pymatgen.core import Composition
 
-    present = {el: x for el, x in zip(symbols, fractions) if x > 0}
+    present = {el: x for el, x in zip(symbols, fractions, strict=True) if x > 0}
     sqs = sqs_generator.generate(Composition(present), crystal_structure=crystal_structure, supercell_size=supercell)
     relaxed = calculator.relax(sqs["structure"])["final_structure"]
     n_cells = len(relaxed) / ATOMS_PER_CELL[crystal_structure]
@@ -141,7 +141,7 @@ def _compute_point(
     E, nu = props["youngs_modulus"], props["poisson_ratio"]
     counts = relaxed.composition.get_el_amt_dict()
 
-    row = {f"x_{el}": float(x) for el, x in zip(symbols, fractions)}
+    row = {f"x_{el}": float(x) for el, x in zip(symbols, fractions, strict=True)}
     row.update({f"m_{el}": int(round(counts.get(el, 0))) for el in symbols})
     row.update(
         {
@@ -240,7 +240,7 @@ def build_elastic_table(
         return pd.read_csv(path)
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(_meta_path(path), "w") as fh:
+    with _meta_path(path).open("w") as fh:
         yaml.safe_dump(meta, fh, sort_keys=False)
 
     if calculator is None:
@@ -263,7 +263,7 @@ def build_elastic_table(
             )
         except Exception as exc:  # noqa: BLE001 — one bad composition must not stop the sweep
             failed.append(x)
-            warnings.warn(f"Composition {dict(zip(symbols, x.round(4)))} failed: {exc}", stacklevel=1)
+            warnings.warn(f"Composition {dict(zip(symbols, x.round(4), strict=True))} failed: {exc}", stacklevel=1)
             continue
         pd.DataFrame([row]).to_csv(path, mode="a", header=not path.exists(), index=False)
 

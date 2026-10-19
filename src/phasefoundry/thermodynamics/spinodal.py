@@ -14,7 +14,7 @@ maps from the lower convex hull of G_m. All functions read HDF5 tables written b
 from __future__ import annotations
 
 import warnings
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,6 +22,9 @@ from scipy.interpolate import interp1d
 from scipy.optimize import fsolve
 
 from .storage import load_table
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def binodal_boundary_binary(
@@ -98,7 +101,7 @@ def binodal_boundary_binary(
 
         def residuals(xy):
             xa, xb = xy
-            return [f_A(xa) - f_A(xb), f_B(xa) - f_B(xb)]
+            return [f_A(xa) - f_A(xb), f_B(xa) - f_B(xb)]  # noqa: B023  (called within this iteration)
 
         found_lo = found_hi = None
 
@@ -220,7 +223,7 @@ def spinodal_boundary_binary(
         elif len(boundaries) == 1:
             x_lo.append(boundaries[0])
             x_hi.append(None)
-            warnings.warn(f"Only one spinodal boundary found at {T_C} °C.")
+            warnings.warn(f"Only one spinodal boundary found at {T_C} °C.", stacklevel=2)
         else:
             x_lo.append(None)
             x_hi.append(None)
@@ -374,7 +377,7 @@ def compute_ternary_phase_regions(
     # element) is always covered, even when composition_ranges don't reach 0 or 1.
     from scipy.interpolate import NearestNDInterpolator
 
-    raw_pts = list(zip(x0_raw, x1_raw))
+    raw_pts = list(zip(x0_raw, x1_raw, strict=True))
     gm_interp_lin = LinearNDInterpolator(raw_pts, gm)
     gm_interp_nn = NearestNDInterpolator(raw_pts, gm)
 
@@ -441,7 +444,7 @@ def compute_ternary_phase_regions(
 
     from scipy.interpolate import NearestNDInterpolator
 
-    region_nn = NearestNDInterpolator(list(zip(x0_fine, x1_fine)), region_enc)
+    region_nn = NearestNDInterpolator(list(zip(x0_fine, x1_fine, strict=True)), region_enc)
 
     # Also compute driving force at raw data locations via hull planes
     gm_hull_raw = np.full(len(x0_raw), -np.inf)
@@ -523,16 +526,16 @@ def compute_phase_regions_multi(
 
     pts_nd = np.column_stack([x_ind, gm])
 
-    _fallback = dict(
-        compositions=comps,
-        gm=gm,
-        driving_force=np.zeros(len(gm)),
-        region=np.full(len(gm), "single"),
-        spinodal=np.zeros(len(gm), dtype=bool),
-        elements=elements,
-        independent_elements=independent_elements,
-        temperature_C=T_C,
-    )
+    _fallback = {
+        "compositions": comps,
+        "gm": gm,
+        "driving_force": np.zeros(len(gm)),
+        "region": np.full(len(gm), "single"),
+        "spinodal": np.zeros(len(gm), dtype=bool),
+        "elements": elements,
+        "independent_elements": independent_elements,
+        "temperature_C": T_C,
+    }
     try:
         hull = ConvexHull(pts_nd)
     except Exception:
@@ -593,16 +596,16 @@ def compute_phase_regions_multi(
             if valid and not np.any(np.isnan(H)):
                 is_spinodal[pt] = np.linalg.eigvalsh(H).min() < 0
 
-    return dict(
-        compositions=comps,
-        gm=gm,
-        driving_force=df,
-        region=region,
-        spinodal=is_spinodal,
-        elements=elements,
-        independent_elements=independent_elements,
-        temperature_C=T_C,
-    )
+    return {
+        "compositions": comps,
+        "gm": gm,
+        "driving_force": df,
+        "region": region,
+        "spinodal": is_spinodal,
+        "elements": elements,
+        "independent_elements": independent_elements,
+        "temperature_C": T_C,
+    }
 
 
 def _points_in_simplex_nd(
@@ -747,7 +750,7 @@ def recommend_pfm_params(
     # We want: δ = delta_over_dx × dx  and  Lx = n_interfaces × λ*
     # From δ = sqrt(κ/d2G_max): κ = δ² × d2G_max
     # From λ* = 4π sqrt(κ/d2G_c0): λ* = 4π × δ × sqrt(d2G_max/d2G_c0)
-    # dx = δ / delta_over_dx
+    # which fixes the grid spacing at δ / delta_over_dx
     # N = Lx / dx = n_interfaces × λ* / dx
 
     d2G_c0_safe = max(d2G_c0, 1e-10)
@@ -847,13 +850,13 @@ def plot_spinodal(
         x_lo = spinodal_data["x_spinodal_low"]
         x_hi = spinodal_data["x_spinodal_high"]
 
-        valid = [(T, lo, hi) for T, lo, hi in zip(temps, x_lo, x_hi) if lo is not None and hi is not None]
+        valid = [(T, lo, hi) for T, lo, hi in zip(temps, x_lo, x_hi, strict=True) if lo is not None and hi is not None]
 
         if not valid:
-            warnings.warn("No spinodal region found across the given temperatures.")
+            warnings.warn("No spinodal region found across the given temperatures.", stacklevel=2)
             return ax
 
-        T_v, lo_v, hi_v = zip(*valid)
+        T_v, lo_v, hi_v = zip(*valid, strict=True)
         T_v = np.array(T_v)
         lo_v = np.array(lo_v)
         hi_v = np.array(hi_v)
@@ -867,11 +870,11 @@ def plot_spinodal(
 
     # multicomponent path (project onto one element)
     elif "min_eigenvalue" in spinodal_data:
-        elements = None
         for T, comps, is_sp in zip(
             spinodal_data["temperatures_celsius"],
             spinodal_data["compositions"],
             spinodal_data["is_spinodal"],
+            strict=True,
         ):
             sp_comps = comps[is_sp]
             if len(sp_comps) > 0:
@@ -940,11 +943,11 @@ def plot_phase_diagram(
     b_hi = binodal_data["x_binodal_high"]
 
     valid_b = sorted(
-        [(T, lo, hi) for T, lo, hi in zip(temps_b, b_lo, b_hi) if lo is not None and hi is not None],
+        [(T, lo, hi) for T, lo, hi in zip(temps_b, b_lo, b_hi, strict=True) if lo is not None and hi is not None],
         key=lambda v: v[0],  # sort by temperature
     )
     if valid_b:
-        T_b, lo_b, hi_b = zip(*valid_b)
+        T_b, lo_b, hi_b = zip(*valid_b, strict=True)
         T_b = np.array(T_b)
         lo_b = np.array(lo_b)
         hi_b = np.array(hi_b)
@@ -973,11 +976,11 @@ def plot_phase_diagram(
     s_hi = spinodal_data["x_spinodal_high"]
 
     valid_s = sorted(
-        [(T, lo, hi) for T, lo, hi in zip(temps_s, s_lo, s_hi) if lo is not None and hi is not None],
+        [(T, lo, hi) for T, lo, hi in zip(temps_s, s_lo, s_hi, strict=True) if lo is not None and hi is not None],
         key=lambda v: v[0],  # sort by temperature
     )
     if valid_s:
-        T_s, lo_s, hi_s = zip(*valid_s)
+        T_s, lo_s, hi_s = zip(*valid_s, strict=True)
         T_s = np.array(T_s)
         lo_s = np.array(lo_s)
         hi_s = np.array(hi_s)
@@ -1014,7 +1017,7 @@ def plot_phase_diagram(
             xytext=(x_crit + 0.08, T_crit + 100),
             fontsize=9,
             color="#d62728",
-            arrowprops=dict(arrowstyle="->", color="#d62728", lw=1.2),
+            arrowprops={"arrowstyle": "->", "color": "#d62728", "lw": 1.2},
         )
 
     ax.set_xlabel(f"$x_{{\\rm {x_element.title()}}}$  (mol fraction)", fontsize=12)

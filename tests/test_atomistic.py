@@ -13,14 +13,10 @@ needs ATAT ``sqs2tdb`` on PATH and ``~/.atat.rc``.
 from __future__ import annotations
 
 import shutil
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
-
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT / "src"))
 
 from phasefoundry.atomistic.elastic import simplex_compositions
 from phasefoundry.atomistic.settings import mlip_label, mlip_settings
@@ -31,6 +27,8 @@ from phasefoundry.elasticity.sources import (
     elastic_table_path,
     load_lattice_model,
 )
+
+_ROOT = Path(__file__).resolve().parent.parent
 
 ORB_CSV = _ROOT / "data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv"
 
@@ -246,7 +244,7 @@ def test_elastic_table_emt(emt_calculator, tmp_path, monkeypatch):
     from phasefoundry.atomistic import elastic as el
 
     path = tmp_path / "el.csv"
-    kw = dict(step=0.5, crystal_structure="fcc", supercell=(2, 2, 2), calculator=emt_calculator)
+    kw = {"step": 0.5, "crystal_structure": "fcc", "supercell": (2, 2, 2), "calculator": emt_calculator}
     df = el.build_elastic_table(["CU", "NI"], path, EMT_SETTINGS, **kw)
 
     assert list(df.columns[:4]) == ["x_Cu", "x_Ni", "m_Cu", "m_Ni"]

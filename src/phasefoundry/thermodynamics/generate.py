@@ -50,9 +50,8 @@ def _eval_point(
     from pycalphad.property_framework import IsolatedPhase
 
     cond = {v.T: temperature, v.P: pressure}
-    ref_el = elements[-1]  # last element is always reference for conditions
     # Provide N-1 independent composition conditions (omit last element)
-    for el, xi in zip(elements[:-1], comp_row[:-1]):
+    for el, xi in zip(elements[:-1], comp_row[:-1], strict=True):
         cond[v.X(el)] = float(xi)
 
     try:
@@ -147,7 +146,7 @@ def compute_table(
 
     n_failed = n_pts - len(results_by_idx)
     if n_failed > 0:
-        warnings.warn(f"{n_failed}/{n_pts} grid points failed and were skipped.")
+        warnings.warn(f"{n_failed}/{n_pts} grid points failed and were skipped.", stacklevel=2)
 
     # Collect into arrays (preserve original grid order)
     valid_indices = sorted(results_by_idx.keys())

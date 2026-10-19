@@ -7,10 +7,13 @@ interpolants here, so they interpolate the table the same way.
 from __future__ import annotations
 
 import warnings
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _element_col(el: str) -> str:
@@ -98,16 +101,16 @@ def build_interpolators(df: pd.DataFrame, ind_elements: list[str]) -> dict:
             lin = LinearNDInterpolator(coords, vals)
             near = NearestNDInterpolator(coords, vals)
 
-            def _make(l, n):
+            def _make(lin_fn, near_fn):
                 def _call(x):
                     x = np.atleast_1d(np.asarray(x, dtype=float))
-                    v = l(x.reshape(1, -1)).item()
+                    v = lin_fn(x.reshape(1, -1)).item()
                     if np.isnan(v):
                         warnings.warn(
                             f"Composition {x} outside convex hull — falling back to nearest-neighbour.",
                             stacklevel=3,
                         )
-                        v = n(x.reshape(1, -1)).item()
+                        v = near_fn(x.reshape(1, -1)).item()
                     return float(v)
 
                 return _call

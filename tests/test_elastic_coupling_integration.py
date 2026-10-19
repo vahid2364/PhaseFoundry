@@ -8,14 +8,9 @@ coupling with no stiffness contrast and no eigenstrain matches the uncoupled run
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
-
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT / "src"))
 
 from phasefoundry.elasticity import build_vegard_tensor
 from phasefoundry.phasefield.solver import solve_cahn_hilliard
@@ -34,7 +29,7 @@ class _FakeInterpolant:
     reference_element: str = "B"
     grid_bounds: object = None
     derivative_method: str = "analytic"
-    temperature_K: float = 500.0
+    temperature_K: float = 500.0  # noqa: N815  (mirrors GmInterpolant.temperature_K)
 
     def gm(self, c):
         """Return g(c)."""
@@ -57,22 +52,22 @@ class _FakeInterpolant:
 
 def _common_kwargs(N=32, n_steps=20, save_every=10, **overrides):
     """Return ``solve_cahn_hilliard`` arguments for a short 2-D run, with ``overrides`` applied."""
-    kwargs = dict(
-        interpolant=_FakeInterpolant(A_b=5.0),
-        M=1.0e-2,
-        kappa=1.0e-3,
-        c0=0.5,
-        N=N,
-        Lx=1.0,
-        noise=0.02,
-        seed=7,
-        dt=1.0e-3,
-        n_steps=n_steps,
-        save_every=save_every,
-        output_dir=None,
-        save_frames=False,
-        ndim=2,
-    )
+    kwargs = {
+        "interpolant": _FakeInterpolant(A_b=5.0),
+        "M": 1.0e-2,
+        "kappa": 1.0e-3,
+        "c0": 0.5,
+        "N": N,
+        "Lx": 1.0,
+        "noise": 0.02,
+        "seed": 7,
+        "dt": 1.0e-3,
+        "n_steps": n_steps,
+        "save_every": save_every,
+        "output_dir": None,
+        "save_frames": False,
+        "ndim": 2,
+    }
     kwargs.update(overrides)
     return kwargs
 
