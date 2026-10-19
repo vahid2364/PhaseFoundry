@@ -14,11 +14,13 @@ Outputs saved to:  tests/results_ternary_analytical/
   - micrograph_c1.pdf / c2 / c3
 """
 from __future__ import annotations
-import sys, time
+
+import time
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from numpy.fft import fft2, ifft2
@@ -27,7 +29,6 @@ from tqdm import tqdm
 OUT_DIR = Path(__file__).resolve().parent / "results_ternary_analytical"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── parameters ────────────────────────────────────────────────────────────────
 N      = 256
 Lx     = 200.0
 Kappa  = 20.0        # gradient energy coefficient
@@ -44,13 +45,11 @@ save_every = max(1, n_steps // 200)
 
 print(f"N={N}, dt={dt}, n_steps={n_steps}, tmax={tmax}")
 
-# ── spectral operators ────────────────────────────────────────────────────────
 k  = np.concatenate([np.arange(0, N//2), [0], np.arange(-N//2+1, 0)])
 g  = 2 * np.pi / Lx
 kx, ky = np.meshgrid(g*1j*k, g*1j*k)
 k2 = kx**2 + ky**2          # (N,N) complex, but imaginary part is 0 for k2
 
-# ── free energy derivatives (analytical) ─────────────────────────────────────
 def dfdc1(c1, c2):
     c3 = 1.0 - c1 - c2
     return rho_s * (2*c1*c2**2 + 2*c1*c3**2 - 2*c1**2*c3)
@@ -59,7 +58,6 @@ def dfdc2(c1, c2):
     c3 = 1.0 - c1 - c2
     return rho_s * (2*c2*c1**2 + 2*c2*c3**2 - 2*c2**2*c3)
 
-# ── initial conditions ────────────────────────────────────────────────────────
 rng = np.random.default_rng(SEED)
 c1  = C0[0] + NOISE * (rng.random((N, N)) - 0.5)
 c2  = C0[1] + NOISE * (rng.random((N, N)) - 0.5)
@@ -67,7 +65,6 @@ c3  = 1.0 - c1 - c2
 
 free_energy_hist = []
 
-# ── time integration ──────────────────────────────────────────────────────────
 t0 = time.time()
 for step in tqdm(range(1, n_steps + 1)):
     mu1 = dfdc1(c1, c2)
@@ -95,14 +92,12 @@ print(f"c1: [{c1.min():.4f}, {c1.mean():.4f}, {c1.max():.4f}]")
 print(f"c2: [{c2.min():.4f}, {c2.mean():.4f}, {c2.max():.4f}]")
 print(f"c3: [{c3.min():.4f}, {c3.mean():.4f}, {c3.max():.4f}]")
 
-# ── save npz ─────────────────────────────────────────────────────────────────
 np.savez_compressed(OUT_DIR / "final_field.npz",
                     c1=c1, c2=c2, c3=c3,
                     free_energy=np.array(free_energy_hist),
                     t_phys=tmax, dt=dt, n_steps=n_steps)
 print(f"Saved: {OUT_DIR / 'final_field.npz'}")
 
-# ── micrographs ───────────────────────────────────────────────────────────────
 matplotlib.rcParams.update({
     "font.family": "serif",
     "font.serif":  ["Times New Roman", "DejaVu Serif"],

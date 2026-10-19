@@ -1,14 +1,14 @@
 """
-Ternary Nb-Hf-V Jansson simulation to t=800 s physical time
+Ternary Nb-Hf-V Jansson simulation to t=5000 s physical time
 ============================================================
 Runs Jansson-mode Cahn-Hilliard for Nb50Hf5V45 BCC_A2 at 600 °C.
-dt is computed automatically from stable_dt(safety=0.7).
+dt is computed automatically from stable_dt(safety=10.0).
 
 At 600°C/xHf=0.05:
   H_NB   =  -5547 J/mol  (Nb-only spinodal driver, ~2× stronger than 700°C)
   H_HF   = +87720 J/mol  (Hf stable — no negative-composition risk)
   lam_min = -18823 J/mol (~1.4× stronger driving force than 700°C)
-  tau_Nb  ~  1.1 s        (t=800s ~ 700 tau — excellent evolution)
+  tau_Nb  ~  1.1 s        (t=5000s ~ 4500 tau — excellent evolution)
 
 Equilibrium two-phase tie-line (from pycalphad):
   BCC_1 (Nb+Hf-rich): Nb~90%  Hf~9%  V~1%
@@ -24,22 +24,24 @@ Outputs saved to:  tests/results_ternary_jansson_600C/
 """
 
 from __future__ import annotations
-import sys, time
+
+import sys
+import time
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from phasefoundry.thermodynamics.storage import load_table
-from phasefoundry.thermodynamics.interpolant import build_interpolant
 from phasefoundry.phasefield.solver import solve_cahn_hilliard, stable_dt
+from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.thermodynamics.storage import load_table
 
-# ── parameters ────────────────────────────────────────────────────────────────
 ELEMENTS    = ["NB", "HF", "V"]
 REF_EL      = "V"
 T_TARGET    = 873.15        # 600 °C
@@ -55,12 +57,12 @@ C0     = [0.50, 0.05]    # x_NB=0.50, x_HF=0.05; x_V=0.45
 
 OUT_DIR = _ROOT / "tests" / "results_ternary_jansson_600C"
 import shutil
+
 if OUT_DIR.exists():
     shutil.rmtree(OUT_DIR)
     print(f"Cleared: {OUT_DIR}")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── load table ────────────────────────────────────────────────────────────────
 table_dir = _ROOT / "data" / "nb_hf_v"
 tables    = sorted(table_dir.glob("*.h5"))
 best = min(tables, key=lambda p: abs(
@@ -68,12 +70,10 @@ best = min(tables, key=lambda p: abs(
 T_K = float(load_table(best)["metadata"]["temperature"])
 print(f"Table: {best.name}  ({T_K - 273.15:.0f} °C)")
 
-# ── build interpolant ─────────────────────────────────────────────────────────
 interp = build_interpolant(
     [best], elements=ELEMENTS, reference_element=REF_EL,
     temperature_K=T_K, derivative_method="jansson")
 
-# ── compute dt from stability criterion ──────────────────────────────────────
 dx = Lx / N
 dt = stable_dt(np.array(M_diag), dx, interp, c0=np.array(C0), safety=DT_SAFETY)
 N_STEPS    = int(np.ceil(T_PHYS / dt))
@@ -96,7 +96,6 @@ SIM = dict(
     save_every = SAVE_EVERY,
 )
 
-# ── helper: save one 3-panel micrograph (xNB, xHF, xV) ──────────────────────
 matplotlib.rcParams.update({
     "font.family": "serif",
     "font.serif":  ["Times New Roman", "DejaVu Serif"],
@@ -127,7 +126,6 @@ def save_micrograph(xnb, xhf, xv, t_s, out_path):
     plt.close(fig)
     print(f"Saved: {out_path}")
 
-# ── run ───────────────────────────────────────────────────────────────────────
 snap_dir = OUT_DIR / "snapshots"
 snap_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,7 +156,6 @@ print(f"x_NB: [{x_nb.min():.4f}, {x_nb.mean():.4f}, {x_nb.max():.4f}]")
 print(f"x_HF: [{x_hf.min():.4f}, {x_hf.mean():.4f}, {x_hf.max():.4f}]")
 print(f"x_V:  [{x_v.min():.4f},  {x_v.mean():.4f},  {x_v.max():.4f}]")
 
-# ── save final field ──────────────────────────────────────────────────────────
 npz_path = OUT_DIR / "final_field.npz"
 np.savez_compressed(
     npz_path,
@@ -176,7 +173,6 @@ np.savez_compressed(
 )
 print(f"Saved: {npz_path}")
 
-# ── save periodic snapshots (npz + micrograph PDFs) ──────────────────────────
 if hasattr(res, "compositions_history") and res.compositions_history:
     snap       = np.array(res.compositions_history)   # (n_frames, 2, N, N)
     snap_times = np.array(res.time_history)
@@ -190,7 +186,6 @@ if hasattr(res, "compositions_history") and res.compositions_history:
 else:
     print("Note: compositions_history not available — only final field saved.")
 
-# ── save free energy ──────────────────────────────────────────────────────────
 fe_path = OUT_DIR / "free_energy.npz"
 np.savez_compressed(fe_path, free_energy=np.array(res.free_energy_history))
 print(f"Saved: {fe_path}")
@@ -202,7 +197,6 @@ np.savetxt(fe_csv_path, np.column_stack([fe_times, fe_arr]),
            delimiter=",", header="t_phys_s,free_energy_J_mol", comments="")
 print(f"Saved: {fe_csv_path}")
 
-# ── save final micrograph ─────────────────────────────────────────────────────
 save_micrograph(x_nb, x_hf, x_v, t_phys_actual,
                 OUT_DIR / "micrograph_final.pdf")
 

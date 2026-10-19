@@ -14,7 +14,7 @@ The spinodal region (H < 0) is highlighted.
 Usage
 -----
     python tests/test_derivative_methods.py
-    python tests/test_derivative_methods.py --save results/derivative_method_comparison.png
+    python tests/test_derivative_methods.py --save results/derivative_method_comparison
 """
 
 from __future__ import annotations
@@ -23,20 +23,17 @@ import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
 import matplotlib
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.lines import Line2D
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from phasefoundry.thermodynamics.storage import load_table
 from phasefoundry.thermodynamics.interpolant import build_interpolant
-
-
-# ── style ─────────────────────────────────────────────────────────────────────
+from phasefoundry.thermodynamics.storage import load_table
 
 # Consistent with Nature/Acta Materialia style: clean, no chartjunk
 matplotlib.rcParams.update({
@@ -79,8 +76,6 @@ LINE_STYLES = {
 ZORDER = {"fd": 3, "jansson": 4, "hybrid": 3}
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
 def _si_prefix(val: float) -> tuple[float, str]:
     """Return (scaled_value, unit_prefix) for neat axis labels."""
     a = abs(val)
@@ -97,21 +92,23 @@ def _format_energy(arr: np.ndarray) -> tuple[np.ndarray, str]:
     return arr, "J mol$^{-1}$"
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
-
-def run(save_prefix: str | None = None, show: bool = True) -> None:
+def run(save_prefix: str | None = None, show: bool = True,
+        combined: bool = False) -> None:
     """
     Parameters
     ----------
     save_prefix : str or None
-        Path stem for the three panel PDFs. When given, the script writes
+        Path stem for the output PDFs. When given, the script writes
         ``<save_prefix>_a.pdf``, ``<save_prefix>_b.pdf``, ``<save_prefix>_c.pdf``
         — one file per panel, identical in construction to the eigenvalues
-        figure panels (eigenvalues_Hf1.pdf, Hf25.pdf, Hf4.pdf).
+        figure panels (eigenvalues_Hf1.pdf, Hf25.pdf, Hf4.pdf) — or, with
+        *combined*, a single ``<save_prefix>.pdf``.
     show : bool
         Whether to open an interactive window after saving.
+    combined : bool
+        Draw the three panels side by side with one shared legend below them
+        (the layout of the manuscript's fig_01).
     """
-    # ── locate table ──────────────────────────────────────────────────────────
     # Search known data directories for NbV HDF5 tables, preferring v2 then v1.
     candidates = [
         _ROOT / "data" / "HfNbTiV_BCC_PhaseForge_v2_Tdep" / "NbV",
@@ -151,7 +148,6 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
     print(f"Elements   : {elements}  →  reference = {ref_el}")
     print(f"Points     : {len(data['compositions'])}")
 
-    # ── raw CALPHAD data ──────────────────────────────────────────────────────
     col_nb  = el_list.index(ind_el)
     col_v   = el_list.index(ref_el)
     x_nb_raw = data["compositions"][:, col_nb]   # x_NB (independent variable)
@@ -173,7 +169,6 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
         gm_raw[order], mu_raw[order], h_raw[order]
     )
 
-    # ── build interpolants ────────────────────────────────────────────────────
     methods = ["fd", "jansson", "hybrid"]
     print("\nBuilding interpolants …")
     interps = {}
@@ -184,7 +179,7 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
             temperature_K=T_K, derivative_method=m,
         )
 
-    # ── dense composition scan (in x_NB, the independent variable) ──────────
+    # dense composition scan (in x_NB, the independent variable)
     xnb_scan = np.linspace(x_nb_raw.min() + 1e-4, x_nb_raw.max() - 1e-4, 500)
     xv_scan  = 1.0 - xnb_scan          # x_V for the plot axis
     c_scan   = xnb_scan.reshape(1, -1)  # shape (N_ind=1, 500)
@@ -198,11 +193,10 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
         h_c  = interp.d2g(c_scan).squeeze()         # (500,)
         curves[m] = dict(gm=gm_c, mu=mu_c, h=h_c)
 
-    # ── detect spinodal region from Jansson (most physically accurate) ────────
+    # detect spinodal region from Jansson (most physically accurate)
     h_ref         = curves["jansson"]["h"]
     spinodal_mask = h_ref < 0
 
-    # ── per-panel helpers ─────────────────────────────────────────────────────
     CALPHAD_ALPHA = 0.40
 
     def _shade_spinodal(ax):
@@ -231,7 +225,7 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
                 ha="right", va="bottom",
                 fontsize=9, fontweight="bold")
 
-    # Legend handles (placed in panel a only)
+    # Legend handles (panel a, or below the row when combined)
     legend_handles = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor=COLORS["calphad"],
                markersize=5, label=LABELS["calphad"]),
@@ -244,8 +238,12 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
 
     gm_scale = 1e3   # J → kJ
 
-    # ── Panel A: G_m — individual figure ────────────────────────────────────
-    fig_a, ax_gm = plt.subplots(1, 1)
+    if combined:
+        fig, (ax_gm, ax_mu, ax_h) = plt.subplots(1, 3, figsize=(7.2, 2.3))
+    else:
+        fig_a, ax_gm = plt.subplots(1, 1)
+        fig_b, ax_mu = plt.subplots(1, 1)
+        fig_c, ax_h = plt.subplots(1, 1)
     ax_gm.scatter(x_raw, gm_raw / gm_scale,
                   s=14, color=COLORS["calphad"], zorder=5,
                   label=LABELS["calphad"], alpha=CALPHAD_ALPHA, linewidths=0)
@@ -257,11 +255,14 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
     ax_gm.set_xlabel("$x_{\\mathrm{V}}$")
     ax_gm.set_ylabel("$G_m$  (kJ mol$^{-1}$)")
     _add_panel_label(ax_gm, "(a)")
-    ax_gm.legend(handles=legend_handles, fontsize=7.5, handlelength=2.0,
-                 framealpha=0.92, loc="upper right")
+    if combined:
+        fig.legend(handles=legend_handles, fontsize=7.5, handlelength=2.0,
+                   framealpha=0.92, ncol=3, loc="upper center",
+                   bbox_to_anchor=(0.5, 0.0))
+    else:
+        ax_gm.legend(handles=legend_handles, fontsize=7.5, handlelength=2.0,
+                     framealpha=0.92, loc="upper right")
 
-    # ── Panel B: μ — individual figure ──────────────────────────────────────
-    fig_b, ax_mu = plt.subplots(1, 1)
     ax_mu.axhline(0, color="0.6", lw=0.7, ls=":", zorder=0)
     ax_mu.scatter(x_raw, mu_raw / gm_scale,
                   s=14, color=COLORS["calphad"], zorder=5,
@@ -275,9 +276,7 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
     ax_mu.set_ylabel("$\\mu_{\\mathrm{Nb}} - \\mu_{\\mathrm{V}}$  (kJ mol$^{-1}$)")
     _add_panel_label(ax_mu, "(b)")
 
-    # ── Panel C: H = d²G/dx_NB² — individual figure ──────────────────────────
     h_clip = 150.0   # kJ/mol
-    fig_c, ax_h = plt.subplots(1, 1)
     ax_h.axhline(0, color="0.35", lw=1.0, ls="--", zorder=1)
     ax_h.scatter(x_raw, h_raw / gm_scale,
                  s=14, color=COLORS["calphad"], zorder=5,
@@ -298,9 +297,10 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
         )
     _add_panel_label(ax_h, "(c)")
 
-    all_figs = [fig_a, fig_b, fig_c]
+    if combined:
+        fig.tight_layout()
+    all_figs = [fig] if combined else [fig_a, fig_b, fig_c]
 
-    # ── quantitative residual summary (printed, not on figure) ───────────────
     print("\n── Residuals vs CALPHAD raw data (at raw x_NB points) ──────────────")
     x_eval   = x_nb_raw.reshape(1, -1)
     ref_data = dict(gm=gm_raw, mu=mu_raw, h=h_raw)
@@ -315,14 +315,14 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
               f"RMSE μ = {rmse_mu:9.1f}  "
               f"RMSE H = {rmse_h:10.1f}  J/mol")
 
-    # ── save / show ───────────────────────────────────────────────────────────
     if save_prefix is not None:
         stem = Path(save_prefix)
         stem.parent.mkdir(parents=True, exist_ok=True)
-        for suffix, fig in zip(["_a", "_b", "_c"], all_figs):
+        suffixes = [""] if combined else ["_a", "_b", "_c"]
+        for suffix, fig in zip(suffixes, all_figs):
             out = stem.parent / (stem.name + suffix + ".pdf")
             fig.savefig(out, dpi=300, bbox_inches="tight")
-            print(f"Panel saved → {out}")
+            print(f"Figure saved → {out}")
 
     if show:
         plt.show()
@@ -330,8 +330,6 @@ def run(save_prefix: str | None = None, show: bool = True) -> None:
         for fig in all_figs:
             plt.close(fig)
 
-
-# ── entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -348,6 +346,8 @@ if __name__ == "__main__":
     )
     parser.add_argument("--no-show", action="store_true",
                         help="Do not open an interactive window")
+    parser.add_argument("--combined", action="store_true",
+                        help="One 1x3 figure with a shared legend instead of three panels")
     args = parser.parse_args()
 
-    run(save_prefix=args.save, show=not args.no_show)
+    run(save_prefix=args.save, show=not args.no_show, combined=args.combined)

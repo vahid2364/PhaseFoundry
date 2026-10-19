@@ -1,12 +1,12 @@
 """
-Ternary Nb-Hf-V Jansson simulation to t=200 s physical time
+Ternary Nb-Hf-V Jansson simulation to t=400 s physical time
 ============================================================
 Runs Jansson-mode Cahn-Hilliard for Nb50Hf10V40 BCC_A2 at 500 °C.
 dt is computed automatically from stable_dt(safety=0.1).
 
 Outputs saved to:  tests/results_ternary_jansson_200s/
   - final_field.npz       : final compositions (x_NB, x_HF, x_V) + metadata
-  - snapshots.npz         : periodic composition snapshots (~20 frames)
+  - snapshots.npz         : periodic composition snapshots (~10 frames)
   - micrograph_xNB.pdf    : x_NB composition field
   - micrograph_xHF.pdf    : x_HF composition field
   - micrograph_xV.pdf     : x_V  composition field
@@ -14,28 +14,30 @@ Outputs saved to:  tests/results_ternary_jansson_200s/
 """
 
 from __future__ import annotations
-import sys, time
+
+import sys
+import time
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from phasefoundry.thermodynamics.storage import load_table
-from phasefoundry.thermodynamics.interpolant import build_interpolant
 from phasefoundry.phasefield.solver import solve_cahn_hilliard, stable_dt
+from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.thermodynamics.storage import load_table
 
-# ── parameters ────────────────────────────────────────────────────────────────
 ELEMENTS  = ["NB", "HF", "V"]
 REF_EL    = "V"
 T_TARGET  = 773.15        # 500 °C
 T_PHYS    = 400.0         # target physical time (s)
-DT_SAFETY = 0.1           # CFL safety factor (was 0.3)
-N_SNAPSHOTS = 10          # number of periodic composition snapshots to save
+DT_SAFETY = 0.1
+N_SNAPSHOTS = 10
 
 M_diag = [5.0e-21, 5.0e-21]
 N      = 256
@@ -45,7 +47,6 @@ C0     = [0.50, 0.10]    # x_NB=0.50, x_HF=0.10; x_V=0.40
 OUT_DIR = _ROOT / "tests" / "results_ternary_jansson_200s"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── load table ────────────────────────────────────────────────────────────────
 table_dir = _ROOT / "data" / "nb_hf_v"
 tables    = sorted(table_dir.glob("*.h5"))
 best = min(tables, key=lambda p: abs(
@@ -53,12 +54,10 @@ best = min(tables, key=lambda p: abs(
 T_K = float(load_table(best)["metadata"]["temperature"])
 print(f"Table: {best.name}  ({T_K - 273.15:.0f} °C)")
 
-# ── build interpolant ─────────────────────────────────────────────────────────
 interp = build_interpolant(
     [best], elements=ELEMENTS, reference_element=REF_EL,
     temperature_K=T_K, derivative_method="jansson")
 
-# ── compute dt from stability criterion ──────────────────────────────────────
 dx = Lx / N
 dt = stable_dt(np.array(M_diag), dx, interp, c0=np.array(C0), safety=DT_SAFETY)
 N_STEPS    = int(np.ceil(T_PHYS / dt))
@@ -81,7 +80,6 @@ SIM = dict(
     save_every = SAVE_EVERY,
 )
 
-# ── run ───────────────────────────────────────────────────────────────────────
 t0  = time.time()
 res = solve_cahn_hilliard(
     interpolant=interp, output_dir=None, save_frames=False, **SIM)
@@ -97,7 +95,6 @@ print(f"x_NB: [{x_nb.min():.4f}, {x_nb.mean():.4f}, {x_nb.max():.4f}]")
 print(f"x_HF: [{x_hf.min():.4f}, {x_hf.mean():.4f}, {x_hf.max():.4f}]")
 print(f"x_V:  [{x_v.min():.4f},  {x_v.mean():.4f},  {x_v.max():.4f}]")
 
-# ── save final field ──────────────────────────────────────────────────────────
 npz_path = OUT_DIR / "final_field.npz"
 np.savez_compressed(
     npz_path,
@@ -115,9 +112,8 @@ np.savez_compressed(
 )
 print(f"Saved: {npz_path}")
 
-# ── save periodic snapshots ───────────────────────────────────────────────────
 # res.comp_history shape: (n_frames, N_ind, N, N)
-# Saving ~20 frames lets you reconstruct the full microstructural evolution
+# Saving ~10 frames lets you reconstruct the full microstructural evolution
 # without storing all N_STEPS frames (which would be ~tens of GB).
 if hasattr(res, "comp_history") and res.comp_history is not None:
     snap = np.array(res.comp_history)   # (n_frames, 2, N, N)
@@ -135,7 +131,6 @@ fe_path = OUT_DIR / "free_energy.npz"
 np.savez_compressed(fe_path, free_energy=np.array(res.free_energy_history))
 print(f"Saved: {fe_path}")
 
-# ── save micrographs ──────────────────────────────────────────────────────────
 matplotlib.rcParams.update({
     "font.family": "serif",
     "font.serif":  ["Times New Roman", "DejaVu Serif"],

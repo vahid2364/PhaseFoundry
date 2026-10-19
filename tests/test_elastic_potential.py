@@ -25,6 +25,7 @@ Run with:
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -35,16 +36,14 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
 from phasefoundry.elasticity import (
-    solve_elasticity,
     build_isotropic_stiffness,
+    compute_mu_el_from_result,
+    elastic_free_energy_density,
     elastic_potential,
     elastic_strain,
-    elastic_free_energy_density,
-    compute_mu_el_from_result,
+    solve_elasticity,
 )
 
-
-# ── shared fixtures ──────────────────────────────────────────────────────────
 
 def _make_circle(N: int, R: float, Lx: float, width: float = 0.025) -> np.ndarray:
     """Smooth (tanh) circular composition profile, c=1 inside, c=0 outside."""
@@ -61,8 +60,6 @@ EPS0 = 0.01
 EIGENSTRAIN = EPS0 * np.eye(3)
 
 
-# ── test 1: trivial case ──────────────────────────────────────────────────────
-
 def test_trivial_case_zero_mismatch():
     """delta=1 and eigenstrain=0 -> mu_el == 0 everywhere."""
     N, Lx, R = 48, 1.0, 0.15
@@ -77,8 +74,6 @@ def test_trivial_case_zero_mismatch():
     assert np.allclose(mu_el, 0.0, atol=1e-14), \
         f"Expected mu_el=0 for trivial case, got max|mu_el|={np.abs(mu_el).max():.3e}"
 
-
-# ── test 2: bulk vanishing ─────────────────────────────────────────────────────
 
 def test_bulk_vanishing():
     """mu_el == 0 deep inside either phase (cubic interpolant derivative vanishes)."""
@@ -98,8 +93,6 @@ def test_bulk_vanishing():
     # sanity: it should be genuinely nonzero at the interface
     assert np.abs(mu_el).max() > 1e-6
 
-
-# ── test 3: finite-difference validation ───────────────────────────────────────
 
 @pytest.mark.parametrize("delta", [0.5, 2.0])
 def test_finite_difference_consistency(delta):
@@ -146,8 +139,6 @@ def test_finite_difference_consistency(delta):
     )
 
 
-# ── test 4: radial symmetry (isotropic circular precipitate) ───────────────────
-
 def test_radial_symmetry():
     """For an isotropic (A_Z=1) circular precipitate, mu_el should depend only on r."""
     N, Lx, R = 64, 1.0, 0.15
@@ -174,8 +165,6 @@ def test_radial_symmetry():
     spread = (max(vals) - min(vals)) / (abs(np.mean(vals)) + 1e-30)
     assert spread < 0.05, f"mu_el not radially symmetric: values={vals}"
 
-
-# ── standalone runner ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("Testing elastic_potential() (Eq. 36, Gururajan & Abinandanan 2007)\n")

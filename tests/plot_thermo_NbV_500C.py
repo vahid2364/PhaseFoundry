@@ -3,9 +3,9 @@ Thermodynamic properties of binary Nb50V50 BCC_A2 at 500 °C
 =============================================================
 Plots from the pre-computed HDF5 table (HfNbTiV_BCC_PhaseForge_v3):
 
-  Panel 1 — Molar Gibbs energy G_m vs x_NB
-  Panel 2 — Chemical potentials mu_NB and mu_V vs x_NB
-  Panel 3 — Hessian d2G/dx_NB^2 (= dmu_NB/dx_NB) vs x_NB
+  Panel 1 — Molar Gibbs energy G_m vs x_V
+  Panel 2 — Chemical potentials mu_NB and mu_V vs x_V
+  Panel 3 — Hessian d2G/dx_NB^2 (= dmu_NB/dx_NB) vs x_V
              with spinodal region (H < 0) shaded
 
 Output: tests/results_thermo_NbV_500C/thermo_NbV_500C.pdf
@@ -13,21 +13,22 @@ Output: tests/results_thermo_NbV_500C/thermo_NbV_500C.pdf
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
+from matplotlib import ticker
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "src"))
 
 from phasefoundry.thermodynamics.storage import load_table
 
-# ── load data ─────────────────────────────────────────────────────────────────
 TDB_STEM = "HfNbTiV_BCC_PhaseForge_v3"
 table_path = _ROOT / "data" / TDB_STEM / "NbV" / "nb_v_bcc_500C.h5"
 data = load_table(table_path)
@@ -49,7 +50,6 @@ h_nb  = h_nb[idx]
 
 T_C = float(data["metadata"]["temperature"]) - 273.15
 
-# ── figure style ──────────────────────────────────────────────────────────────
 matplotlib.rcParams.update({
     "font.family":       "serif",
     "font.serif":        ["Times New Roman", "DejaVu Serif"],
@@ -71,8 +71,6 @@ matplotlib.rcParams.update({
 fig, axes = plt.subplots(1, 3, figsize=(10, 3.4))
 fig.subplots_adjust(wspace=0.38)
 
-# ── common x-axis settings ────────────────────────────────────────────────────
-# ── spinodal boundaries (x_V where H_NbNb crosses zero) ──────────────────────
 spinodal_mask = h_nb < 0
 # find the x_V range where H < 0 (interior region only)
 interior = (x_v > 0.02) & (x_v < 0.98)
@@ -89,7 +87,6 @@ for ax in axes:
     ax.xaxis.set_major_locator(ticker.MultipleLocator(0.2))
     ax.xaxis.set_minor_locator(ticker.MultipleLocator(0.1))
 
-# ── Panel 1: Gibbs energy ─────────────────────────────────────────────────────
 ax = axes[0]
 gm_plot = gm - gm.min()
 ax.axvspan(sp_lo, sp_hi, color=SPINODAL_COLOR, alpha=SPINODAL_ALPHA, label="Spinodal")
@@ -102,7 +99,6 @@ ax.legend(loc="upper right", frameon=True, framealpha=0.85, edgecolor="0.8")
 ax.text(0.52, 0.97, r"$x_{\rm V}=0.50$",
         fontsize=7, color="gray", va="top", transform=ax.transAxes)
 
-# ── Panel 2: Chemical potentials ─────────────────────────────────────────────
 ax = axes[1]
 ax.axvspan(sp_lo, sp_hi, color=SPINODAL_COLOR, alpha=SPINODAL_ALPHA, label="Spinodal")
 ax.plot(x_v, mu_nb / 1e3, color="#1f4e79", lw=1.6, label=r"$\mu_{\rm Nb}$")
@@ -112,7 +108,6 @@ ax.set_title(r"Chemical Potentials")
 ax.axvline(0.50, color="gray", lw=0.8, ls="--", alpha=0.7)
 ax.legend(loc="lower right", frameon=True, framealpha=0.85, edgecolor="0.8")
 
-# ── Panel 3: Hessian d²G/dx² ─────────────────────────────────────────────────
 ax = axes[2]
 ax.axvspan(sp_lo, sp_hi, color=SPINODAL_COLOR, alpha=SPINODAL_ALPHA)
 ax.fill_between(x_v, h_nb / 1e3, 0,
@@ -132,13 +127,11 @@ y_hi = max(h_interior.max() / 1e3 * 1.15, abs(y_lo) * 0.3)
 ax.set_xlim(0.05, 0.95)
 ax.set_ylim(y_lo, y_hi)
 
-# ── shared suptitle ───────────────────────────────────────────────────────────
 fig.suptitle(
     f"Nb–V  BCC$_{{\\rm A2}}$  |  $T = {T_C:.0f}\\,^{{\\circ}}$C  "
     f"|  {TDB_STEM}",
     fontsize=10, y=1.01)
 
-# ── save ──────────────────────────────────────────────────────────────────────
 OUT_DIR = _ROOT / "tests" / "results_thermo_NbV_500C"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

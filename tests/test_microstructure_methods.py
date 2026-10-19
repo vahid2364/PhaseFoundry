@@ -4,8 +4,8 @@ Microstructure comparison — binary Nb-V, FD vs Jansson derivative methods
 Runs two identical Cahn-Hilliard simulations (fd / jansson) for the Nb-V
 BCC_A2 binary at 500 °C and compares:
 
-  Row 1  Final x_V composition field: (a) FD, (b) Jansson
-  Row 2  (c) |FD − Jansson| difference map, (d) statistics table
+  Row 1  Final x_V composition field: (a) FD, (b) Jansson, (c) |FD − Jansson| difference map
+  Row 2  Statistics table
 
 Results are cached to a .npz file so re-running the figure does not
 re-run the simulation.
@@ -23,20 +23,17 @@ import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-from mpl_toolkits.axes_grid1 import make_axes_locatable
+import numpy as np
+from matplotlib import ticker
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from phasefoundry.thermodynamics.storage import load_table
-from phasefoundry.thermodynamics.interpolant import build_interpolant
 from phasefoundry.phasefield.solver import solve_cahn_hilliard
-
-# ── style ─────────────────────────────────────────────────────────────────────
+from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.thermodynamics.storage import load_table
 
 matplotlib.rcParams.update({
     "font.family":       "serif",
@@ -58,8 +55,6 @@ METHOD_LABEL = {
     "jansson": "Jansson (direct)",
 }
 
-# ── simulation parameters ─────────────────────────────────────────────────────
-
 SIM = dict(
     N          = 256,
     Lx         = 1.0e-6,
@@ -75,8 +70,6 @@ SIM = dict(
 
 _CACHE = _ROOT / "tests" / "_cache_microstructure_nbv.npz"
 
-
-# ── helpers ───────────────────────────────────────────────────────────────────
 
 def _run_simulations() -> tuple[dict[str, np.ndarray], dict[str, float]]:
     """Run FD and Jansson CH simulations; return ({method: x_V}, {method: wall_s})."""
@@ -124,35 +117,30 @@ def _load_or_run(no_cache: bool = False
     return fields, timings
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
-
 def run(save_path: str | None = None, show: bool = True,
         no_cache: bool = False) -> None:
 
     fields, timings = _load_or_run(no_cache)
 
-    # ── colour range and difference ───────────────────────────────────────────
     all_vals = np.concatenate([f.ravel() for f in fields.values()])
     vlo, vhi = np.percentile(all_vals, 1), np.percentile(all_vals, 99)
 
     diff = np.abs(fields["fd"] - fields["jansson"])
     dmax = diff.max()
 
-    # ── figure: row 0 = 3 micrographs, row 1 = statistics table ─────────────
     Lx_um  = SIM["Lx"] * 1e6
     extent = [0, Lx_um, 0, Lx_um]
 
-    # ── fully manual layout — every axis placed by exact figure coordinates ──
+    # fully manual layout — every axis placed by exact figure coordinates
     # This guarantees all three image panels are identical in size.
     #
-    # Figure: 7.2 × 4.2 in
-    # Image row occupies [left=0.07, right=0.99, bottom=0.31, top=0.99]
-    # Three images share that space equally; colorbars sit beside (b) and (c).
+    # Figure: 7.2 × 2.56 in (height set below so the panels are square)
+    # Image row occupies [left=0.07, right=0.96, bottom=0.26, top=0.99]
+    # Three images share that space equally; each has a colorbar beside it.
     #
-    #  im_w + gap + im_w + cb_w + cb_pad + gap + im_w + cb_w + cb_pad = avail_w
-    #  let im_w = x, gap=0.010, cb_w=0.014, cb_pad=0.004
-    #  3x + 2*0.010 + 2*(0.014+0.004) = 0.92  →  x = (0.92 - 0.056)/3 = 0.2880
-
+    #  im_w + cb_w + cb_pad + gap + im_w + cb_w + cb_pad + gap + im_w + cb_w + cb_pad = avail_w
+    #  let im_w = x, gap=9 mm=0.0492, cb_w=0.0059, cb_pad=-0.002
+    #  3x + 2*0.0492 + 3*(0.0059-0.002) = 0.89  →  x = (0.89 - 0.1101)/3 = 0.2600
     FIG_W = 7.2
     L, R, BOT, TOP = 0.07, 0.96, 0.26, 0.99
     # Compute IM_W first (depends only on FIG_W), then size FIG_H so
@@ -169,7 +157,7 @@ def run(save_path: str | None = None, show: bool = True,
     AVAIL  = R - L
     IM_W   = IM_W_pre
 
-    CB_H    = IM_H * 0.60                  # colorbar is 60% of image height
+    CB_H    = IM_H * 0.60
     CB_VOFF = (IM_H - CB_H) / 2           # centre vertically
 
     x0 = L
@@ -192,7 +180,6 @@ def run(save_path: str | None = None, show: bool = True,
     cmap_comp = "coolwarm"
     cmap_diff = "Oranges"
 
-    # ── Row 0: composition micrographs (a) FD and (b) Jansson ────────────────
     for ax, m, label in [(ax_fd, "fd", "(a)"), (ax_jan, "jansson", "(b)")]:
         im = ax.imshow(
             fields[m], origin="lower", extent=extent,
@@ -232,7 +219,6 @@ def run(save_path: str | None = None, show: bool = True,
         cb.ax.set_yticklabels([f"{t_lo:.2f}", f"{t_mid:.2f}", f"{t_hi:.2f}"])
         cb.ax.spines["left"].set_visible(False)
 
-    # ── Row 0, panel (c): difference map ─────────────────────────────────────
     vmax_diff = max(dmax, 1e-10)
     im_diff   = ax_diff.imshow(
         diff, origin="lower", extent=extent,
@@ -273,7 +259,6 @@ def run(save_path: str | None = None, show: bool = True,
     cb2.ax.set_yticklabels(cb2_labels)
     cb2.ax.spines["left"].set_visible(False)
 
-    # ── Table: pre-placed ax_tbl ──────────────────────────────────────────────
     ax_tbl.axis("off")
 
     col_labels = ["Method", "min $x_V$", "max $x_V$", "RMSE vs Jansson", "Simulation time (s)"]
@@ -309,7 +294,6 @@ def run(save_path: str | None = None, show: bool = True,
             cell.set_text_props(fontweight="bold")
 
 
-    # ── save / show ───────────────────────────────────────────────────────────
     if save_path is not None:
         out = Path(save_path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -321,8 +305,6 @@ def run(save_path: str | None = None, show: bool = True,
     else:
         plt.close(fig)
 
-
-# ── entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

@@ -28,6 +28,7 @@ Run with:
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -61,8 +62,6 @@ def _spectral_gradient_energy(c: np.ndarray, kappa: float,
     return float(np.mean((-k2) * np.abs(c_hat)**2) * kappa / 2.0 / parseval_norm)
 
 
-# ── test helpers ──────────────────────────────────────────────────────────────
-
 def _sinusoid_field(N: int, Lx: float, ndim: int, m: int, A: float, c0: float):
     """Return sinusoidal field varying only along the first axis."""
     x = np.linspace(0, Lx, N, endpoint=False)
@@ -80,8 +79,6 @@ def _analytic_gradient_energy(kappa: float, A: float, m: int, Lx: float) -> floa
     """Analytic result: F_grad = κ/2 * A² * (2πm/Lx)² / 2."""
     return kappa / 2.0 * A**2 * (2 * np.pi * m / Lx)**2 / 2.0
 
-
-# ── parametrized tests ────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("ndim", [1, 2, 3])
 @pytest.mark.parametrize("m",    [1, 3, 7])
@@ -172,8 +169,6 @@ def test_multicomponent(ndim):
         f"ndim={ndim}, multicomponent: relative error {rel_err:.2e} exceeds 1e-10"
     )
 
-
-# ── standalone runner ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("Verifying Parseval normalization of gradient energy in _snapshot\n")

@@ -25,20 +25,18 @@ import argparse
 import sys
 from pathlib import Path
 
-import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
+import numpy as np
+from matplotlib import ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable  # noqa: F401
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from phasefoundry.thermodynamics.storage import load_table
-from phasefoundry.thermodynamics.interpolant import build_interpolant
 from phasefoundry.phasefield.solver import solve_cahn_hilliard
-
-# ── style ─────────────────────────────────────────────────────────────────────
+from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.thermodynamics.storage import load_table
 
 matplotlib.rcParams.update({
     "font.family":       "serif",
@@ -60,8 +58,6 @@ METHOD_LABEL = {
     "jansson": "Jansson (direct)",
 }
 
-# ── simulation parameters ─────────────────────────────────────────────────────
-
 SIM = dict(
     N          = 256,
     Lx         = 1.0e-6,
@@ -82,11 +78,10 @@ T_TARGET  = 773.15   # 500 °C
 _CACHE = _ROOT / "tests" / "_cache_microstructure_nbhfv.npz"
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
 def _run_simulations() -> tuple[dict[str, np.ndarray], dict[str, float]]:
-    from phasefoundry.phasefield.solver import stable_dt
     import numpy as np
+
+    from phasefoundry.phasefield.solver import stable_dt
 
     table_dir = _ROOT / "data" / "nb_hf_v"
     tables    = sorted(table_dir.glob("*.h5"))
@@ -96,7 +91,7 @@ def _run_simulations() -> tuple[dict[str, np.ndarray], dict[str, float]]:
     T_K = float(load_table(best)["metadata"]["temperature"])
     print(f"Table: {best.name}  ({T_K - 273.15:.0f} °C)")
 
-    # ── compute a single shared dt from both methods, use the minimum ─────────
+    # compute a single shared dt from both methods, use the minimum
     # This ensures both simulations reach the same physical time after n_steps.
     M_diag = np.array([SIM["M"][i][i] for i in range(len(SIM["M"]))])
     dx     = SIM["Lx"] / SIM["N"]
@@ -147,14 +142,11 @@ def _load_or_run(no_cache: bool = False
     return fields, timings
 
 
-# ── main ──────────────────────────────────────────────────────────────────────
-
 def run(save_path: str | None = None, show: bool = True,
         no_cache: bool = False) -> None:
 
     fields, timings = _load_or_run(no_cache)
 
-    # ── colour range and difference ───────────────────────────────────────────
     all_vals = np.concatenate([f.ravel() for f in fields.values()])
     vlo, vhi = np.percentile(all_vals, 1), np.percentile(all_vals, 99)
 
@@ -162,7 +154,6 @@ def run(save_path: str | None = None, show: bool = True,
     dmax = diff.max()
     rmse = float(np.sqrt(np.mean(diff**2)))
 
-    # ── fully manual layout ───────────────────────────────────────────────────
     Lx_um  = SIM["Lx"] * 1e6
     extent = [0, Lx_um, 0, Lx_um]
 
@@ -204,7 +195,6 @@ def run(save_path: str | None = None, show: bool = True,
     cmap_comp = "coolwarm"
     cmap_diff = "Oranges"
 
-    # ── panels (a) FD and (b) Jansson ─────────────────────────────────────────
     for ax, m, label in [(ax_fd, "fd", "(a)"), (ax_jan, "jansson", "(b)")]:
         im = ax.imshow(
             fields[m], origin="lower", extent=extent,
@@ -244,7 +234,6 @@ def run(save_path: str | None = None, show: bool = True,
         cb.ax.set_yticklabels([f"{t_lo:.2f}", f"{t_mid:.2f}", f"{t_hi:.2f}"])
         cb.ax.spines["left"].set_visible(False)
 
-    # ── panel (c): difference map ─────────────────────────────────────────────
     vmax_diff = max(dmax, 1e-10)
     im_diff   = ax_diff.imshow(
         diff, origin="lower", extent=extent,
@@ -283,7 +272,6 @@ def run(save_path: str | None = None, show: bool = True,
     cb2.ax.set_yticklabels(cb2_labels)
     cb2.ax.spines["left"].set_visible(False)
 
-    # ── statistics table ──────────────────────────────────────────────────────
     ax_tbl.axis("off")
 
     col_labels = ["Method", "min $x_{\\rm Nb}$", "max $x_{\\rm Nb}$",
@@ -319,7 +307,6 @@ def run(save_path: str | None = None, show: bool = True,
             cell.set_facecolor("#DDDDDD")
             cell.set_text_props(fontweight="bold")
 
-    # ── save / show ───────────────────────────────────────────────────────────
     if save_path is not None:
         out = Path(save_path)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -331,8 +318,6 @@ def run(save_path: str | None = None, show: bool = True,
     else:
         plt.close(fig)
 
-
-# ── entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

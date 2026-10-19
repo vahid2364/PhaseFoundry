@@ -26,21 +26,19 @@ Run with:
 """
 
 from __future__ import annotations
+
 import sys
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
-import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 
-from phasefoundry.phasefield.solver import solve_cahn_hilliard
 from phasefoundry.elasticity import build_vegard_tensor
+from phasefoundry.phasefield.solver import solve_cahn_hilliard
 
-
-# ── synthetic double-well "interpolant" (mimics GmInterpolant's API) ──────────
 
 @dataclass
 class _FakeInterpolant:
@@ -53,7 +51,7 @@ class _FakeInterpolant:
     N_ind: int = 1
     ind_elements: list = field(default_factory=lambda: ["A"])
     reference_element: str = "B"
-    grid_bounds: "object" = None
+    grid_bounds: object = None
     derivative_method: str = "analytic"
     temperature_K: float = 500.0
 
@@ -94,8 +92,6 @@ def _common_kwargs(N=32, n_steps=20, save_every=10, **overrides):
     return kwargs
 
 
-# ── test 1: mass conservation with elastic coupling on ───────────────────────
-
 def test_mass_conservation_with_elastic_coupling():
     Lambda = build_vegard_tensor({"A": 0.087}, ["A"], ndim=2)
     result = solve_cahn_hilliard(
@@ -119,8 +115,6 @@ def test_mass_conservation_with_elastic_coupling():
     print(f"  <c> history: {means}")
 
 
-# ── test 2: off-switch equivalence (regression guard) ────────────────────────
-
 def test_off_switch_matches_pre_existing_path():
     """elastic_enabled=False must be identical to never having added the kwarg."""
     kwargs = _common_kwargs()
@@ -130,8 +124,6 @@ def test_off_switch_matches_pre_existing_path():
     assert np.array_equal(result_explicit_off.compositions, result_default.compositions), \
         "elastic_enabled=False should be bit-identical to the default (no elastic kwarg) path"
 
-
-# ── test 3: degenerate coupling (delta=1, eps_T=0) == off ─────────────────────
 
 def test_degenerate_elastic_coupling_equals_off():
     """
@@ -165,8 +157,6 @@ def test_degenerate_elastic_coupling_equals_off():
     )
     print(f"  max|Δc| (degenerate vs off) = {max_diff:.3e}")
 
-
-# ── standalone runner ──────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     print("Validating elastic-chemical-potential coupling in solve_cahn_hilliard\n")

@@ -2,7 +2,7 @@
 Tests for the 3D extension of the FFT elasticity solver.
 
 Level 1 — Analytical: homogeneous eigenstrain → uniform stress
-Level 2 — Consistency: z-uniform 3D field must match 2D result in-plane
+Level 2 — Consistency: 2D/3D output shapes and stress-tensor symmetry
 Level 3 — Integration: short CH+elastic run (100 steps) without NaN
 """
 
@@ -18,8 +18,6 @@ from phasefoundry.elasticity.fft_solver import (
 )
 
 
-# ── shared fixtures ────────────────────────────────────────────────────────────
-
 def _cubic():
     """Nb-like BCC cubic stiffness (GPa → Pa)."""
     return build_cubic_stiffness(
@@ -31,8 +29,6 @@ def _isotropic():
     """Isotropic reference stiffness."""
     return build_isotropic_stiffness(G=50e9, nu=0.30)
 
-
-# ── Level 1: homogeneous eigenstrain → analytical uniform stress ───────────────
 
 class TestHomogeneousEigenstrain:
     """
@@ -93,12 +89,10 @@ class TestHomogeneousEigenstrain:
                 )
 
 
-# ── Level 2: 2D/3D consistency ────────────────────────────────────────────────
-
 class TestConsistency2D3D:
     """
-    Symmetry checks: isotropic stiffness + isotropic eigenstrain → isotropic
-    stress; stress tensor must be symmetric.
+    Consistency checks: 2D and 3D outputs have the expected shapes; stress
+    tensor must be symmetric.
     """
 
     def test_output_shapes_correct_2d_and_3d(self):
@@ -141,19 +135,19 @@ class TestConsistency2D3D:
             )
 
 
-# ── Level 3: CH+elastic integration smoke test ────────────────────────────────
-
 class TestElastic3DIntegration:
     """
     Short Cahn-Hilliard + elastic run in 3D (100 steps).  Checks that no NaN
-    appears and that the simulation produces some decomposition (field changes).
+    appears and that the final field has the expected 3D shape.
     """
 
     def test_ch_elastic_3d_no_nan(self):
         """100-step 3D CH+elastic run using a synthetic double-well free energy."""
-        from dataclasses import dataclass, field as dc_field
-        from phasefoundry.phasefield.solver import solve_cahn_hilliard
+        from dataclasses import dataclass
+        from dataclasses import field as dc_field
+
         from phasefoundry.elasticity import build_vegard_tensor
+        from phasefoundry.phasefield.solver import solve_cahn_hilliard
 
         @dataclass
         class _FakeInterp3D:

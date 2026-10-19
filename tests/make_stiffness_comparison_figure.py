@@ -9,19 +9,20 @@ composition field at the end of the Cahn-Hilliard simulation:
   (c) Quaternary Nb₅₀Hf₅Ti₅V₄₀ → x_NB (no decomposition – stiffness-limited)
 
 Binary and ternary data loaded from existing simulation caches.
-Quaternary run at the stable dt (1.32e-3 s) for 10 000 steps (~13 s physical).
+Quaternary run at the stable dt (1.32e-3 s) for 30 000 steps (~40 s physical).
 
 Output: paper/.../figs/stiffness_microstructures.pdf
 """
 
 from __future__ import annotations
+
 import sys
 import time
 from pathlib import Path
 
-import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
@@ -40,7 +41,6 @@ matplotlib.rcParams.update({
     "savefig.dpi":       300,
 })
 
-# ── load binary (Jansson x_V field) ──────────────────────────────────────────
 _CACHE_BIN = _ROOT / "tests" / "_cache_microstructure_nbv.npz"
 _CACHE_TER = _ROOT / "tests" / "_cache_microstructure_nbhfv.npz"
 _CACHE_QUA = _ROOT / "tests" / "_cache_microstructure_nbhftiv.npz"
@@ -51,15 +51,15 @@ _PAPER_FIGS = (_ROOT / "paper" /
 OUT_PDF = _PAPER_FIGS / "stiffness_microstructures.pdf"
 
 def _get_quaternary_field() -> tuple[np.ndarray, float]:
-    """Run quaternary at stable dt for 10 000 steps; cache result."""
+    """Run quaternary at stable dt for 30 000 steps; cache result."""
     if _CACHE_QUA.exists():
         print(f"  Quaternary: loading cache {_CACHE_QUA.name}")
         d = np.load(_CACHE_QUA)
         return d["jansson_nb"], float(d["t_jansson"])
 
-    from phasefoundry.thermodynamics.storage import load_table
-    from phasefoundry.thermodynamics.interpolant import build_interpolant
     from phasefoundry.phasefield.solver import solve_cahn_hilliard, stable_dt
+    from phasefoundry.thermodynamics.interpolant import build_interpolant
+    from phasefoundry.thermodynamics.storage import load_table
 
     ELEMENTS  = ["NB", "HF", "TI", "V"]
     REF_EL    = "V"
@@ -102,7 +102,6 @@ def _get_quaternary_field() -> tuple[np.ndarray, float]:
 
 
 def make_figure():
-    # ── load data ─────────────────────────────────────────────────────────────
     print("Loading binary cache …")
     b = np.load(_CACHE_BIN)
     x_v_bin   = b["jansson"]          # x_V  (256×256)
@@ -116,7 +115,6 @@ def make_figure():
     print("Getting quaternary field …")
     x_nb_qua, t_qua = _get_quaternary_field()
 
-    # ── layout ────────────────────────────────────────────────────────────────
     FIG_W  = 10.8         # inches (1.5× text width)
     MM     = 1 / (FIG_W * 25.4)   # 1 mm in figure-fraction units
 

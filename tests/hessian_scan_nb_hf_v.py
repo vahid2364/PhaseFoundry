@@ -13,6 +13,7 @@ Output saved to:  tests/results_hessian_scan_nb_hf_v/
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -22,13 +23,12 @@ import pandas as pd
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
-from phasefoundry.thermodynamics.storage import load_table
 from phasefoundry.thermodynamics.interpolant import build_interpolant
+from phasefoundry.thermodynamics.storage import load_table
 
 OUT_DIR = _ROOT / "tests" / "results_hessian_scan_nb_hf_v"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# ── parameters ────────────────────────────────────────────────────────────────
 ELEMENTS  = ["NB", "HF", "V"]
 REF_EL    = "V"
 X_NB      = 0.50
@@ -90,7 +90,6 @@ for T_target in TEMPS_C:
         print(f"  xHf={xhf:.2f}  H_NB={H_nb:10.0f}  H_HF={H_hf:10.0f}"
               f"  lam_min={lam_min:10.0f}  [{flag}]")
 
-# ── save CSV ──────────────────────────────────────────────────────────────────
 df = pd.DataFrame(rows)
 csv_path = OUT_DIR / "hessian_scan.csv"
 df.to_csv(csv_path, index=False)
