@@ -1,9 +1,8 @@
-"""
-thermodynamics — pre-compute and store CALPHAD thermodynamic tables.
+"""thermodynamics — pre-compute and store CALPHAD thermodynamic tables.
 
 Quick start
 -----------
-    from thermodynamics import generate_table, load_table
+    from phasefoundry.thermodynamics import generate_table, load_table
 
     generate_table(
         db_path='PhaseFoundry/HF_NB_TI_V.TDB',
@@ -23,22 +22,27 @@ Quick start
     # data['dMU']['HF_NB']  shape (n,)   J/mol
 """
 
+from .fitting import build_gm_spline_surrogate, build_spline_surrogate, eval_delta_mu, fit_delta_mu, load_fits, save_fits
 from .generate import compute_table
-from .grid import simplex_grid, grid_summary
-from .storage import load_table, save_table, table_info
+from .grid import grid_summary, simplex_grid
+from .interpolant import GmInterpolant, build_interpolant
 from .plot import (
-    plot_free_energy_vs_composition,
-    plot_chemical_potential_vs_composition,
-    plot_ternary_spinodal,
     plot_as_umap,
+    plot_chemical_potential_vs_composition,
+    plot_free_energy_vs_composition,
+    plot_ternary_spinodal,
 )
 from .spinodal import (
-    spinodal_boundary_binary, spinodal_boundary_multi, plot_spinodal,
-    binodal_boundary_binary, plot_phase_diagram, recommend_pfm_params,
-    compute_ternary_phase_regions, compute_phase_regions_multi,
+    binodal_boundary_binary,
+    compute_phase_regions_multi,
+    compute_ternary_phase_regions,
+    plot_phase_diagram,
+    plot_spinodal,
+    recommend_pfm_params,
+    spinodal_boundary_binary,
+    spinodal_boundary_multi,
 )
-from .fitting import fit_delta_mu, save_fits, load_fits, eval_delta_mu, build_spline_surrogate, build_gm_spline_surrogate
-from .interpolant import build_interpolant, GmInterpolant
+from .storage import load_table, save_table, table_info
 
 
 def generate_table(
@@ -56,8 +60,7 @@ def generate_table(
     sampling: str = "grid",
     seed: int = 42,
 ) -> dict:
-    """
-    Build a composition grid, evaluate pycalphad, and save to HDF5.
+    """Build a composition grid, evaluate pycalphad, and save to HDF5.
 
     Parameters
     ----------
@@ -97,23 +100,19 @@ def generate_table(
     seed : int
         Random seed for "sobol" and "dirichlet" modes.  Default 42.
 
-    Returns
+    Returns:
     -------
     dict — same as load_table(output_path) after saving.
     """
-    # 1. Build grid
-    grid = simplex_grid(elements, composition_ranges, reference_element,
-                        n_points, sampling=sampling, seed=seed)
+    grid = simplex_grid(elements, composition_ranges, reference_element, n_points, sampling=sampling, seed=seed)
     print(grid_summary(grid, elements))
 
     # Ensure reference element is last in the list (required by compute_table)
     ordered = [e for e in elements if e != reference_element] + [reference_element]
 
-    # Reorder grid columns to match ordered
     orig_idx = {el: elements.index(el) for el in elements}
     grid = grid[:, [orig_idx[el] for el in ordered]]
 
-    # 2. Evaluate pycalphad
     data = compute_table(
         db_path=db_path,
         elements=ordered,
@@ -125,7 +124,6 @@ def generate_table(
         n_workers=n_workers,
     )
 
-    # 3. Save
     save_table(
         path=output_path,
         data=data,

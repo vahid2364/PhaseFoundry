@@ -1,5 +1,4 @@
-"""
-phasefoundry.elasticity.fft_solver
+"""phasefoundry.elasticity.fft_solver
 =================================
 FFT-based iterative elasticity solver for periodic microstructures.
 
@@ -9,10 +8,10 @@ Algorithm:  Gururajan & Abinandanan (2007), Acta Materialia 55, 5015-5026.
 Key steps
 ---------
 1. Choose C^eff = (C^matrix + C^precipitate) / 2  as the homogeneous reference.
-2. Build the acoustic (Green's operator) tensor G(k) = [C^eff_ijkl k_j k_k]^{-1}.
+2. Build the acoustic (Green's operator) tensor G(k) = [C^eff_ijkl k_j k_l]^{-1}.
    Explicitly set G(k=0) = 0 to remove the singular mode.
 3. At each iteration:
-     a. Compute the polarisation stress  τ_ij = (C_ij - C^eff_ij) ε_kl + C_ij ε*_kl
+     a. Compute the polarisation stress  τ_ij = (C_ij - C^eff_ij) ε_kl - C_ij ε*_kl
      b. FFT(τ), contract with G to get correction u_hat, IFFT → u
      c. Update strain from displacement gradient
      d. Update macroscopic strain E from volume-average equilibrium (Eq. 24-26)
@@ -39,16 +38,12 @@ Stiffness in Pa, strains dimensionless, stress in Pa.
 from __future__ import annotations
 
 import numpy as np
-from typing import Optional
 
 from .interpolation import InterpolationScheme, get_scheme
 
 
-# ── stiffness utilities ────────────────────────────────────────────────────────
-
 def build_isotropic_stiffness(G: float, nu: float) -> np.ndarray:
-    """
-    Build the 3×3×3×3 isotropic stiffness tensor.
+    """Build the 3×3×3×3 isotropic stiffness tensor.
 
     Parameters
     ----------
@@ -57,26 +52,22 @@ def build_isotropic_stiffness(G: float, nu: float) -> np.ndarray:
     nu : float
         Poisson's ratio (dimensionless).
 
-    Returns
+    Returns:
     -------
     C : ndarray, shape (3, 3, 3, 3)
     """
     lam = 2.0 * G * nu / (1.0 - 2.0 * nu)
-    C   = np.zeros((3, 3, 3, 3), dtype=np.float64)
+    C = np.zeros((3, 3, 3, 3), dtype=np.float64)
     for i in range(3):
         for j in range(3):
             for k in range(3):
                 for l in range(3):
-                    C[i, j, k, l] = (
-                        lam * (i == j) * (k == l)
-                        + G * ((i == k) * (j == l) + (i == l) * (j == k))
-                    )
+                    C[i, j, k, l] = lam * (i == j) * (k == l) + G * ((i == k) * (j == l) + (i == l) * (j == k))
     return C
 
 
 def build_cubic_stiffness(C11: float, C12: float, C44: float) -> np.ndarray:
-    """
-    Build the 3×3×3×3 stiffness tensor for a cubic-symmetry crystal.
+    """Build the 3×3×3×3 stiffness tensor for a cubic-symmetry crystal.
 
     Zener anisotropy ratio: A_Z = 2 C44 / (C11 - C12)
         A_Z = 1  →  isotropic
@@ -88,7 +79,7 @@ def build_cubic_stiffness(C11: float, C12: float, C44: float) -> np.ndarray:
     C11, C12, C44 : float
         Independent cubic elastic constants [Pa or dimensionless].
 
-    Returns
+    Returns:
     -------
     C : ndarray (3, 3, 3, 3)
     """
@@ -103,12 +94,8 @@ def build_cubic_stiffness(C11: float, C12: float, C44: float) -> np.ndarray:
     return C
 
 
-def _interp_stiffness(c: np.ndarray,
-                      C_mat: np.ndarray,
-                      C_ppt: np.ndarray,
-                      scheme: InterpolationScheme) -> np.ndarray:
-    """
-    Spatially varying stiffness:  C(x) = (1 - h(c)) C^mat + h(c) C^ppt
+def _interp_stiffness(c: np.ndarray, C_mat: np.ndarray, C_ppt: np.ndarray, scheme: InterpolationScheme) -> np.ndarray:
+    """Spatially varying stiffness:  C(x) = (1 - h(c)) C^mat + h(c) C^ppt
 
     Parameters
     ----------
@@ -117,22 +104,17 @@ def _interp_stiffness(c: np.ndarray,
     C_ppt  : ndarray (3,3,3,3)       precipitate stiffness
     scheme : InterpolationScheme
 
-    Returns
+    Returns:
     -------
     C_field : ndarray (*spatial, 3, 3, 3, 3)
     """
-    h  = scheme.h(c)                                      # shape (*spatial,)
-    dC = C_ppt - C_mat                                    # (3,3,3,3)
+    h = scheme.h(c)  # shape (*spatial,)
+    dC = C_ppt - C_mat  # (3,3,3,3)
     return C_mat + h[..., None, None, None, None] * dC
 
 
-# ── Green's function ───────────────────────────────────────────────────────────
-
-def _build_green_operator(C_eff: np.ndarray,
-                          shape: tuple[int, ...],
-                          Lx: float) -> np.ndarray:
-    """
-    Build the Green's operator (acoustic tensor inverse) in Fourier space.
+def _build_green_operator(C_eff: np.ndarray, shape: tuple[int, ...], Lx: float) -> np.ndarray:
+    """Build the Green's operator (acoustic tensor inverse) in Fourier space.
 
     G_ik(k) = [A_ik(k)]^{-1},  A_ik = C^eff_ijkl k_j k_l
 
@@ -145,24 +127,23 @@ def _build_green_operator(C_eff: np.ndarray,
     shape : tuple               spatial grid shape, e.g. (N,N) or (N,N,N)
     Lx    : float               physical domain size [m] (assumed same in all axes)
 
-    Returns
+    Returns:
     -------
     G : ndarray (*shape, d, d)  where d = len(shape)
     """
     d = len(shape)
     # Build wave-vector arrays for each axis
-    kv_axes = [2.0 * np.pi * np.fft.fftfreq(shape[ax], d=Lx / shape[ax])
-               for ax in range(d)]
-    grids = np.meshgrid(*kv_axes, indexing="ij")     # d arrays, each (*shape,)
-    k = np.stack(grids, axis=-1)                      # (*shape, d)
+    kv_axes = [2.0 * np.pi * np.fft.fftfreq(shape[ax], d=Lx / shape[ax]) for ax in range(d)]
+    grids = np.meshgrid(*kv_axes, indexing="ij")  # d arrays, each (*shape,)
+    k = np.stack(grids, axis=-1)  # (*shape, d)
 
     # Acoustic tensor  A_ik = C^eff_{ijkl} k_j k_l   (i,k in 0..d-1)
-    C_eff_d = C_eff[:d, :d, :d, :d]                  # (d,d,d,d)
+    C_eff_d = C_eff[:d, :d, :d, :d]  # (d,d,d,d)
     A = np.einsum("...j,...l,ijkl->...ik", k, k, C_eff_d)  # (*shape, d, d)
 
     # Invert pointwise via np.linalg.inv (works for any batch shape)
     A_flat = A.reshape(-1, d, d)
-    k2 = np.sum(k**2, axis=-1).reshape(-1)            # |k|^2 at each grid point
+    k2 = np.sum(k**2, axis=-1).reshape(-1)  # |k|^2 at each grid point
     G_flat = np.zeros_like(A_flat)
     nonzero = k2 > 1e-30
     if nonzero.any():
@@ -171,11 +152,8 @@ def _build_green_operator(C_eff: np.ndarray,
     return G_flat.reshape(*shape, d, d)
 
 
-# ── Voigt helpers ──────────────────────────────────────────────────────────────
-
 def _voigt_setup(d: int):
-    """
-    Return Voigt index pairs and (tensor→voigt, voigt→tensor) helpers for dim d.
+    """Return Voigt index pairs and (tensor→voigt, voigt→tensor) helpers for dim d.
 
     2D: 3 components  [11, 22, 12]
     3D: 6 components  [11, 22, 33, 23, 13, 12]
@@ -198,26 +176,23 @@ def _voigt_setup(d: int):
     return pairs, tensor_to_voigt, voigt_to_tensor
 
 
-# ── main solver ────────────────────────────────────────────────────────────────
-
 def solve_elasticity(
-    c            : np.ndarray,
-    C_mat        : np.ndarray,
-    C_ppt        : np.ndarray,
-    eigenstrain  : Optional[np.ndarray] = None,
-    sigma_applied: Optional[np.ndarray] = None,
-    Lx           : float = 1.0,
-    tol          : float = 1e-7,
-    max_iter     : int   = 2000,
-    verbose      : bool  = False,
-    scheme       : InterpolationScheme | str = "cubic",
-    u_init       : Optional[np.ndarray] = None,
-    eps_star_field: Optional[np.ndarray] = None,
-    C_eff_override : Optional[np.ndarray] = None,
-    C_field_override: Optional[np.ndarray] = None,
+    c: np.ndarray,
+    C_mat: np.ndarray,
+    C_ppt: np.ndarray,
+    eigenstrain: np.ndarray | None = None,
+    sigma_applied: np.ndarray | None = None,
+    Lx: float = 1.0,
+    tol: float = 1e-7,
+    max_iter: int = 2000,
+    verbose: bool = False,
+    scheme: InterpolationScheme | str = "cubic",
+    u_init: np.ndarray | None = None,
+    eps_star_field: np.ndarray | None = None,
+    C_eff_override: np.ndarray | None = None,
+    C_field_override: np.ndarray | None = None,
 ) -> dict:
-    """
-    Solve mechanical equilibrium for a 2D or 3D periodic microstructure.
+    """Solve mechanical equilibrium for a 2D or 3D periodic microstructure.
 
     Parameters
     ----------
@@ -252,7 +227,7 @@ def solve_elasticity(
         used directly for ε*(x) instead of h(c) × eigenstrain, enabling the
         tensorial Vegard formulation for multi-component systems::
 
-            eps_star_field = einsum('k...,kij->...ij', c_all, Lambda)
+            eps_star_field = einsum("k...,kij->...ij", c_all, Lambda)
 
         Mutually exclusive with ``eigenstrain``; provide exactly one.
     C_eff_override : ndarray (3,3,3,3) or None
@@ -265,7 +240,7 @@ def solve_elasticity(
         C(x) instead of the default h(c)-blend between C_mat and C_ppt.
         Pass ``model.C_field(c_all, C_mat, C_ppt)`` for LocalVegardModel.
 
-    Returns
+    Returns:
     -------
     result : dict with keys
         "strain"           : ndarray (*spatial, d, d)  total strain ε_ij(x)
@@ -277,9 +252,9 @@ def solve_elasticity(
         "residual"         : float                     final RMS residual
         "residual_history" : list[float]               RMS Δε per iteration
     """
-    spatial_shape = c.shape          # (N,N) or (N,N,N)
-    d             = c.ndim           # 2 or 3
-    fft_axes      = tuple(range(d))
+    spatial_shape = c.shape  # (N,N) or (N,N,N)
+    d = c.ndim  # 2 or 3
+    fft_axes = tuple(range(d))
 
     if isinstance(scheme, str):
         scheme = get_scheme(scheme)
@@ -296,71 +271,61 @@ def solve_elasticity(
     else:
         C_field = _interp_stiffness(c, C_mat, C_ppt, scheme)
     # Restrict to in-plane/in-volume d×d×d×d block
-    C_d     = C_field[..., :d, :d, :d, :d]   # (*spatial, d, d, d, d)
-    C_eff_d = C_eff[:d, :d, :d, :d]           # (d, d, d, d)
+    C_d = C_field[..., :d, :d, :d, :d]  # (*spatial, d, d, d, d)
+    C_eff_d = C_eff[:d, :d, :d, :d]  # (d, d, d, d)
 
     # Eigenstrain field ε*(x)
     if eps_star_field is not None:
         eps_star = eps_star_field[..., :d, :d]  # (*spatial, d, d)
     else:
         if eigenstrain is None:
-            raise ValueError(
-                "solve_elasticity: provide either 'eigenstrain' (d,d) "
-                "or 'eps_star_field' (*spatial,d,d)."
-            )
-        h = scheme.h(c)                                      # (*spatial,)
-        es = eigenstrain[:d, :d]                             # (d, d)
-        eps_star = h[..., None, None] * es[None, ...]        # (*spatial, d, d)
+            raise ValueError("solve_elasticity: provide either 'eigenstrain' (d,d) or 'eps_star_field' (*spatial,d,d).")
+        h = scheme.h(c)  # (*spatial,)
+        es = eigenstrain[:d, :d]  # (d, d)
+        eps_star = h[..., None, None] * es[None, ...]  # (*spatial, d, d)
 
     # Green's operator in Fourier space — (*spatial, d, d)
     G = _build_green_operator(C_eff_d, spatial_shape, Lx)
 
     # Wave-vector grid — (*spatial, d)
-    kv_axes = [2.0 * np.pi * np.fft.fftfreq(spatial_shape[ax], d=Lx / spatial_shape[ax])
-               for ax in range(d)]
+    kv_axes = [2.0 * np.pi * np.fft.fftfreq(spatial_shape[ax], d=Lx / spatial_shape[ax]) for ax in range(d)]
     grids = np.meshgrid(*kv_axes, indexing="ij")
-    k = np.stack(grids, axis=-1)                             # (*spatial, d)
+    k = np.stack(grids, axis=-1)  # (*spatial, d)
 
     # Coordinate grid for macroscopic displacement  u_macro_i = E_ij x_j
-    x_axes = [np.linspace(0.0, Lx, spatial_shape[ax], endpoint=False)
-              for ax in range(d)]
+    x_axes = [np.linspace(0.0, Lx, spatial_shape[ax], endpoint=False) for ax in range(d)]
     x_grids = np.meshgrid(*x_axes, indexing="ij")
-    x_coord = np.stack(x_grids, axis=-1)                    # (*spatial, d)
+    x_coord = np.stack(x_grids, axis=-1)  # (*spatial, d)
 
     # Voigt helpers for macroscopic strain update
     _, tensor_to_voigt, voigt_to_tensor = _voigt_setup(d)
     n_voigt = 3 if d == 2 else 6
     _, voigt_pairs, _ = _voigt_setup(d) if False else (None, None, None)
-    pairs_list = [(0,0),(1,1),(0,1)] if d == 2 else [(0,0),(1,1),(2,2),(1,2),(0,2),(0,1)]
+    pairs_list = [(0, 0), (1, 1), (0, 1)] if d == 2 else [(0, 0), (1, 1), (2, 2), (1, 2), (0, 2), (0, 1)]
     C_eff_V = np.array(
-        [[C_eff_d[i, j, k_, l] for (k_, l) in pairs_list]
-         for (i, j) in pairs_list],
+        [[C_eff_d[i, j, k_, l] for (k_, l) in pairs_list] for (i, j) in pairs_list],
         dtype=np.float64,
     )
     S_eff_V = np.linalg.inv(C_eff_V)
 
-    # ── initialise ──────────────────────────────────────────────────────────────
     residual_history: list[float] = []
 
     if u_init is not None:
-        u_fluct_init  = u_init
-        u_hat_init    = np.fft.fftn(u_fluct_init, axes=fft_axes)
-        eps_fluct_hat = 0.5j * (
-            np.einsum("...j,...i->...ij", k, u_hat_init) +
-            np.einsum("...i,...j->...ij", k, u_hat_init)
-        )
+        u_fluct_init = u_init
+        u_hat_init = np.fft.fftn(u_fluct_init, axes=fft_axes)
+        eps_fluct_hat = 0.5j * (np.einsum("...j,...i->...ij", k, u_hat_init) + np.einsum("...i,...j->...ij", k, u_hat_init))
         eps_fluct = np.real(np.fft.ifftn(eps_fluct_hat, axes=fft_axes))
-        eps_el_0  = eps_fluct - eps_star
-        sigma_0   = np.einsum("...ijkl,...kl->...ij", C_d, eps_el_0)
-        tau_0     = sigma_0 - np.einsum("ijkl,...kl->...ij", C_eff_d, eps_fluct)
+        eps_el_0 = eps_fluct - eps_star
+        sigma_0 = np.einsum("...ijkl,...kl->...ij", C_d, eps_el_0)
+        tau_0 = sigma_0 - np.einsum("ijkl,...kl->...ij", C_eff_d, eps_fluct)
         tau_mean_0 = tau_0.mean(axis=tuple(range(d)))
-        E   = voigt_to_tensor(S_eff_V @ tensor_to_voigt(sigma_applied - tau_mean_0))
+        E = voigt_to_tensor(S_eff_V @ tensor_to_voigt(sigma_applied - tau_mean_0))
         eps = eps_fluct + E[None, ...]
-        u   = u_fluct_init
+        u = u_fluct_init
     else:
         eps = np.zeros((*spatial_shape, d, d), dtype=np.float64)
-        u   = np.zeros((*spatial_shape, d),    dtype=np.float64)
-        E   = voigt_to_tensor(S_eff_V @ tensor_to_voigt(sigma_applied))
+        u = np.zeros((*spatial_shape, d), dtype=np.float64)
+        E = voigt_to_tensor(S_eff_V @ tensor_to_voigt(sigma_applied))
 
     d_eps = np.inf
     for iteration in range(max_iter):
@@ -368,31 +333,26 @@ def solve_elasticity(
 
         # stress  σ_ij = C_ijkl(x) [ε_kl - ε*_kl(x)]
         eps_el = eps - eps_star
-        sigma  = np.einsum("...ijkl,...kl->...ij", C_d, eps_el)
+        sigma = np.einsum("...ijkl,...kl->...ij", C_d, eps_el)
 
         # polarisation stress  τ_ij = σ_ij - C^eff_ijkl ε_kl
         sigma_eff = np.einsum("ijkl,...kl->...ij", C_eff_d, eps)
         tau = sigma - sigma_eff
 
-        # FFT of τ
         tau_hat = np.fft.fftn(tau, axes=fft_axes)
 
         # displacement correction in Fourier space
-        b_hat     = 1j * np.einsum("...l,...il->...i", k, tau_hat)
+        b_hat = 1j * np.einsum("...l,...il->...i", k, tau_hat)
         u_hat_corr = np.einsum("...ij,...j->...i", G, b_hat)
 
-        # fluctuation displacement in real space
         u_fluct = np.real(np.fft.ifftn(u_hat_corr, axes=fft_axes))
 
         # total displacement = fluctuation + macroscopic (E · x)
         u = u_fluct + np.einsum("ij,...j->...i", E, x_coord)
 
         # strain from fluctuation displacement gradient (spectral)
-        u_hat_full    = np.fft.fftn(u_fluct, axes=fft_axes)
-        eps_fluct_hat = 0.5j * (
-            np.einsum("...j,...i->...ij", k, u_hat_full) +
-            np.einsum("...i,...j->...ij", k, u_hat_full)
-        )
+        u_hat_full = np.fft.fftn(u_fluct, axes=fft_axes)
+        eps_fluct_hat = 0.5j * (np.einsum("...j,...i->...ij", k, u_hat_full) + np.einsum("...i,...j->...ij", k, u_hat_full))
         eps_fluct = np.real(np.fft.ifftn(eps_fluct_hat, axes=fft_axes))
         eps = eps_fluct + E[None, ...]
 
@@ -400,8 +360,7 @@ def solve_elasticity(
         tau_mean = tau.mean(axis=tuple(range(d)))
         E = voigt_to_tensor(S_eff_V @ tensor_to_voigt(sigma_applied - tau_mean))
 
-        # convergence
-        d_eps = float(np.sqrt(np.mean((eps - eps_old)**2)))
+        d_eps = float(np.sqrt(np.mean((eps - eps_old) ** 2)))
         residual_history.append(d_eps)
         if verbose and iteration % 100 == 0:
             print(f"  iter {iteration:4d}  Δε_rms = {d_eps:.3e}")
@@ -411,19 +370,18 @@ def solve_elasticity(
             break
     else:
         if verbose:
-            print(f"  WARNING: did not converge in {max_iter} iterations  "
-                  f"Δε_rms = {d_eps:.3e}")
+            print(f"  WARNING: did not converge in {max_iter} iterations  Δε_rms = {d_eps:.3e}")
 
     eps_el = eps - eps_star
     sigma_final = np.einsum("...ijkl,...kl->...ij", C_d, eps_el)
 
     return {
-        "strain"           : eps,
-        "elastic_strain"   : eps_el,
-        "stress"           : sigma_final,
-        "displacement"     : u,
-        "E"                : E,
-        "n_iter"           : iteration + 1,
-        "residual"         : d_eps,
-        "residual_history" : residual_history,
+        "strain": eps,
+        "elastic_strain": eps_el,
+        "stress": sigma_final,
+        "displacement": u,
+        "E": E,
+        "n_iter": iteration + 1,
+        "residual": d_eps,
+        "residual_history": residual_history,
     }

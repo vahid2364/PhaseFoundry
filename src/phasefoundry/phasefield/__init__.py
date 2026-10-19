@@ -1,11 +1,9 @@
-"""
-phasefield — Phase-field solvers for multicomponent alloy systems.
+"""phasefield — Phase-field solvers for multicomponent alloy systems.
 
 Solvers
 -------
-binary    Cahn-Hilliard equation for binary alloys (this module)
-ternary   (future)
-quaternary (future)
+binary    Cahn-Hilliard equation for binary alloys
+solver    General N-component Cahn-Hilliard (binary, ternary, quaternary, …)
 
 Free energy models
 ------------------
@@ -14,7 +12,7 @@ calphad       CALPHAD-derived Δμ via polynomial surrogate
 
 Quick start — double-well
 --------------------------
-    from phasefield.binary import solve_cahn_hilliard_binary, plot_result
+    from phasefoundry.phasefield.binary import solve_cahn_hilliard_binary, plot_result
 
     result = solve_cahn_hilliard_binary(
         free_energy='double_well',
@@ -25,8 +23,8 @@ Quick start — double-well
 
 Quick start — CALPHAD (Nb-V)
 -----------------------------
-    from thermodynamics.fitting import load_fits
-    from phasefield.binary import solve_cahn_hilliard_binary, plot_result
+    from phasefoundry.thermodynamics.fitting import load_fits
+    from phasefoundry.phasefield.binary import solve_cahn_hilliard_binary, plot_result
 
     fit = load_fits('pipelines/output/nb_v/delta_mu_fits.h5')
 
@@ -39,11 +37,19 @@ Quick start — CALPHAD (Nb-V)
     plot_result(result)
 """
 
-from .binary import solve_cahn_hilliard_binary, plot_result, CHResult, stable_dt, write_simulation_params, plot_free_energy_history, plot_gm_with_pfm
-from .free_energy import double_well_df_dc, double_well_f, calphad_df_dc, calphad_f
+from .binary import (
+    CHResult,
+    plot_free_energy_history,
+    plot_gm_with_pfm,
+    plot_result,
+    solve_cahn_hilliard_binary,
+    stable_dt,
+    write_simulation_params,
+)
+from .free_energy import calphad_df_dc, calphad_f, double_well_df_dc, double_well_f
+from .solver import SimResult, solve_cahn_hilliard
 from .spectral import laplacian_operator, wavenumbers
-from .solver import solve_cahn_hilliard, SimResult
-from .visualize import save_slices_2d, save_pyvista_3d
+from .visualize import save_pyvista_3d, save_slices_2d
 
 __all__ = [
     # general solver

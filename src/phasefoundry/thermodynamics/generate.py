@@ -1,5 +1,4 @@
-"""
-Compute thermodynamic quantities over a composition grid using pycalphad.
+"""Compute thermodynamic quantities over a composition grid using pycalphad.
 
 For each grid point the following are evaluated via IsolatedPhase (which
 forces pycalphad to stay on the single-phase free energy surface — required
@@ -28,8 +27,7 @@ Quantities = tuple[Literal["GM", "MU", "dMU"], ...]
 def _eval_point(
     args: tuple,
 ) -> tuple[int, dict | None]:
-    """
-    Evaluate thermodynamic quantities at a single composition point.
+    """Evaluate thermodynamic quantities at a single composition point.
 
     This function is designed to run in a worker process.
 
@@ -39,13 +37,14 @@ def _eval_point(
         (idx, composition_row, elements, phase, db_path, temperature,
          pressure, quantities)
 
-    Returns
+    Returns:
     -------
     (idx, result_dict) or (idx, None) on failure
     """
     idx, comp_row, elements, phase, db_path, temperature, pressure, quantities = args
 
-    from pycalphad import Database, Workspace, variables as v
+    from pycalphad import Database, Workspace
+    from pycalphad import variables as v
     from pycalphad.property_framework import IsolatedPhase
 
     cond = {v.T: temperature, v.P: pressure}
@@ -101,8 +100,7 @@ def compute_table(
     quantities: Quantities = ("GM", "MU", "dMU"),
     n_workers: int = 1,
 ) -> dict:
-    """
-    Evaluate thermodynamic quantities over a composition grid.
+    """Evaluate thermodynamic quantities over a composition grid.
 
     Parameters
     ----------
@@ -128,7 +126,7 @@ def compute_table(
         Number of parallel worker processes. Set to 1 for serial execution
         (safer for debugging). Values > 1 use ProcessPoolExecutor.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         'compositions'  np.ndarray (n_valid, N_elements)
@@ -138,10 +136,7 @@ def compute_table(
         'n_failed'      int   number of points that failed / returned NaN
     """
     n_pts = len(grid)
-    args_list = [
-        (i, grid[i], elements, phase, db_path, temperature, pressure, quantities)
-        for i in range(n_pts)
-    ]
+    args_list = [(i, grid[i], elements, phase, db_path, temperature, pressure, quantities) for i in range(n_pts)]
 
     results_by_idx: dict[int, dict] = {}
 
@@ -153,10 +148,7 @@ def compute_table(
     else:
         with ProcessPoolExecutor(max_workers=n_workers) as executor:
             futures = {executor.submit(_eval_point, a): a[0] for a in args_list}
-            for fut in tqdm(
-                as_completed(futures), total=n_pts,
-                desc="Computing thermodynamics (parallel)", unit="pt"
-            ):
+            for fut in tqdm(as_completed(futures), total=n_pts, desc="Computing thermodynamics (parallel)", unit="pt"):
                 idx, res = fut.result()
                 if res is not None:
                     results_by_idx[idx] = res
@@ -177,18 +169,10 @@ def compute_table(
         out["GM"] = np.array([results_by_idx[i]["GM"] for i in valid_indices])
 
     if "MU" in quantities:
-        out["MU"] = {
-            el: np.array([results_by_idx[i]["MU"][el] for i in valid_indices])
-            for el in elements
-        }
+        out["MU"] = {el: np.array([results_by_idx[i]["MU"][el] for i in valid_indices]) for el in elements}
 
     if "dMU" in quantities:
         sample_dmu = next(iter(results_by_idx.values()))["dMU"]
-        out["dMU"] = {
-            key: np.array([
-                results_by_idx[i]["dMU"].get(key, np.nan) for i in valid_indices
-            ])
-            for key in sample_dmu
-        }
+        out["dMU"] = {key: np.array([results_by_idx[i]["dMU"].get(key, np.nan) for i in valid_indices]) for key in sample_dmu}
 
     return out

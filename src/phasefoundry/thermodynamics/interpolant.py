@@ -1,5 +1,4 @@
-"""
-General N-component G_m interpolant
+"""General N-component G_m interpolant
 =====================================
 Builds a surrogate for the molar Gibbs energy G_m(c₁, …, c_{N-1}) on the
 composition simplex from pre-computed HDF5 thermodynamic tables.
@@ -7,11 +6,11 @@ composition simplex from pre-computed HDF5 thermodynamic tables.
 Works for any number of components:
   binary     N=2  →  1 independent composition, 1-D CubicSpline
   ternary    N=3  →  2 independent compositions, CloughTocher2DInterpolator (C1)
-  quaternary N=4  →  3 independent compositions, RBFInterpolator (thin-plate-spline, C∞)
-  quinary+   N≥5  →  N-1 independent compositions, RBFInterpolator (C∞)
+  quaternary N=4  →  3 independent compositions, RBFInterpolator (thin-plate-spline)
+  quinary+   N≥5  →  N-1 independent compositions, RBFInterpolator
 
 The surrogate exposes:
-  gm(c)        → G_m values, shape (N_ind, *spatial)  [J/mol]
+  gm(c)        → G_m values, shape (*spatial)  [J/mol]
   mu(c)        → ∂G/∂cᵢ for i=1…N_ind, shape (N_ind, *spatial)  [J/mol]
   d2g(c)       → Hessian Hᵢⱼ = ∂²G/∂cᵢ∂cⱼ, shape (N_ind, N_ind, *spatial)
 
@@ -43,20 +42,21 @@ Three backends are available, selected via ``derivative_method`` in
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal
 
 import numpy as np
-from scipy.interpolate import (CubicSpline, RegularGridInterpolator,
-                               CloughTocher2DInterpolator, NearestNDInterpolator,
-                               RBFInterpolator)
+from scipy.interpolate import (
+    CloughTocher2DInterpolator,
+    CubicSpline,
+    NearestNDInterpolator,
+    RBFInterpolator,
+    RegularGridInterpolator,
+)
 
 from .storage import load_table
 
-
 DerivativeMethod = Literal["fd", "jansson", "hybrid"]
 
-
-# ── public builder ────────────────────────────────────────────────────────────
 
 def build_interpolant(
     table_paths: list[str | Path],
@@ -65,9 +65,8 @@ def build_interpolant(
     temperature_K: float,
     fd_eps: float = 1e-4,
     derivative_method: DerivativeMethod = "fd",
-) -> "GmInterpolant":
-    """
-    Build a G_m interpolant from HDF5 thermodynamic tables.
+) -> GmInterpolant:
+    """Build a G_m interpolant from HDF5 thermodynamic tables.
 
     Parameters
     ----------
@@ -82,15 +81,14 @@ def build_interpolant(
     derivative_method : one of ``"fd"``, ``"jansson"``, ``"hybrid"``.
                         See module docstring for details.
 
-    Returns
+    Returns:
     -------
     GmInterpolant
     """
-    # ── find closest table ────────────────────────────────────────────────────
     best_path, best_T = None, np.inf
     for p in table_paths:
         data = load_table(p)
-        T    = float(data["metadata"]["temperature"])
+        T = float(data["metadata"]["temperature"])
         if abs(T - temperature_K) < abs(best_T - temperature_K):
             best_path, best_T = p, T
 
@@ -98,17 +96,17 @@ def build_interpolant(
         raise ValueError("No table paths provided.")
 
     data = load_table(best_path)
-    comps = data["compositions"]          # (n_valid, N_el)
-    GM    = data["GM"]                    # (n_valid,)
+    comps = data["compositions"]  # (n_valid, N_el)
+    GM = data["GM"]  # (n_valid,)
 
     ind_elements = [e for e in elements if e != reference_element]
-    N_ind        = len(ind_elements)
-    el_list      = list(data["elements"]) if "elements" in data else elements
+    N_ind = len(ind_elements)
+    el_list = list(data["elements"]) if "elements" in data else elements
 
     # Column indices of independent elements in the stored composition array
     col_idx = [el_list.index(e) for e in ind_elements]
 
-    # ── build G_m interpolant (always needed) ─────────────────────────────────
+    # build G_m interpolant (always needed)
     if N_ind == 1:
         gm_interp = _build_1d(comps, GM, col_idx[0])
     else:
@@ -116,60 +114,63 @@ def build_interpolant(
 
     # extract data bounds (per independent element axis)
     if N_ind == 1:
-        x_col  = comps[:, col_idx[0]]
+        x_col = comps[:, col_idx[0]]
         bounds = [(float(x_col.min()), float(x_col.max()))]
     else:
         bounds = getattr(gm_interp, "_grid_bounds", None)
         if bounds is None:
-            bounds = [
-                (float(comps[:, c].min()), float(comps[:, c].max()))
-                for c in col_idx
-            ]
+            bounds = [(float(comps[:, c].min()), float(comps[:, c].max())) for c in col_idx]
 
-    # ── build Jansson interpolants (if requested) ─────────────────────────────
-    mu_interps  = None   # list[interp]  length N_ind
-    dmu_interps = None   # dict[(i,j)] → interp
+    mu_interps = None  # list[interp]  length N_ind
+    dmu_interps = None  # dict[(i,j)] → interp
 
     if derivative_method in ("jansson", "hybrid"):
         mu_interps = _build_mu_interps(
-            data, comps, ind_elements, reference_element, col_idx, N_ind,
+            data,
+            comps,
+            ind_elements,
+            reference_element,
+            col_idx,
+            N_ind,
             el_list,
         )
 
     if derivative_method == "jansson":
         dmu_interps = _build_dmu_interps(
-            data, comps, ind_elements, reference_element, col_idx, N_ind,
+            data,
+            comps,
+            ind_elements,
+            reference_element,
+            col_idx,
+            N_ind,
             el_list,
         )
 
     return GmInterpolant(
-        interp            = gm_interp,
-        ind_elements      = ind_elements,
-        reference_element = reference_element,
-        N_ind             = N_ind,
-        temperature_K     = best_T,
-        fd_eps            = fd_eps,
-        col_idx           = col_idx,
-        grid_bounds       = bounds,
-        derivative_method = derivative_method,
-        mu_interps        = mu_interps,
-        dmu_interps       = dmu_interps,
+        interp=gm_interp,
+        ind_elements=ind_elements,
+        reference_element=reference_element,
+        N_ind=N_ind,
+        temperature_K=best_T,
+        fd_eps=fd_eps,
+        col_idx=col_idx,
+        grid_bounds=bounds,
+        derivative_method=derivative_method,
+        mu_interps=mu_interps,
+        dmu_interps=dmu_interps,
     )
 
 
-# ── Jansson interpolant builders ──────────────────────────────────────────────
-
 def _build_mu_interps(
-    data:              dict,
-    comps:             np.ndarray,
-    ind_elements:      list[str],
+    data: dict,
+    comps: np.ndarray,
+    ind_elements: list[str],
     reference_element: str,
-    col_idx:           list[int],
-    N_ind:             int,
-    el_list:           list[str],
+    col_idx: list[int],
+    N_ind: int,
+    el_list: list[str],
 ) -> list:
-    """
-    Build one interpolant per independent element for the relative chemical
+    """Build one interpolant per independent element for the relative chemical
     potential  μᵢ = MU[ind_el_i] − MU[ref_el].
 
     These are the quantities that appear in the Cahn-Hilliard driving force
@@ -182,7 +183,7 @@ def _build_mu_interps(
             "or use derivative_method='fd'."
         )
 
-    mu_ref = data["MU"][reference_element]    # (n_valid,)
+    mu_ref = data["MU"][reference_element]  # (n_valid,)
     interps = []
 
     print(f"  Building Jansson μ interpolants for {ind_elements} …", flush=True)
@@ -195,16 +196,15 @@ def _build_mu_interps(
 
 
 def _build_dmu_interps(
-    data:              dict,
-    comps:             np.ndarray,
-    ind_elements:      list[str],
+    data: dict,
+    comps: np.ndarray,
+    ind_elements: list[str],
     reference_element: str,
-    col_idx:           list[int],
-    N_ind:             int,
-    el_list:           list[str],
+    col_idx: list[int],
+    N_ind: int,
+    el_list: list[str],
 ) -> dict:
-    """
-    Build one interpolant per (i, j) Hessian element for:
+    """Build one interpolant per (i, j) Hessian element for:
         Hᵢⱼ = dMU[ind_el_i][ind_el_j] − dMU[ref_el][ind_el_j]
 
     This equals ∂(μᵢ − μ_ref)/∂xⱼ = ∂²G/∂cᵢ∂cⱼ under the simplex constraint.
@@ -216,12 +216,11 @@ def _build_dmu_interps(
             "or use derivative_method='fd' or 'hybrid'."
         )
 
-    dmu_data   = data["dMU"]
-    interps    = {}
+    dmu_data = data["dMU"]
+    interps = {}
     n_elements = len(ind_elements)
 
-    print(f"  Building Jansson ∂μ/∂x interpolants "
-          f"({n_elements}×{n_elements} matrix) …", flush=True)
+    print(f"  Building Jansson ∂μ/∂x interpolants ({n_elements}×{n_elements} matrix) …", flush=True)
 
     for i, el_i in enumerate(ind_elements):
         for j, el_j in enumerate(ind_elements):
@@ -229,34 +228,25 @@ def _build_dmu_interps(
             key_rj = f"{reference_element}_{el_j}"
 
             if key_ij not in dmu_data:
-                raise KeyError(
-                    f"dMU key '{key_ij}' not found in HDF5 table. "
-                    f"Available keys: {list(dmu_data.keys())}"
-                )
+                raise KeyError(f"dMU key '{key_ij}' not found in HDF5 table. Available keys: {list(dmu_data.keys())}")
             if key_rj not in dmu_data:
-                raise KeyError(
-                    f"dMU key '{key_rj}' not found in HDF5 table. "
-                    f"Available keys: {list(dmu_data.keys())}"
-                )
+                raise KeyError(f"dMU key '{key_rj}' not found in HDF5 table. Available keys: {list(dmu_data.keys())}")
 
             y = dmu_data[key_ij] - dmu_data[key_rj]
             label = f"∂μ_{el_i}/∂x_{el_j}"
-            interps[(i, j)] = _build_scalar_interp(
-                comps, y, col_idx, N_ind, label=label
-            )
+            interps[(i, j)] = _build_scalar_interp(comps, y, col_idx, N_ind, label=label)
 
     return interps
 
 
 def _build_scalar_interp(
-    comps:   np.ndarray,
-    y:       np.ndarray,
+    comps: np.ndarray,
+    y: np.ndarray,
     col_idx: list[int],
-    N_ind:   int,
-    label:   str = "",
+    N_ind: int,
+    label: str = "",
 ):
-    """
-    Build a smooth interpolant for an arbitrary scalar field y(composition).
+    """Build a smooth interpolant for an arbitrary scalar field y(composition).
 
     Dispatches to the same backends as the G_m interpolant so derivative
     accuracy matches across all fields.
@@ -271,32 +261,27 @@ def _build_scalar_interp(
             return _build_rbf(pts, y, label=label)
 
 
-# ── 1-D (binary) backend ──────────────────────────────────────────────────────
-
 def _build_1d(comps: np.ndarray, GM: np.ndarray, col: int) -> CubicSpline:
     """CubicSpline for the binary (1-D) case."""
-    x   = comps[:, col]
+    x = comps[:, col]
     idx = np.argsort(x)
     return CubicSpline(x[idx], GM[idx], extrapolate=True)
 
 
-# ── N-D (ternary+) backend ────────────────────────────────────────────────────
-
 def _build_nd(
-    comps:   np.ndarray,
-    GM:      np.ndarray,
+    comps: np.ndarray,
+    GM: np.ndarray,
     col_idx: list[int],
-    N_ind:   int,
+    N_ind: int,
 ):
-    """
-    Build a smooth G_m surface interpolant for N_ind ≥ 2.
+    """Build a smooth G_m surface interpolant for N_ind ≥ 2.
 
     N_ind == 2 (ternary)  → CloughTocher2DInterpolator (C1 smooth, exact at
                             data points, natural on scattered simplex data).
     N_ind ≥ 3 (quaternary+) → RBFInterpolator with thin-plate-spline kernel
                             (smooth, works on any scattered N-D data, no grid).
     """
-    pts = comps[:, col_idx]          # (n_valid, N_ind)
+    pts = comps[:, col_idx]  # (n_valid, N_ind)
 
     if N_ind == 2:
         return _build_ct2d(pts, GM)
@@ -305,16 +290,16 @@ def _build_nd(
 
 
 class _CT2DWithFallback:
-    """
-    CloughTocher2DInterpolator with NearestNDInterpolator fallback.
+    """CloughTocher2DInterpolator with NearestNDInterpolator fallback.
 
     CT is C1-smooth inside the convex hull of the training data.
     For the rare points that land just outside (e.g. from finite-difference
     perturbations near the simplex edge), the nearest training point value
     is used instead of NaN — preserving smooth derivatives everywhere else.
     """
+
     def __init__(self, pts: np.ndarray, GM: np.ndarray):
-        self._ct      = CloughTocher2DInterpolator(pts, GM, fill_value=np.nan)
+        self._ct = CloughTocher2DInterpolator(pts, GM, fill_value=np.nan)
         self._nearest = NearestNDInterpolator(pts, GM)
         self._grid_bounds = [
             (float(pts[:, 0].min()), float(pts[:, 0].max())),
@@ -333,10 +318,8 @@ def _build_ct2d(pts: np.ndarray, GM: np.ndarray) -> _CT2DWithFallback:
     return _CT2DWithFallback(pts, GM)
 
 
-def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20,
-               label: str = "G_m"):
-    """
-    Two-stage interpolant for N_ind ≥ 3 (quaternary and beyond).
+def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20, label: str = "G_m"):
+    """Three-stage interpolant for N_ind ≥ 3 (quaternary and beyond).
 
     Stage 1 — RBF fit (once, cheap):
         Fit a thin-plate-spline RBFInterpolator to the scattered CALPHAD
@@ -360,67 +343,53 @@ def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20,
     label  : human-readable name for progress messages
     """
     N_ind = pts.shape[1]
-    print(f"    Building RBF (TPS) for {label!r} from {len(pts)} points …",
-          flush=True)
+    print(f"    Building RBF (TPS) for {label!r} from {len(pts)} points …", flush=True)
 
-    # ── Stage 1: fit RBF to scattered data ───────────────────────────────
     y_scale = float(np.abs(GM).mean()) or 1.0
     rbf = RBFInterpolator(
         pts,
         GM / y_scale,
-        kernel    = "thin_plate_spline",
-        smoothing = 1e-3,
-        degree    = 1,
+        kernel="thin_plate_spline",
+        smoothing=1e-3,
+        degree=1,
     )
 
-    # ── Stage 2: evaluate on dense regular grid ───────────────────────────
-    axes = [
-        np.linspace(float(pts[:, i].min()), float(pts[:, i].max()), n_grid)
-        for i in range(N_ind)
-    ]
-    grids   = np.meshgrid(*axes, indexing="ij")          # N_ind arrays
+    axes = [np.linspace(float(pts[:, i].min()), float(pts[:, i].max()), n_grid) for i in range(N_ind)]
+    grids = np.meshgrid(*axes, indexing="ij")  # N_ind arrays
     all_pts = np.stack([g.ravel() for g in grids], axis=1)  # (n_grid^N, N_ind)
 
     # keep only simplex-valid points (sum of independent comps < 1)
     simplex_valid = all_pts.sum(axis=1) < 0.999
 
-    y_grid_flat = np.full(n_grid ** N_ind, np.nan)
+    y_grid_flat = np.full(n_grid**N_ind, np.nan)
     if simplex_valid.any():
-        y_grid_flat[simplex_valid] = (
-            rbf(all_pts[simplex_valid]) * y_scale
-        )
+        y_grid_flat[simplex_valid] = rbf(all_pts[simplex_valid]) * y_scale
 
     y_grid = y_grid_flat.reshape([n_grid] * N_ind)
 
-    # ── fill NaN (simplex-invalid corners) with nearest valid value ───────
+    # fill NaN (simplex-invalid corners) with nearest valid value
     valid_mask = ~np.isnan(y_grid_flat)
     if valid_mask.any():
-        nn = NearestNDInterpolator(all_pts[valid_mask],
-                                   y_grid_flat[valid_mask])
+        nn = NearestNDInterpolator(all_pts[valid_mask], y_grid_flat[valid_mask])
         nan_idx = ~valid_mask
         y_grid_flat[nan_idx] = nn(all_pts[nan_idx])
         y_grid = y_grid_flat.reshape([n_grid] * N_ind)
 
-    # ── Stage 3: build fast RGI on the smooth filled grid ─────────────────
     rgi = RegularGridInterpolator(
         axes,
         y_grid,
-        method       = "linear",
-        bounds_error = False,
-        fill_value   = None,     # extrapolate at boundary rather than NaN
+        method="linear",
+        bounds_error=False,
+        fill_value=None,  # extrapolate at boundary rather than NaN
     )
     rgi._grid_bounds = [(float(a.min()), float(a.max())) for a in axes]
 
-    print(f"    RBF→RGI built for {label!r} ({N_ind}-D, {n_grid} pts/axis).",
-          flush=True)
+    print(f"    RBF→RGI built for {label!r} ({N_ind}-D, {n_grid} pts/axis).", flush=True)
     return rgi
 
 
-# ── interpolant object ────────────────────────────────────────────────────────
-
 class GmInterpolant:
-    """
-    General G_m surrogate for an N-component system.
+    """General G_m surrogate for an N-component system.
 
     The composition argument ``c`` passed to all methods is an array of shape
     ``(N_ind, *spatial)`` where the first axis indexes the independent
@@ -446,41 +415,38 @@ class GmInterpolant:
     def __init__(
         self,
         interp,
-        ind_elements:      list[str],
+        ind_elements: list[str],
         reference_element: str,
-        N_ind:             int,
-        temperature_K:     float,
-        fd_eps:            float,
-        col_idx:           list[int],
-        grid_bounds:       list[tuple[float, float]] | None = None,
+        N_ind: int,
+        temperature_K: float,
+        fd_eps: float,
+        col_idx: list[int],
+        grid_bounds: list[tuple[float, float]] | None = None,
         derivative_method: DerivativeMethod = "fd",
-        mu_interps:        list | None = None,
-        dmu_interps:       dict | None = None,
+        mu_interps: list | None = None,
+        dmu_interps: dict | None = None,
     ) -> None:
-        self._interp           = interp
-        self.ind_elements      = ind_elements
+        self._interp = interp
+        self.ind_elements = ind_elements
         self.reference_element = reference_element
-        self.N_ind             = N_ind
-        self.temperature_K     = temperature_K
-        self._eps              = fd_eps
-        self._col_idx          = col_idx
-        self.grid_bounds:      list[tuple[float, float]] | None = grid_bounds
+        self.N_ind = N_ind
+        self.temperature_K = temperature_K
+        self._eps = fd_eps
+        self._col_idx = col_idx
+        self.grid_bounds: list[tuple[float, float]] | None = grid_bounds
         self.derivative_method = derivative_method
         # Jansson interpolants (None in "fd" mode)
-        self._mu_interps       = mu_interps   # list[interp], length N_ind
-        self._dmu_interps      = dmu_interps  # dict[(i,j)] → interp
-
-    # ── helpers ───────────────────────────────────────────────────────────────
+        self._mu_interps = mu_interps  # list[interp], length N_ind
+        self._dmu_interps = dmu_interps  # dict[(i,j)] → interp
 
     def _eval_flat(self, c_flat: np.ndarray) -> np.ndarray:
-        """
-        Evaluate G_m at composition points.
+        """Evaluate G_m at composition points.
 
         Parameters
         ----------
         c_flat : shape (N_pts, N_ind) — each row is one composition point.
 
-        Returns
+        Returns:
         -------
         gm_flat : shape (N_pts,)
         """
@@ -490,8 +456,7 @@ class GmInterpolant:
             return self._interp(c_flat)
 
     def _apply_interp(self, interp, c_flat: np.ndarray) -> np.ndarray:
-        """
-        Evaluate an arbitrary scalar interpolant at composition points.
+        """Evaluate an arbitrary scalar interpolant at composition points.
 
         Parameters
         ----------
@@ -499,7 +464,7 @@ class GmInterpolant:
                  (N_pts, N_ind) [N-D] arrays.
         c_flat : shape (N_pts, N_ind)
 
-        Returns
+        Returns:
         -------
         shape (N_pts,)
         """
@@ -517,22 +482,19 @@ class GmInterpolant:
             # binary convenience: (N, N) spatial field → treat as (1, N, N)
             c = c[np.newaxis]
         spatial_shape = c.shape[1:]
-        n_pts         = int(np.prod(spatial_shape))
+        n_pts = int(np.prod(spatial_shape))
         # c_flat: (n_pts, N_ind) — columns = independent elements
         c_flat = c.reshape(self.N_ind, n_pts).T.copy()
         return c_flat, spatial_shape
 
-    # ── public API ────────────────────────────────────────────────────────────
-
     def gm(self, c: np.ndarray) -> np.ndarray:
-        """
-        G_m evaluated on a spatial composition field.
+        """G_m evaluated on a spatial composition field.
 
         Parameters
         ----------
         c : (N_ind, *spatial)  or  (*spatial,) for binary
 
-        Returns
+        Returns:
         -------
         ndarray  same spatial shape as c[0]
         """
@@ -540,44 +502,44 @@ class GmInterpolant:
         return self._eval_flat(c_flat).reshape(shape)
 
     def mu(self, c: np.ndarray) -> np.ndarray:
-        """
-        Chemical potentials ∂G/∂cᵢ.
+        """Chemical potentials ∂G/∂cᵢ.
 
-        For ``derivative_method="fd"`` or ``"hybrid"`` (Hessian):
+        For ``derivative_method="fd"``:
             Central finite differences on the G_m interpolant.
 
         For ``derivative_method="jansson"`` or ``"hybrid"``:
             Direct evaluation of pre-built μᵢ interpolants.
             μᵢ(c) = interp[MU_ind_i − MU_ref](c)
 
-        Returns
+        Returns:
         -------
         ndarray  shape (N_ind, *spatial)
         """
         c_flat, shape = self._unpack(c)
 
         if self._mu_interps is not None:
-            # ── Jansson / hybrid: direct interpolation of μᵢ − μ_ref ──────
-            n_pts  = c_flat.shape[0]
+            # Jansson / hybrid: direct interpolation of μᵢ − μ_ref
+            n_pts = c_flat.shape[0]
             mu_out = np.empty((self.N_ind, n_pts))
             for i, interp_i in enumerate(self._mu_interps):
                 mu_out[i] = self._apply_interp(interp_i, c_flat)
             return mu_out.reshape((self.N_ind,) + shape)
 
         else:
-            # ── FD: central differences on G_m ────────────────────────────
-            n_pts  = c_flat.shape[0]
-            eps    = self._eps
+            # FD: central differences on G_m
+            n_pts = c_flat.shape[0]
+            eps = self._eps
             mu_out = np.empty((self.N_ind, n_pts))
             for i in range(self.N_ind):
-                cp = c_flat.copy(); cp[:, i] += eps
-                cm = c_flat.copy(); cm[:, i] -= eps
+                cp = c_flat.copy()
+                cp[:, i] += eps
+                cm = c_flat.copy()
+                cm[:, i] -= eps
                 mu_out[i] = (self._eval_flat(cp) - self._eval_flat(cm)) / (2.0 * eps)
             return mu_out.reshape((self.N_ind,) + shape)
 
     def d2g(self, c: np.ndarray) -> np.ndarray:
-        """
-        Hessian Hᵢⱼ = ∂²G/∂cᵢ∂cⱼ.
+        """Hessian Hᵢⱼ = ∂²G/∂cᵢ∂cⱼ.
 
         For ``derivative_method="fd"`` or ``"hybrid"``:
             Finite differences on the G_m interpolant.
@@ -586,15 +548,15 @@ class GmInterpolant:
             Direct evaluation of pre-built ∂μᵢ/∂xⱼ interpolants.
             Hᵢⱼ(c) = interp[dMU_ind_i_ind_j − dMU_ref_ind_j](c)
 
-        Returns
+        Returns:
         -------
         ndarray  shape (N_ind, N_ind, *spatial)
         """
         c_flat, shape = self._unpack(c)
-        n_pts         = c_flat.shape[0]
+        n_pts = c_flat.shape[0]
 
         if self._dmu_interps is not None:
-            # ── Jansson: direct interpolation of Hᵢⱼ ─────────────────────
+            # Jansson: direct interpolation of Hᵢⱼ
             H = np.empty((self.N_ind, self.N_ind, n_pts))
             for i in range(self.N_ind):
                 for j in range(self.N_ind):
@@ -602,47 +564,51 @@ class GmInterpolant:
             return H.reshape((self.N_ind, self.N_ind) + shape)
 
         else:
-            # ── FD: second-order finite differences on G_m ─────────────────
+            # FD: second-order finite differences on G_m
             eps = self._eps
-            H   = np.empty((self.N_ind, self.N_ind, n_pts))
-            g0  = self._eval_flat(c_flat)
+            H = np.empty((self.N_ind, self.N_ind, n_pts))
+            g0 = self._eval_flat(c_flat)
 
             for i in range(self.N_ind):
                 for j in range(self.N_ind):
                     if i == j:
-                        cp = c_flat.copy(); cp[:, i] += eps
-                        cm = c_flat.copy(); cm[:, i] -= eps
-                        H[i, j] = (
-                            self._eval_flat(cp) - 2.0 * g0 + self._eval_flat(cm)
-                        ) / eps**2
+                        cp = c_flat.copy()
+                        cp[:, i] += eps
+                        cm = c_flat.copy()
+                        cm[:, i] -= eps
+                        H[i, j] = (self._eval_flat(cp) - 2.0 * g0 + self._eval_flat(cm)) / eps**2
                     else:
-                        cpp = c_flat.copy(); cpp[:, i] += eps; cpp[:, j] += eps
-                        cpm = c_flat.copy(); cpm[:, i] += eps; cpm[:, j] -= eps
-                        cmp = c_flat.copy(); cmp[:, i] -= eps; cmp[:, j] += eps
-                        cmm = c_flat.copy(); cmm[:, i] -= eps; cmm[:, j] -= eps
-                        H[i, j] = (
-                            self._eval_flat(cpp) - self._eval_flat(cpm)
-                            - self._eval_flat(cmp) + self._eval_flat(cmm)
-                        ) / (4.0 * eps**2)
+                        cpp = c_flat.copy()
+                        cpp[:, i] += eps
+                        cpp[:, j] += eps
+                        cpm = c_flat.copy()
+                        cpm[:, i] += eps
+                        cpm[:, j] -= eps
+                        cmp = c_flat.copy()
+                        cmp[:, i] -= eps
+                        cmp[:, j] += eps
+                        cmm = c_flat.copy()
+                        cmm[:, i] -= eps
+                        cmm[:, j] -= eps
+                        H[i, j] = (self._eval_flat(cpp) - self._eval_flat(cpm) - self._eval_flat(cmp) + self._eval_flat(cmm)) / (
+                            4.0 * eps**2
+                        )
 
             return H.reshape((self.N_ind, self.N_ind) + shape)
 
     def min_eigenvalue(self, c: np.ndarray) -> np.ndarray:
-        """
-        Minimum eigenvalue of the Hessian at each spatial point.
+        """Minimum eigenvalue of the Hessian at each spatial point.
         Negative → spinodally unstable.
 
-        Returns
+        Returns:
         -------
         ndarray  shape (*spatial)
         """
-        H      = self.d2g(c)                   # (N_ind, N_ind, *spatial)
-        shape  = H.shape[2:]
-        n_pts  = int(np.prod(shape)) if shape else 1
+        H = self.d2g(c)  # (N_ind, N_ind, *spatial)
+        shape = H.shape[2:]
+        n_pts = int(np.prod(shape)) if shape else 1
         H_flat = H.reshape(self.N_ind, self.N_ind, n_pts)
-        lmin   = np.array([
-            np.linalg.eigvalsh(H_flat[:, :, k]).min()
-            if not np.any(np.isnan(H_flat[:, :, k])) else np.nan
-            for k in range(n_pts)
-        ])
+        lmin = np.array(
+            [np.linalg.eigvalsh(H_flat[:, :, k]).min() if not np.any(np.isnan(H_flat[:, :, k])) else np.nan for k in range(n_pts)]
+        )
         return lmin.reshape(shape) if shape else float(lmin[0])

@@ -1,12 +1,12 @@
-"""
-Composition grid generation on the N-component simplex.
+"""Composition grid generation on the N-component simplex.
 
 For N elements, there are N-1 independent mole fractions. We iterate
-over the first N-2 elements on regular linspace grids and derive the
+over the N-1 independent elements on regular linspace grids and derive the
 reference element's fraction as x_ref = 1 - sum(others).
 """
 
 import itertools
+
 import numpy as np
 
 
@@ -16,8 +16,7 @@ def simplex_grid(
     reference_element: str,
     n_points: int,
 ) -> np.ndarray:
-    """
-    Build a regular composition grid on the N-component simplex.
+    """Build a regular composition grid on the N-component simplex.
 
     Parameters
     ----------
@@ -33,7 +32,7 @@ def simplex_grid(
     n_points : int
         Number of grid points along each element axis.
 
-    Returns
+    Returns:
     -------
     np.ndarray, shape (n_valid, N_elements)
         Valid composition rows in the order given by `elements`.
@@ -66,9 +65,7 @@ def simplex_grid(
         rows.append(row)
 
     if not rows:
-        raise ValueError(
-            "No valid compositions found. Check composition_ranges and reference_element."
-        )
+        raise ValueError("No valid compositions found. Check composition_ranges and reference_element.")
 
     return np.array(rows, dtype=np.float64)
 

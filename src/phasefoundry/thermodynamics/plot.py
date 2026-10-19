@@ -1,5 +1,4 @@
-"""
-Plotting utilities for thermodynamic tables.
+"""Plotting utilities for thermodynamic tables.
 
 Public functions
 ────────────────
@@ -36,7 +35,7 @@ _draw_simplex_boundary(ax, emb, ...)
 
 _fit_dim_reduction(pts)
     Fit a 2D non-linear embedding on pts.  Tries UMAP first (n_neighbors=30,
-    min_dist=0.1); falls back to t-SNE if umap-learn is not installed.
+    min_dist=0.6); falls back to t-SNE if umap-learn is not installed.
     Key UMAP parameters are named constants at the top of the function body.
 
 _canonical_rotation(pure_embs, elements, n_el)
@@ -68,8 +67,7 @@ def plot_free_energy_vs_composition(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """
-    Plot a thermodynamic quantity vs mole fraction of one element
+    """Plot a thermodynamic quantity vs mole fraction of one element
     for multiple temperatures (one curve per table file).
 
     Parameters
@@ -81,8 +79,7 @@ def plot_free_energy_vs_composition(
         Element whose mole fraction goes on the x-axis, e.g. 'V'.
     quantity : str
         Which quantity to plot: 'GM' (default) or a chemical potential
-        string like 'MU/HF'.  For 'GM' pass 'GM'; for a chemical
-        potential pass 'MU' and the element via ``mu_element``.
+        string like 'MU/HF'.
     temperatures_celsius : list of float, optional
         Labels for each curve.  If None, the temperature is read from
         each file's metadata (stored in K, converted to °C for display).
@@ -95,7 +92,7 @@ def plot_free_energy_vs_composition(
     show : bool
         Call plt.show() at the end.
 
-    Returns
+    Returns:
     -------
     matplotlib.axes.Axes
     """
@@ -110,9 +107,7 @@ def plot_free_energy_vs_composition(
         elements = data["elements"]
 
         if x_element not in elements:
-            raise ValueError(
-                f"'{x_element}' not in elements {elements} for file {path}"
-            )
+            raise ValueError(f"'{x_element}' not in elements {elements} for file {path}")
 
         col_idx = elements.index(x_element)
         x = data["compositions"][:, col_idx]
@@ -135,7 +130,6 @@ def plot_free_energy_vs_composition(
         order = np.argsort(x)
         x_sorted, y_sorted = x[order], y[order]
 
-        # Temperature label
         if temperatures_celsius is not None:
             label = f"{temperatures_celsius[i]:.0f} °C"
         else:
@@ -154,8 +148,11 @@ def plot_free_energy_vs_composition(
         title = f"{quantity} vs $x_{{\\rm {x_element.title()}}}$"
     ax.set_title(title, fontsize=13)
     ax.legend(
-        title="Temperature", fontsize=9, title_fontsize=9,
-        loc="best", ncol=2 if n > 6 else 1,
+        title="Temperature",
+        fontsize=9,
+        title_fontsize=9,
+        loc="best",
+        ncol=2 if n > 6 else 1,
     )
     ax.grid(False)
     plt.tight_layout()
@@ -179,15 +176,14 @@ def plot_chemical_potential_vs_composition(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> list[plt.Axes]:
-    """
-    Plot chemical potentials μᵢ vs mole fraction for multiple temperatures.
+    """Plot chemical potentials μᵢ vs mole fraction for multiple temperatures.
     One subplot per element in mu_elements.
     """
     sample = load_table(table_paths[0])
     elements = sample["elements"]
 
     if mu_elements is None:
-        mu_elements = elements  # all elements
+        mu_elements = elements
 
     fig, axes = plt.subplots(1, len(mu_elements), figsize=figsize, sharey=False)
     if len(mu_elements) == 1:
@@ -208,7 +204,8 @@ def plot_chemical_potential_vs_composition(
 
     plt.suptitle(
         f"Chemical potentials vs $x_{{\\rm {x_element.title()}}}$",
-        fontsize=13, y=1.02,
+        fontsize=13,
+        y=1.02,
     )
     plt.tight_layout()
 
@@ -222,8 +219,6 @@ def plot_chemical_potential_vs_composition(
     return axes
 
 
-# ── ternary spinodal + phase-region diagram ───────────────────────────────────
-
 def plot_ternary_spinodal(
     table_path: str | Path,
     independent_elements: list[str],
@@ -235,13 +230,12 @@ def plot_ternary_spinodal(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """
-    Ternary diagram showing single-phase, two-phase, three-phase, and spinodal
+    """Ternary diagram showing single-phase, two-phase, three-phase, and spinodal
     regions for a single-phase CALPHAD dataset.
 
     Phase regions are identified from the lower convex hull of G_m(x_1, x_2)
-    (see ``compute_ternary_phase_regions``).  The spinodal boundary (λ_min < 0)
-    is overlaid as a separate marker class.
+    (see ``compute_ternary_phase_regions``).  The spinodal boundary (λ_min = 0)
+    is overlaid as a dashed contour line.
 
     Requires ``python-ternary`` (``pip install python-ternary``).
 
@@ -252,7 +246,7 @@ def plot_ternary_spinodal(
     independent_elements : list[str]
         The two independent elements, e.g. ['NB', 'HF'] for Nb-Hf-V.
     corner_labels : list[str], optional
-        Labels for the (top, left, right) corners in python-ternary convention.
+        Labels for the (right, top, left) corners in python-ternary convention.
         Defaults to the element names derived from the table.
     sim_composition : dict[str, float], optional
         Composition of the simulated alloy, e.g. {'NB': 0.50, 'HF': 0.25}.
@@ -264,7 +258,7 @@ def plot_ternary_spinodal(
     save_path : str or Path, optional
     show : bool
 
-    Returns
+    Returns:
     -------
     matplotlib.axes.Axes
     """
@@ -272,16 +266,15 @@ def plot_ternary_spinodal(
         import ternary
     except ImportError as exc:
         raise ImportError(
-            "python-ternary is required for plot_ternary_spinodal(). "
-            "Install with: pip install python-ternary"
+            "python-ternary is required for plot_ternary_spinodal(). Install with: pip install python-ternary"
         ) from exc
 
-    from scipy.interpolate import LinearNDInterpolator
-    from .spinodal import compute_ternary_phase_regions, spinodal_boundary_multi
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
+    from scipy.interpolate import LinearNDInterpolator
 
-    # ── compute phase regions and spinodal map ────────────────────────────
+    from .spinodal import compute_ternary_phase_regions, spinodal_boundary_multi
+
     pr = compute_ternary_phase_regions(table_path, independent_elements)
 
     comps = pr["compositions"]
@@ -301,18 +294,17 @@ def plot_ternary_spinodal(
     # Use the fine grid from compute_ternary_phase_regions as the single
     # source of truth for all scatter and contour plots.
     fg = pr["fine_grid"]
-    fine_pts  = np.column_stack([fg["x0"], fg["x1"]])
+    fine_pts = np.column_stack([fg["x0"], fg["x1"]])
     region_fine = fg["region"]
-    df_fine     = fg["driving_force"]
+    df_fine = fg["driving_force"]
 
     # Interpolate λ_min from the raw CALPHAD points onto the same fine grid.
     # Use LinearNDInterpolator for interior points; fill NaN (outside convex
-    # hull of raw data) with NearestNDInterpolator so the contour can exit
-    # to the binary axes naturally — the spinodal boundary terminates at the
-    # ternary edges, it does not close as a loop inside the diagram.
+    # hull of raw data) with NearestNDInterpolator away from the ternary edges.
     from scipy.interpolate import NearestNDInterpolator
+
     lam_interp_lin = LinearNDInterpolator(list(zip(x0_raw, x1_raw)), lam_min_raw)
-    lam_interp_nn  = NearestNDInterpolator(list(zip(x0_raw, x1_raw)), lam_min_raw)
+    lam_interp_nn = NearestNDInterpolator(list(zip(x0_raw, x1_raw)), lam_min_raw)
     lam_fine = lam_interp_lin(fine_pts[:, 0], fine_pts[:, 1])
     nan_mask = np.isnan(lam_fine)
     if nan_mask.any():
@@ -321,8 +313,8 @@ def plot_ternary_spinodal(
         # from adjacent interior points), because that causes the λ=0 contour to
         # run along the ternary axis instead of terminating at it.  Assign a
         # large positive (stable) sentinel so the contour stops before the edge.
-        x0_nan  = fine_pts[nan_mask, 0]
-        x1_nan  = fine_pts[nan_mask, 1]
+        x0_nan = fine_pts[nan_mask, 0]
+        x1_nan = fine_pts[nan_mask, 1]
         xref_nan = 1.0 - x0_nan - x1_nan
         on_axis = (x0_nan < 0.02) | (x1_nan < 0.02) | (xref_nan < 0.02)
 
@@ -331,15 +323,12 @@ def plot_ternary_spinodal(
         boundary_nan_idx = nan_idx[on_axis]
 
         if len(interior_nan_idx) > 0:
-            lam_fine[interior_nan_idx] = lam_interp_nn(
-                fine_pts[interior_nan_idx, 0], fine_pts[interior_nan_idx, 1]
-            )
+            lam_fine[interior_nan_idx] = lam_interp_nn(fine_pts[interior_nan_idx, 0], fine_pts[interior_nan_idx, 1])
         if len(boundary_nan_idx) > 0:
             lam_fine[boundary_nan_idx] = float(np.nanmax(lam_min_raw)) + 1.0
 
     is_spinodal_fine = lam_fine < 0
 
-    # ── figure ────────────────────────────────────────────────────────────
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
@@ -355,22 +344,19 @@ def plot_ternary_spinodal(
     def _tern(xa, xb):
         """Convert (x_el0, x_el1) → python-ternary (right=el0, top=el1, left=ref)."""
         xref = 1.0 - xa - xb
-        return (xa, xb, xref)  # (right=el0, top=el1, left=ref)
+        return (xa, xb, xref)
 
     from .spinodal import _points_in_triangle
 
-    # Build mask for points inside any tie-triangle
     in_triangle = np.zeros(len(fine_pts), dtype=bool)
     for tt in tie_triangles:
         in_triangle |= _points_in_triangle(fine_pts[:, 0], fine_pts[:, 1], tt)
 
-    # ── scatter markers by region ─────────────────────────────────────────
     # Colorblind-friendly palette (Wong 2011):
-    # blue, orange, green, vermillion
     COLORS = {
-        "single":   ("#0072B2", 0.70),  # blue
-        "two":      ("#E69F00", 0.80),  # orange
-        "three":    ("#009E73", 0.80),  # bluish-green
+        "single": ("#0072B2", 0.70),  # blue
+        "two": ("#E69F00", 0.80),  # orange
+        "three": ("#009E73", 0.80),  # bluish-green
         "spinodal": ("#D55E00", 0.85),  # vermillion
     }
 
@@ -388,10 +374,8 @@ def plot_ternary_spinodal(
         if len(pts_sel) == 0:
             continue
         tern_pts = [_tern(xa, xb) for xa, xb in pts_sel]
-        tax.scatter(tern_pts, marker="o", s=marker_size, color=color,
-                    alpha=alpha, zorder=3 + zi)
+        tax.scatter(tern_pts, marker="o", s=marker_size, color=color, alpha=alpha, zorder=3 + zi)
 
-    # ── spinodal and binodal contour lines ───────────────────────────────
     # The fine grid stops at ~0.01 from the ternary edges (NaN filtered).
     # Without boundary anchors, tricontour is forced to close every contour
     # inside the domain producing unreasonable closed loops.
@@ -402,13 +386,11 @@ def plot_ternary_spinodal(
     n_edge = 80
     t_edge = np.linspace(0.0, 1.0, n_edge + 1)
     # Three edges: bottom (x1=0), left (x0=0), hypotenuse (x0+x1=1)
-    edge_x0 = np.concatenate([t_edge,           np.zeros(n_edge + 1), t_edge[::-1]])
-    edge_x1 = np.concatenate([np.zeros(n_edge + 1), t_edge,           1.0 - t_edge[::-1]])
+    edge_x0 = np.concatenate([t_edge, np.zeros(n_edge + 1), t_edge[::-1]])
+    edge_x1 = np.concatenate([np.zeros(n_edge + 1), t_edge, 1.0 - t_edge[::-1]])
 
-    def _augmented_contour(x0_pts, x1_pts, values,
-                           edge_val_lam, edge_val_bin, field, level):
-        """
-        Add ternary-edge anchor points then draw the contour at *level*.
+    def _augmented_contour(x0_pts, x1_pts, values, edge_val_lam, edge_val_bin, field, level):
+        """Add ternary-edge anchor points then draw the contour at *level*.
 
         edge_val_* are the scalar values assigned to every edge anchor point.
         Physically correct anchors:
@@ -428,9 +410,11 @@ def plot_ternary_spinodal(
         # the boundary ring (long edges in composition space).
         tri_x = x0_aug[triang.triangles]
         tri_y = x1_aug[triang.triangles]
+
         def _sq(i, j):
-            return (tri_x[:, i]-tri_x[:, j])**2 + (tri_y[:, i]-tri_y[:, j])**2
-        max_sq = np.maximum(_sq(0,1), np.maximum(_sq(1,2), _sq(0,2)))
+            return (tri_x[:, i] - tri_x[:, j]) ** 2 + (tri_y[:, i] - tri_y[:, j]) ** 2
+
+        max_sq = np.maximum(_sq(0, 1), np.maximum(_sq(1, 2), _sq(0, 2)))
         triang.set_mask(max_sq > 0.05**2)
 
         fig_tmp, ax_tmp = plt.subplots()
@@ -443,8 +427,7 @@ def plot_ternary_spinodal(
         return paths
 
     def _merge_paths(paths, tol=1e-6):
-        """
-        Chain disconnected path segments that share endpoints into longer
+        """Chain disconnected path segments that share endpoints into longer
         continuous paths, eliminating overlapping strokes at junctions.
         """
         if not paths:
@@ -485,8 +468,7 @@ def plot_ternary_spinodal(
         return merged
 
     def _split_at_boundary(path, tol=0.01):
-        """
-        Split a contour path into sub-segments that each run through the
+        """Split a contour path into sub-segments that each run through the
         interior, stopping the moment a point lands on or beyond a ternary
         edge.  This ensures boundary lines only *terminate* at an axis —
         they never run *along* one.
@@ -526,9 +508,11 @@ def plot_ternary_spinodal(
         triang = mtri.Triangulation(x0_pts, x1_pts)
         tri_x = x0_pts[triang.triangles]
         tri_y = x1_pts[triang.triangles]
+
         def _sq(i, j):
-            return (tri_x[:,i]-tri_x[:,j])**2 + (tri_y[:,i]-tri_y[:,j])**2
-        max_sq = np.maximum(_sq(0,1), np.maximum(_sq(1,2), _sq(0,2)))
+            return (tri_x[:, i] - tri_x[:, j]) ** 2 + (tri_y[:, i] - tri_y[:, j]) ** 2
+
+        max_sq = np.maximum(_sq(0, 1), np.maximum(_sq(1, 2), _sq(0, 2)))
         triang.set_mask(max_sq > max_edge**2)
         fig_tmp, ax_tmp = plt.subplots()
         cs = ax_tmp.tricontour(triang, values, levels=[level])
@@ -540,9 +524,7 @@ def plot_ternary_spinodal(
         return paths
 
     lam_valid = np.isfinite(lam_fine)
-    sp_paths = _simple_contour(
-        fine_pts[lam_valid, 0], fine_pts[lam_valid, 1], lam_fine[lam_valid], level=0.0
-    )
+    sp_paths = _simple_contour(fine_pts[lam_valid, 0], fine_pts[lam_valid, 1], lam_fine[lam_valid], level=0.0)
     _plot_contour(sp_paths, color="k", linewidth=1.5, linestyle="--")
 
     # Binodal line: temporarily disabled
@@ -554,22 +536,16 @@ def plot_ternary_spinodal(
     # )
     # _plot_contour(bin_paths, color="k", linewidth=1.5, linestyle="-")
 
-    # ── three-phase tie-triangle boundary ────────────────────────────────
     for tt in tie_triangles:
         tern_verts = [_tern(tt[i, 0], tt[i, 1]) for i in range(3)]
-        tax.plot(tern_verts + [tern_verts[0]],
-                 color="#006d50", linewidth=1.8, zorder=7, linestyle="-")
-        tax.scatter(tern_verts, marker="D", s=marker_size * 2,
-                    color="#006d50", zorder=8)
+        tax.plot(tern_verts + [tern_verts[0]], color="#006d50", linewidth=1.8, zorder=7, linestyle="-")
+        tax.scatter(tern_verts, marker="D", s=marker_size * 2, color="#006d50", zorder=8)
 
-    # ── simulation star ───────────────────────────────────────────────────
     if sim_composition is not None:
         sc_x0 = sim_composition.get(independent_elements[0], 0.0)
         sc_x1 = sim_composition.get(independent_elements[1], 0.0)
-        tax.scatter([_tern(sc_x0, sc_x1)], marker="*", s=50,
-                    color="k", zorder=10)
+        tax.scatter([_tern(sc_x0, sc_x1)], marker="*", s=50, color="k", zorder=10)
 
-    # ── corner labels ─────────────────────────────────────────────────────
     if corner_labels is None:
         # right = el0, top = el1, left = ref
         corner_labels = [
@@ -578,36 +554,35 @@ def plot_ternary_spinodal(
             ref_el.title(),
         ]
     tax.right_corner_label(corner_labels[0], fontsize=9, offset=0.12)
-    tax.top_corner_label(corner_labels[1],   fontsize=9, offset=0.20)
-    tax.left_corner_label(corner_labels[2],  fontsize=9, offset=0.18)
+    tax.top_corner_label(corner_labels[1], fontsize=9, offset=0.20)
+    tax.left_corner_label(corner_labels[2], fontsize=9, offset=0.18)
 
-    tax.set_title(
-        f"Ternary phase map — {T_C:.0f} °C", fontsize=9, pad=30
-    )
-    tax.ticks(axis="lbr", linewidth=0.6, multiple=0.2,
-              tick_formats="%.1f", fontsize=6, offset=0.025)
+    tax.set_title(f"Ternary phase map — {T_C:.0f} °C", fontsize=9, pad=30)
+    tax.ticks(axis="lbr", linewidth=0.6, multiple=0.2, tick_formats="%.1f", fontsize=6, offset=0.025)
     tax.clear_matplotlib_ticks()
     ax.axis("off")
 
-    # ── legend ────────────────────────────────────────────────────────────
     handles = [
-        Patch(facecolor=COLORS["single"][0],   alpha=COLORS["single"][1],   label="single-phase"),
-        Patch(facecolor=COLORS["two"][0],       alpha=COLORS["two"][1],      label="two-phase"),
-        Patch(facecolor=COLORS["three"][0],     alpha=COLORS["three"][1],    label="three-phase"),
+        Patch(facecolor=COLORS["single"][0], alpha=COLORS["single"][1], label="single-phase"),
+        Patch(facecolor=COLORS["two"][0], alpha=COLORS["two"][1], label="two-phase"),
+        Patch(facecolor=COLORS["three"][0], alpha=COLORS["three"][1], label="three-phase"),
         # Line2D([0], [0], color="k", linewidth=1.4, linestyle="-",
         #        label="binodal boundary"),  # temporarily disabled
-        Line2D([0], [0], color="k", linewidth=1.4, linestyle="--",
-               label="spinodal boundary"),
+        Line2D([0], [0], color="k", linewidth=1.4, linestyle="--", label="spinodal boundary"),
     ]
     if sim_composition is not None:
-        handles.append(
-            Line2D([0], [0], marker="*", color="k", markersize=6,
-                   ls="none", label="simulated composition")
-        )
-    ax.legend(handles=handles, fontsize=6.5, frameon=True,
-              loc="upper center", ncol=2, handletextpad=0.3,
-              borderpad=0.4, columnspacing=0.7,
-              bbox_to_anchor=(0.5, 0.02))
+        handles.append(Line2D([0], [0], marker="*", color="k", markersize=6, ls="none", label="simulated composition"))
+    ax.legend(
+        handles=handles,
+        fontsize=6.5,
+        frameon=True,
+        loc="upper center",
+        ncol=2,
+        handletextpad=0.3,
+        borderpad=0.4,
+        columnspacing=0.7,
+        bbox_to_anchor=(0.5, 0.02),
+    )
 
     plt.tight_layout()
 
@@ -621,8 +596,6 @@ def plot_ternary_spinodal(
     return ax
 
 
-# ── AS-UMAP: alloy-space dimensionality reduction ─────────────────────────────
-
 def plot_as_umap(
     table_path: str | Path,
     independent_elements: list[str],
@@ -634,8 +607,7 @@ def plot_as_umap(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Figure:
-    """
-    Alloy-Space dimensionality reduction plot for quaternary and higher systems.
+    """Alloy-Space dimensionality reduction plot for quaternary and higher systems.
 
     Implements the AS-UMAP method (Vela et al., arXiv:2408.07681): grid-samples
     the full n-component composition simplex, fits a non-linear dimensionality
@@ -661,41 +633,37 @@ def plot_as_umap(
         Simulated composition {element: x} — plotted as a star.
     umap_scale : int, optional
         Simplex lattice resolution for the background grid.  Larger gives a
-        denser background but slower embedding.  Defaults to max(8, 24 // n_el).
+        denser background but slower embedding.  Defaults to max(10, 60 // n_el).
     figsize : tuple
     save_path : str or Path, optional
     show : bool
 
-    Returns
+    Returns:
     -------
     matplotlib.figure.Figure
     """
     from .spinodal import compute_phase_regions_multi
 
-    data     = load_table(table_path)
+    data = load_table(table_path)
     elements = data["elements"]
-    n_el     = len(elements)
-    T_C      = data["metadata"].get("temperature", 273.15) - 273.15
+    n_el = len(elements)
+    T_C = data["metadata"].get("temperature", 273.15) - 273.15
 
-    # ── phase-region classification ───────────────────────────────────────
-    result      = compute_phase_regions_multi(
-        table_path, independent_elements, reference_element
-    )
-    comps       = result["compositions"]
-    region      = result["region"].copy()
+    result = compute_phase_regions_multi(table_path, independent_elements, reference_element)
+    comps = result["compositions"]
+    region = result["region"].copy()
     is_spinodal = result["spinodal"]
     region[is_spinodal] = "spinodal"
 
-    # ── full simplex background for AS embedding ──────────────────────────
     # scale=15 gives 816 background pts for quaternary — dense enough for a
     # clear hypocycloid boundary without being slow.
-    scale       = umap_scale or max(10, 60 // n_el)
+    scale = umap_scale or max(10, 60 // n_el)
     simplex_pts = _full_simplex_lattice(n_el, scale)
-    n_simplex   = len(simplex_pts)
-    n_data      = len(comps)
+    n_simplex = len(simplex_pts)
+    n_data = len(comps)
 
     extra_pts = []
-    sim_idx   = None
+    sim_idx = None
     if sim_composition is not None:
         sim_vec = np.array([sim_composition.get(el, 0.0) for el in elements])
         extra_pts.append(sim_vec)
@@ -703,38 +671,32 @@ def plot_as_umap(
 
     all_pts = np.vstack([simplex_pts, comps] + extra_pts)
 
-    # ── dimensionality reduction ──────────────────────────────────────────
     method_name, embedding = _fit_dim_reduction(all_pts)
     simplex_emb = embedding[:n_simplex]
-    data_emb    = embedding[n_simplex:n_simplex + n_data]
-    sim_emb     = embedding[sim_idx] if sim_idx is not None else None
+    data_emb = embedding[n_simplex : n_simplex + n_data]
+    sim_emb = embedding[sim_idx] if sim_idx is not None else None
 
-    # ── locate pure-element corners in the background ─────────────────────
     pure_embs = {}
     for i, el in enumerate(elements):
-        pure_comp     = np.zeros(n_el); pure_comp[i] = 1.0
-        dists         = np.linalg.norm(simplex_pts - pure_comp, axis=1)
+        pure_comp = np.zeros(n_el)
+        pure_comp[i] = 1.0
+        dists = np.linalg.norm(simplex_pts - pure_comp, axis=1)
         pure_embs[el] = simplex_emb[int(np.argmin(dists))]
 
-    # ── rotate embedding to canonical n-gon orientation ───────────────────
     # n=3 → equilateral triangle, one vertex at top (△)
     # n=4 → square with flat sides, one vertex at top-left (■)
     # n≥5 → regular polygon with one vertex at top
     rot_angle, centroid = _canonical_rotation(pure_embs, elements, n_el)
     simplex_emb = _rotate_embedding(simplex_emb, rot_angle, centroid)
-    data_emb    = _rotate_embedding(data_emb,    rot_angle, centroid)
+    data_emb = _rotate_embedding(data_emb, rot_angle, centroid)
     if sim_emb is not None:
         sim_emb = _rotate_embedding(sim_emb[np.newaxis], rot_angle, centroid)[0]
     for el in elements:
-        pure_embs[el] = _rotate_embedding(
-            pure_embs[el][np.newaxis], rot_angle, centroid)[0]
+        pure_embs[el] = _rotate_embedding(pure_embs[el][np.newaxis], rot_angle, centroid)[0]
 
-    # ── figure ────────────────────────────────────────────────────────────
     fig, ax = plt.subplots(figsize=figsize)
 
-    ax.scatter(simplex_emb[:, 0], simplex_emb[:, 1],
-               c="#d8d8d8", s=4, alpha=0.6, zorder=1,
-               rasterized=True, linewidths=0)
+    ax.scatter(simplex_emb[:, 0], simplex_emb[:, 1], c="#d8d8d8", s=4, alpha=0.6, zorder=1, rasterized=True, linewidths=0)
 
     # Draw the hypocycloid boundary: concave hull of the background simplex.
     # Use alpha-shape via Delaunay triangulation — keeps only boundary edges
@@ -742,19 +704,19 @@ def plot_as_umap(
     _draw_simplex_boundary(ax, simplex_emb, alpha_frac=0.6)
 
     _COLORS = {
-        "single":   ("#2ca02c", 0.80),
-        "two":      ("#ff7f0e", 0.80),
-        "three":    ("#1f77b4", 0.80),
-        "four":     ("#9467bd", 0.80),
-        "multi":    ("#8c564b", 0.80),
+        "single": ("#2ca02c", 0.80),
+        "two": ("#ff7f0e", 0.80),
+        "three": ("#1f77b4", 0.80),
+        "four": ("#9467bd", 0.80),
+        "multi": ("#8c564b", 0.80),
         "spinodal": ("#d62728", 0.90),
     }
     _LABELS = {
-        "single":   "Single phase",
-        "two":      "Two phase",
-        "three":    "Three phase",
-        "four":     "Four phase",
-        "multi":    "Multi phase",
+        "single": "Single phase",
+        "two": "Two phase",
+        "three": "Three phase",
+        "four": "Four phase",
+        "multi": "Multi phase",
         "spinodal": "Spinodal",
     }
     for reg in ("single", "two", "three", "four", "multi", "spinodal"):
@@ -762,22 +724,31 @@ def plot_as_umap(
         if not mask.any():
             continue
         color, alpha = _COLORS[reg]
-        ax.scatter(data_emb[mask, 0], data_emb[mask, 1],
-                   c=color, s=22, alpha=alpha, zorder=3,
-                   linewidths=0, label=_LABELS[reg])
+        ax.scatter(data_emb[mask, 0], data_emb[mask, 1], c=color, s=22, alpha=alpha, zorder=3, linewidths=0, label=_LABELS[reg])
 
     if sim_emb is not None:
-        ax.scatter([sim_emb[0]], [sim_emb[1]], marker="*", s=160,
-                   c="gold", edgecolors="k", linewidths=0.8,
-                   zorder=5, label="Simulated composition")
+        ax.scatter(
+            [sim_emb[0]],
+            [sim_emb[1]],
+            marker="*",
+            s=160,
+            c="gold",
+            edgecolors="k",
+            linewidths=0.8,
+            zorder=5,
+            label="Simulated composition",
+        )
 
     lab_els = corner_labels if corner_labels is not None else elements
     for el, lab in zip(elements, lab_els):
         ex, ey = pure_embs[el]
         ax.annotate(
-            lab, (ex, ey), fontsize=9, fontweight="bold", ha="center",
-            bbox=dict(boxstyle="round,pad=0.25", fc="white",
-                      ec="0.7", alpha=0.85, lw=0.6),
+            lab,
+            (ex, ey),
+            fontsize=9,
+            fontweight="bold",
+            ha="center",
+            bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="0.7", alpha=0.85, lw=0.6),
         )
 
     el_str = "–".join(e.title() for e in elements)
@@ -787,8 +758,7 @@ def plot_as_umap(
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.set_frame_on(False)
-    ax.legend(fontsize=8, loc="best", frameon=True,
-              markerscale=1.2, handletextpad=0.4)
+    ax.legend(fontsize=8, loc="best", frameon=True, markerscale=1.2, handletextpad=0.4)
     plt.tight_layout()
 
     if save_path:
@@ -801,45 +771,42 @@ def plot_as_umap(
     return fig
 
 
-# ── private helpers ───────────────────────────────────────────────────────────
-
 def _full_simplex_lattice(n_el: int, scale: int) -> np.ndarray:
     """Stars-and-bars lattice covering the full n-el composition simplex."""
     from itertools import combinations
+
     rows = []
     for c in combinations(range(scale + n_el - 1), n_el - 1):
-        ext    = (-1,) + c + (scale + n_el - 1,)
+        ext = (-1,) + c + (scale + n_el - 1,)
         coords = tuple(ext[k + 1] - ext[k] - 1 for k in range(n_el))
         rows.append([v / scale for v in coords])
     return np.array(rows, dtype=float)
 
 
-def _draw_simplex_boundary(ax: plt.Axes, emb: np.ndarray,
-                           color: str = "#888888",
-                           lw: float = 1.2,
-                           alpha_frac: float = 0.25) -> None:
-    """
-    Draw the concave boundary (alpha-shape) of a 2-D point cloud on ax.
+def _draw_simplex_boundary(
+    ax: plt.Axes, emb: np.ndarray, color: str = "#888888", lw: float = 1.2, alpha_frac: float = 0.25
+) -> None:
+    """Draw the concave boundary (alpha-shape) of a 2-D point cloud on ax.
 
     Uses Delaunay triangulation: a boundary edge belongs to exactly one
     triangle.  The alpha parameter is set to alpha_frac × the span of the
     embedding, which empirically gives the hypocycloid outline.
     """
-    from scipy.spatial import Delaunay
     from matplotlib.collections import LineCollection
+    from scipy.spatial import Delaunay
 
     if len(emb) < 4:
         return
 
-    tri   = Delaunay(emb)
-    span  = max(np.ptp(emb[:, 0]), np.ptp(emb[:, 1]))
-    alpha = alpha_frac * span         # circumradius threshold
+    tri = Delaunay(emb)
+    span = max(np.ptp(emb[:, 0]), np.ptp(emb[:, 1]))
+    alpha = alpha_frac * span  # circumradius threshold
 
     boundary_edges: set[tuple[int, int]] = set()
     for simplex in tri.simplices:
         for i in range(3):
             e = tuple(sorted([simplex[i], simplex[(i + 1) % 3]]))
-            boundary_edges ^= {e}     # XOR: keep edges belonging to exactly 1 triangle
+            boundary_edges ^= {e}  # XOR: keep edges belonging to exactly 1 triangle
 
     # Also filter by circumradius to get the concave (alpha-shape) boundary
     filtered: list[tuple] = []
@@ -851,21 +818,19 @@ def _draw_simplex_boundary(ax: plt.Axes, emb: np.ndarray,
             filtered.append(e)
 
     if not filtered:
-        # Fall back to convex hull
         from scipy.spatial import ConvexHull
+
         hull = ConvexHull(emb)
         for s in hull.simplices:
             filtered.append(tuple(s))
 
     segs = [(emb[e[0]], emb[e[1]]) for e in filtered]
-    lc   = LineCollection(segs, colors=color, linewidths=lw,
-                           alpha=0.75, zorder=2)
+    lc = LineCollection(segs, colors=color, linewidths=lw, alpha=0.75, zorder=2)
     ax.add_collection(lc)
 
 
 def _fit_dim_reduction(pts: np.ndarray) -> tuple[str, np.ndarray]:
-    """
-    Fit a 2-D non-linear embedding.  Tries UMAP first; falls back to t-SNE.
+    """Fit a 2-D non-linear embedding.  Tries UMAP first; falls back to t-SNE.
     Returns (method_name, embedding) where embedding has shape (n_pts, 2).
 
     ── UMAP tuning parameters ───────────────────────────────────────────────
@@ -878,7 +843,7 @@ def _fit_dim_reduction(pts: np.ndarray) -> tuple[str, np.ndarray]:
           and the simplex topology can break apart.
         Must be large enough to "see" across the full simplex (≥ 20 is safe).
 
-    UMAP_MIN_DIST : float  (default 0.1)
+    UMAP_MIN_DIST : float  (default 0.6)
         Minimum distance between points in the 2-D embedding.
         • Decrease (e.g. 0.0–0.05) → tighter clusters, deeper concavities,
           more pronounced hypocycloid shape.
@@ -895,25 +860,23 @@ def _fit_dim_reduction(pts: np.ndarray) -> tuple[str, np.ndarray]:
         large datasets.
     ─────────────────────────────────────────────────────────────────────────
     """
-    UMAP_N_NEIGHBORS  = 30
-    UMAP_MIN_DIST     = 0.6
+    UMAP_N_NEIGHBORS = 30
+    UMAP_MIN_DIST = 0.6
     UMAP_RANDOM_STATE = 42
-    TSNE_MAX_ITER     = 1000
+    TSNE_MAX_ITER = 1000
 
     try:
         import umap as _umap
-        reducer = _umap.UMAP(n_components=2,
-                              n_neighbors=UMAP_N_NEIGHBORS,
-                              min_dist=UMAP_MIN_DIST,
-                              random_state=UMAP_RANDOM_STATE)
+
+        reducer = _umap.UMAP(n_components=2, n_neighbors=UMAP_N_NEIGHBORS, min_dist=UMAP_MIN_DIST, random_state=UMAP_RANDOM_STATE)
         return "UMAP", reducer.fit_transform(pts)
     except Exception:
         pass
 
     from sklearn.manifold import TSNE
-    perp    = min(30.0, max(5.0, len(pts) / 4.0 - 1.0))
-    reducer = TSNE(n_components=2, perplexity=perp,
-                   max_iter=TSNE_MAX_ITER, random_state=UMAP_RANDOM_STATE)
+
+    perp = min(30.0, max(5.0, len(pts) / 4.0 - 1.0))
+    reducer = TSNE(n_components=2, perplexity=perp, max_iter=TSNE_MAX_ITER, random_state=UMAP_RANDOM_STATE)
     return "t-SNE", reducer.fit_transform(pts)
 
 
@@ -930,8 +893,8 @@ def _canonical_rotation(
     - n≥5             : regular polygon, first vertex at top (90°)
     """
     positions = np.array([pure_embs[el] for el in elements])
-    centroid  = positions.mean(axis=0)
-    centered  = positions - centroid
+    centroid = positions.mean(axis=0)
+    centered = positions - centroid
 
     current_angles = np.arctan2(centered[:, 1], centered[:, 0])
 
@@ -944,30 +907,29 @@ def _canonical_rotation(
     # n=4 → ■ orientation: vertices at 135°, 45°, -45°, -135°  (step = -90°)
     # all other n → vertex at top (90°), step = 360°/n clockwise
     if n_el == 4:
-        canonical_start = 3.0 * np.pi / 4.0   # 135°
+        canonical_start = 3.0 * np.pi / 4.0  # 135°
     else:
-        canonical_start = np.pi / 2.0          # 90°
+        canonical_start = np.pi / 2.0  # 90°
 
     canonical_angles = canonical_start - 2.0 * np.pi * np.arange(n_el) / n_el
 
     # Try all n cyclic shifts and pick the one that minimises total angular error.
     best_rotation = 0.0
-    best_error    = np.inf
+    best_error = np.inf
     for shift in range(n_el):
         target = np.roll(canonical_angles, shift)
-        diffs  = target - sorted_angles
-        diffs  = (diffs + np.pi) % (2.0 * np.pi) - np.pi   # wrap to (-π, π]
-        error  = float(np.sum(diffs ** 2))
+        diffs = target - sorted_angles
+        diffs = (diffs + np.pi) % (2.0 * np.pi) - np.pi  # wrap to (-π, π]
+        error = float(np.sum(diffs**2))
         if error < best_error:
-            best_error    = error
+            best_error = error
             best_rotation = float(diffs.mean())
 
     return best_rotation, centroid
 
 
-def _rotate_embedding(emb: np.ndarray, angle: float,
-                      centroid: np.ndarray) -> np.ndarray:
+def _rotate_embedding(emb: np.ndarray, angle: float, centroid: np.ndarray) -> np.ndarray:
     """Apply a 2-D rotation of *angle* radians around *centroid*."""
     c, s = np.cos(angle), np.sin(angle)
-    R    = np.array([[c, -s], [s, c]])
+    R = np.array([[c, -s], [s, c]])
     return (emb - centroid) @ R.T + centroid

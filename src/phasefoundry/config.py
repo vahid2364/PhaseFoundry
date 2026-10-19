@@ -1,5 +1,4 @@
-"""
-phasefoundry.config — Configuration loader and override engine
+"""phasefoundry.config — Configuration loader and override engine
 =============================================================
 
 Loads a YAML config file and applies ``--set key.subkey=value``
@@ -10,6 +9,7 @@ command-line overrides.  Dot-notation keys map to nested dicts:
 
 Type coercion is automatic:
     "true"/"false"  → bool
+    "none"/"null"   → None
     integers        → int
     floats          → float
     comma-separated → list   e.g.  thermo.temperatures_C=100,200,300
@@ -25,8 +25,6 @@ from typing import Any
 import yaml
 
 
-# ── loader ────────────────────────────────────────────────────────────────────
-
 def load_config(path: str | Path) -> dict:
     """Load a YAML config file and return as a nested dict."""
     path = Path(path)
@@ -39,18 +37,16 @@ def load_config(path: str | Path) -> dict:
     return cfg
 
 
-# ── override engine ───────────────────────────────────────────────────────────
-
 def _coerce(value: str) -> Any:
     """Coerce a string value to the most appropriate Python type."""
-    # bool
-    if value.lower() == "true":  return True
-    if value.lower() == "false": return False
-    if value.lower() in ("none", "null"): return None
-    # list (comma-separated)
+    if value.lower() == "true":
+        return True
+    if value.lower() == "false":
+        return False
+    if value.lower() in ("none", "null"):
+        return None
     if "," in value:
         return [_coerce(v.strip()) for v in value.split(",")]
-    # int
     try:
         return int(value)
     except ValueError:
@@ -60,13 +56,11 @@ def _coerce(value: str) -> Any:
         return float(value)
     except ValueError:
         pass
-    # string fallback
     return value
 
 
 def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
-    """
-    Apply a list of ``"key.subkey=value"`` strings to *cfg* (in-place copy).
+    """Apply a list of ``"key.subkey=value"`` strings to *cfg* (in-place copy).
 
     Parameters
     ----------
@@ -76,17 +70,17 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
         Each string must be of the form ``"section.key=value"``
         or ``"section.subsection.key=value"``.
 
-    Returns
+    Returns:
     -------
     dict
         A deep copy of *cfg* with overrides applied.
 
-    Raises
+    Raises:
     ------
     ValueError
         If an override string is malformed or the key path doesn't exist.
 
-    Examples
+    Examples:
     --------
     >>> cfg = load_config("configs/nb_v.yaml")
     >>> cfg = apply_overrides(cfg, ["simulation.kappa=1e-10", "simulation.n_steps=5000"])
@@ -94,9 +88,7 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
     cfg = copy.deepcopy(cfg)
     for override in overrides:
         if "=" not in override:
-            raise ValueError(
-                f"Invalid --set override {override!r}: expected 'key.subkey=value'"
-            )
+            raise ValueError(f"Invalid --set override {override!r}: expected 'key.subkey=value'")
         key_path, raw_value = override.split("=", 1)
         keys = key_path.strip().split(".")
         value = _coerce(raw_value.strip())
@@ -105,15 +97,11 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
         node = cfg
         for k in keys[:-1]:
             if k not in node:
-                raise ValueError(
-                    f"Override key {key_path!r}: section {k!r} not found in config."
-                )
+                raise ValueError(f"Override key {key_path!r}: section {k!r} not found in config.")
             node = node[k]
         leaf = keys[-1]
         if leaf not in node:
-            raise ValueError(
-                f"Override key {key_path!r}: key {leaf!r} not found in section."
-            )
+            raise ValueError(f"Override key {key_path!r}: key {leaf!r} not found in section.")
         old = node[leaf]
         node[leaf] = value
         print(f"  [config] {key_path}: {old!r} → {value!r}")
@@ -121,24 +109,21 @@ def apply_overrides(cfg: dict, overrides: list[str]) -> dict:
     return cfg
 
 
-# ── run-name builder ──────────────────────────────────────────────────────────
-
 def build_run_name(cfg: dict) -> str:
-    """
-    Auto-construct a run_name from simulation parameters.
+    """Auto-construct a run_name from simulation parameters.
 
     Pattern:
-        pf_{ndim}d_c{mol%}_kappa{kappa_str}_M{M_str}_{tdb_tag}
+        pf_{ndim}d_c{mol%}{El}_kappa{kappa_str}_M{M_str}_{tdb_tag}[_elastic]
 
     Examples:
-        pf_2d_c50_kappa1e12_M5e21_tdbv3
+        pf_2d_c50Nb_kappa1e12_M5e21_tdbv3
         pf_3d_c50Nb05Hf_kappa1e12_M5e21_tdbv3
     """
-    sim      = cfg["simulation"]
-    db_path  = str(cfg["system"].get("db_path", ""))
+    sim = cfg["simulation"]
+    db_path = str(cfg["system"].get("db_path", ""))
     elements = cfg["system"]["elements"]
-    ref_el   = cfg["system"]["reference_element"]
-    ind_els  = [e for e in elements if e != ref_el]
+    ref_el = cfg["system"]["reference_element"]
+    ind_els = [e for e in elements if e != ref_el]
 
     ndim = int(sim.get("dimensions", 2))
 
@@ -167,6 +152,7 @@ def build_run_name(cfg: dict) -> str:
     # TDB version tag: HfNbTiV_BCC_PhaseForge_v3.tdb      → tdbv3
     #                  HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb → tdbv2
     import re
+
     tdb_tag = "tdb"
     m = re.search(r"_v(\d+)", Path(db_path).stem, re.IGNORECASE)
     if m:
@@ -177,15 +163,15 @@ def build_run_name(cfg: dict) -> str:
 
 
 def _sci_tag(value: float) -> str:
-    """
-    Convert a float to a compact scientific-notation tag (no sign, no dot).
+    """Convert a float to a compact scientific-notation tag (no sign, no dot).
     Examples: 1e-12 → '1e12',  5e-21 → '5e21',  1.5e-10 → '15e10'
     """
     import math
+
     if value == 0:
         return "0"
-    exp  = int(math.floor(math.log10(abs(value))))
-    mant = value / (10 ** exp)
+    exp = int(math.floor(math.log10(abs(value))))
+    mant = value / (10**exp)
     # round mantissa to avoid floating-point noise
     mant_r = round(mant, 6)
     if abs(mant_r - round(mant_r)) < 1e-9:
@@ -195,11 +181,8 @@ def _sci_tag(value: float) -> str:
     return f"{mant_str}e{abs(exp)}"
 
 
-# ── convenience ───────────────────────────────────────────────────────────────
-
 def resolve_paths(cfg: dict, root: Path) -> dict:
-    """
-    Resolve all path-like values in the ``output`` and ``system`` sections
+    """Resolve all path-like values in the ``output`` and ``system`` sections
     relative to *root* (the repository root).
 
     Also auto-constructs ``output.run_name`` from simulation parameters when
@@ -215,7 +198,6 @@ def resolve_paths(cfg: dict, root: Path) -> dict:
             if isinstance(val, str) and ("/" in val or val.endswith(".tdb")):
                 cfg[section][key] = root / val
 
-    # auto run_name
     run_name = cfg.get("output", {}).get("run_name", "auto")
     if run_name in ("auto", None, ""):
         cfg["output"]["run_name"] = build_run_name(cfg)

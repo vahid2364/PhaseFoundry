@@ -1,5 +1,4 @@
-"""
-phasefoundry.elasticity — FFT-based elasticity solver for periodic microstructures
+"""phasefoundry.elasticity — FFT-based elasticity solver for periodic microstructures
 ==================================================================================
 
 Implements the displacement-formulation iterative scheme from:
@@ -9,7 +8,7 @@ Implements the displacement-formulation iterative scheme from:
 
 Public API
 ----------
-solve_elasticity(c, C_mat, C_ppt, eigenstrain, sigma_applied=None, tol=1e-6, max_iter=1000)
+solve_elasticity(c, C_mat, C_ppt, eigenstrain, sigma_applied=None, tol=1e-7, max_iter=2000)
     Solve the mechanical equilibrium for a two-phase microstructure described
     by composition field `c` (values in [0,1]).
 get_scheme(name) / InterpolationScheme
@@ -22,25 +21,26 @@ elastic_potential(...) / compute_mu_el_from_result(...)
     ``mu_total = mu_ch + mu_el``. See `elastic_potential.py`.
 """
 
-from .fft_solver import solve_elasticity, build_isotropic_stiffness, build_cubic_stiffness
-from .models import (
-    EigenstrainModel,
-    FixedVegardModel,
-    LocalVegardModel,
-    build_eigenstrain_model,
+from .bond_model import BondLatticeModel
+from .elastic_potential import (
+    build_vegard_tensor,
+    compute_mu_el_from_result,
+    compute_mu_el_tensorial,
+    elastic_free_energy_density,
+    elastic_potential,
+    elastic_strain,
 )
+from .fft_solver import build_cubic_stiffness, build_isotropic_stiffness, solve_elasticity
 from .interpolation import (
     InterpolationScheme,
     get_scheme,
     register_scheme,
 )
-from .elastic_potential import (
-    elastic_strain,
-    elastic_free_energy_density,
-    elastic_potential,
-    compute_mu_el_from_result,
-    build_vegard_tensor,
-    compute_mu_el_tensorial,
+from .models import (
+    EigenstrainModel,
+    FixedVegardModel,
+    LocalVegardModel,
+    build_eigenstrain_model,
 )
 
 __all__ = [
@@ -59,5 +59,6 @@ __all__ = [
     "EigenstrainModel",
     "FixedVegardModel",
     "LocalVegardModel",
+    "BondLatticeModel",
     "build_eigenstrain_model",
 ]

@@ -1,5 +1,4 @@
-"""
-HDF5 storage for thermodynamic tables.
+"""HDF5 storage for thermodynamic tables.
 
 File layout
 -----------
@@ -24,14 +23,14 @@ File layout
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import h5py
-import numpy as np
 
 try:
     import pycalphad
+
     _PYCALPHAD_VERSION = pycalphad.__version__
 except Exception:
     _PYCALPHAD_VERSION = "unknown"
@@ -50,8 +49,7 @@ def save_table(
     composition_ranges: dict[str, tuple[float, float]],
     n_points: int,
 ) -> None:
-    """
-    Write a thermodynamic data table to an HDF5 file.
+    """Write a thermodynamic data table to an HDF5 file.
 
     Parameters
     ----------
@@ -70,7 +68,6 @@ def save_table(
     path.parent.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(path, "w") as f:
-        # ── metadata ──────────────────────────────────────────────────────
         meta = f.create_group("metadata")
         meta.attrs["db_path"] = str(db_path)
         meta.attrs["elements"] = ",".join(elements)
@@ -80,31 +77,25 @@ def save_table(
         meta.attrs["pressure"] = pressure
         meta.attrs["pressure_units"] = "Pa"
         meta.attrs["n_points_per_axis"] = n_points
-        meta.attrs["composition_ranges"] = json.dumps(
-            {k: list(v) for k, v in composition_ranges.items()}
-        )
+        meta.attrs["composition_ranges"] = json.dumps({k: list(v) for k, v in composition_ranges.items()})
         meta.attrs["pycalphad_version"] = _PYCALPHAD_VERSION
-        meta.attrs["created_at"] = datetime.now(timezone.utc).isoformat()
+        meta.attrs["created_at"] = datetime.now(UTC).isoformat()
         meta.attrs["n_failed"] = data.get("n_failed", 0)
 
-        # ── compositions ──────────────────────────────────────────────────
         f.create_dataset("compositions", data=data["compositions"], **_COMPRESS)
         f["compositions"].attrs["columns"] = ",".join(elements)
         f["compositions"].attrs["units"] = "mol fraction"
 
-        # ── GM ────────────────────────────────────────────────────────────
         if "GM" in data:
             f.create_dataset("GM", data=data["GM"], **_COMPRESS)
             f["GM"].attrs["units"] = "J/mol"
 
-        # ── MU ────────────────────────────────────────────────────────────
         if "MU" in data:
             mu_grp = f.create_group("MU")
             for el, arr in data["MU"].items():
                 ds = mu_grp.create_dataset(el, data=arr, **_COMPRESS)
                 ds.attrs["units"] = "J/mol"
 
-        # ── dMU ───────────────────────────────────────────────────────────
         if "dMU" in data:
             dmu_grp = f.create_group("dMU")
             for key, arr in data["dMU"].items():
@@ -117,10 +108,9 @@ def save_table(
 
 
 def load_table(path: str | Path) -> dict:
-    """
-    Load a thermodynamic table from HDF5.
+    """Load a thermodynamic table from HDF5.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         'metadata'      dict of stored attributes
@@ -137,7 +127,6 @@ def load_table(path: str | Path) -> dict:
     out: dict = {}
 
     with h5py.File(path, "r") as f:
-        # metadata
         meta = dict(f["metadata"].attrs)
         meta["composition_ranges"] = json.loads(meta["composition_ranges"])
         out["metadata"] = meta

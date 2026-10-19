@@ -1,5 +1,4 @@
-"""
-Spinodal decomposition boundary calculation.
+"""Spinodal decomposition boundary calculation.
 
 A composition is inside the spinodal region when the Gibbs free energy
 is concave with respect to composition, i.e. d²G/dx² < 0.
@@ -31,8 +30,6 @@ from scipy.optimize import fsolve
 from .storage import load_table
 
 
-# ── binodal (common tangent) ──────────────────────────────────────────────────
-
 def binodal_boundary_binary(
     table_paths: list[str | Path],
     independent_element: str,
@@ -40,8 +37,7 @@ def binodal_boundary_binary(
     residual_tol: float = 500.0,
     min_separation: float = 0.15,
 ) -> dict:
-    """
-    Compute binodal (equilibrium / solvus) boundaries for a binary system.
+    """Compute binodal (equilibrium / solvus) boundaries for a binary system.
 
     Uses the equal chemical potential condition — two phases α and β are in
     equilibrium when:
@@ -58,14 +54,14 @@ def binodal_boundary_binary(
         HDF5 tables (one per temperature) produced by generate_table().
         Must contain 'MU' datasets.
     independent_element : str
-        e.g. 'NB'.  The complementary element is inferred from 'MU' keys.
+        e.g. 'NB'.  The complementary element is inferred from the table's elements.
     temperatures_celsius : list of float, optional
     residual_tol : float
         Maximum allowed |residual| in J/mol for a solution to be accepted.
     min_separation : float
         Minimum composition gap between the two equilibrium phases.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         'temperatures_celsius'   list[float]
@@ -74,9 +70,14 @@ def binodal_boundary_binary(
     """
     # Initial guesses: pairs (x_lo, x_hi) spanning the two-phase region
     _INIT_GUESSES = [
-        (0.05, 0.95), (0.10, 0.90), (0.15, 0.85),
-        (0.05, 0.85), (0.10, 0.95), (0.20, 0.80),
-        (0.03, 0.97), (0.07, 0.93),
+        (0.05, 0.95),
+        (0.10, 0.90),
+        (0.15, 0.85),
+        (0.05, 0.85),
+        (0.10, 0.95),
+        (0.20, 0.80),
+        (0.03, 0.97),
+        (0.07, 0.93),
     ]
 
     temps, x_lo, x_hi = [], [], []
@@ -86,23 +87,18 @@ def binodal_boundary_binary(
         elements = data["elements"]
 
         if "MU" not in data:
-            raise KeyError(
-                f"MU not found in {path}. "
-                "Re-generate with quantities=(..., 'MU')."
-            )
+            raise KeyError(f"MU not found in {path}. Re-generate with quantities=(..., 'MU').")
 
         T_C = (
-            temperatures_celsius[i]
-            if temperatures_celsius is not None
-            else data["metadata"].get("temperature", 273.15) - 273.15
+            temperatures_celsius[i] if temperatures_celsius is not None else data["metadata"].get("temperature", 273.15) - 273.15
         )
         temps.append(T_C)
 
-        col    = elements.index(independent_element)
-        x      = data["compositions"][:, col]
-        mu_A   = data["MU"][independent_element]
+        col = elements.index(independent_element)
+        x = data["compositions"][:, col]
+        mu_A = data["MU"][independent_element]
         ref_el = [e for e in elements if e != independent_element][0]
-        mu_B   = data["MU"][ref_el]
+        mu_B = data["MU"][ref_el]
 
         order = np.argsort(x)
         x, mu_A, mu_B = x[order], mu_A[order], mu_B[order]
@@ -125,11 +121,11 @@ def binodal_boundary_binary(
                 resid = (res[0] ** 2 + res[1] ** 2) ** 0.5
 
                 if (
-                    ier == 1                        # solver converged
-                    and resid < residual_tol        # accurate equilibrium
-                    and xa < xb                     # ordered pair
-                    and xb - xa >= min_separation   # two distinct phases
-                    and 0.001 < xa < 0.999          # inside composition range
+                    ier == 1  # solver converged
+                    and resid < residual_tol  # accurate equilibrium
+                    and xa < xb  # ordered pair
+                    and xb - xa >= min_separation  # two distinct phases
+                    and 0.001 < xa < 0.999  # inside composition range
                     and 0.001 < xb < 0.999
                 ):
                     found_lo = xa
@@ -143,12 +139,10 @@ def binodal_boundary_binary(
 
     return {
         "temperatures_celsius": temps,
-        "x_binodal_low":        x_lo,
-        "x_binodal_high":       x_hi,
+        "x_binodal_low": x_lo,
+        "x_binodal_high": x_hi,
     }
 
-
-# ── binary ────────────────────────────────────────────────────────────────────
 
 def spinodal_boundary_binary(
     table_paths: list[str | Path],
@@ -156,8 +150,7 @@ def spinodal_boundary_binary(
     temperatures_celsius: list[float] | None = None,
     reference_element: str | None = None,
 ) -> dict:
-    """
-    Compute spinodal boundaries for a binary system at multiple temperatures.
+    """Compute spinodal boundaries for a binary system at multiple temperatures.
 
     For each temperature, finds the two compositions (low, high) where
     d²G/dx² = 0 — the spinodal limits.  Compositions between them are
@@ -174,7 +167,7 @@ def spinodal_boundary_binary(
     temperatures_celsius : list of float, optional
         Temperature labels.  If None, read from file metadata.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         'temperatures_celsius'   list[float]          length N_T
@@ -192,10 +185,7 @@ def spinodal_boundary_binary(
         elements = data["elements"]
 
         if "dMU" not in data or key not in data["dMU"]:
-            raise KeyError(
-                f"dMU/{key} not found in {path}. "
-                f"Re-generate the table with quantities=(..., 'dMU')."
-            )
+            raise KeyError(f"dMU/{key} not found in {path}. Re-generate the table with quantities=(..., 'dMU').")
 
         col = elements.index(independent_element)
         x = data["compositions"][:, col]
@@ -212,9 +202,7 @@ def spinodal_boundary_binary(
         x, d2g = x[order], d2g[order]
 
         T_C = (
-            temperatures_celsius[i]
-            if temperatures_celsius is not None
-            else data["metadata"].get("temperature", 273.15) - 273.15
+            temperatures_celsius[i] if temperatures_celsius is not None else data["metadata"].get("temperature", 273.15) - 273.15
         )
         temps.append(T_C)
         all_x.append(x)
@@ -246,14 +234,12 @@ def spinodal_boundary_binary(
 
     return {
         "temperatures_celsius": temps,
-        "x_spinodal_low":       x_lo,
-        "x_spinodal_high":      x_hi,
-        "x_compositions":       all_x,
-        "d2G_dx2":              all_d2g,
+        "x_spinodal_low": x_lo,
+        "x_spinodal_high": x_hi,
+        "x_compositions": all_x,
+        "d2G_dx2": all_d2g,
     }
 
-
-# ── multicomponent ────────────────────────────────────────────────────────────
 
 def spinodal_boundary_multi(
     table_paths: list[str | Path],
@@ -261,8 +247,7 @@ def spinodal_boundary_multi(
     temperatures_celsius: list[float] | None = None,
     reference_element: str | None = None,
 ) -> dict:
-    """
-    Compute spinodal stability for a multicomponent system via eigenvalues
+    """Compute spinodal stability for a multicomponent system via eigenvalues
     of the Gibbs Hessian H_ij = ∂²G/∂c_i∂c_j.
 
     A point is inside the spinodal when the smallest eigenvalue of H < 0.
@@ -274,7 +259,7 @@ def spinodal_boundary_multi(
         The N-1 independent elements (all except the reference).
     temperatures_celsius : list[float], optional
 
-    Returns
+    Returns:
     -------
     dict with keys:
         'temperatures_celsius'   list[float]
@@ -285,18 +270,16 @@ def spinodal_boundary_multi(
     n = len(independent_elements)
     results = {
         "temperatures_celsius": [],
-        "compositions":         [],
-        "min_eigenvalue":       [],
-        "is_spinodal":          [],
+        "compositions": [],
+        "min_eigenvalue": [],
+        "is_spinodal": [],
     }
 
     for i, path in enumerate(table_paths):
         data = load_table(path)
 
         T_C = (
-            temperatures_celsius[i]
-            if temperatures_celsius is not None
-            else data["metadata"].get("temperature", 273.15) - 273.15
+            temperatures_celsius[i] if temperatures_celsius is not None else data["metadata"].get("temperature", 273.15) - 273.15
         )
         results["temperatures_celsius"].append(T_C)
         results["compositions"].append(data["compositions"])
@@ -333,8 +316,6 @@ def spinodal_boundary_multi(
     return results
 
 
-# ── ternary phase-region classification ──────────────────────────────────────
-
 def compute_ternary_phase_regions(
     table_path: str | Path,
     independent_elements: list[str],
@@ -342,8 +323,7 @@ def compute_ternary_phase_regions(
     driving_force_tol_frac: float = 5e-4,
     min_triangle_area: float = 0.05,
 ) -> dict:
-    """
-    Classify ternary composition points into single-phase, two-phase, and
+    """Classify ternary composition points into single-phase, two-phase, and
     three-phase regions using the lower convex hull of the Gibbs energy surface.
 
     The raw CALPHAD data (typically ~190 points) is first interpolated onto a
@@ -363,8 +343,8 @@ def compute_ternary_phase_regions(
     independent_elements : list[str]
         The two independent elements, e.g. ['NB', 'HF'] for Nb-Hf-V.
     n_fine : int
-        Points per axis on the interpolated triangular grid.  Default 60
-        gives ~1800 points.
+        Points per axis on the interpolated triangular grid.  Default 150
+        gives ~11500 points.
     driving_force_tol_frac : float
         Fraction of |G_m| range used as the single-phase threshold.
         A point with driving_force < tol_frac * (G_m_max - G_m_min) is
@@ -375,7 +355,7 @@ def compute_ternary_phase_regions(
         typically large (area > 0.05); small facets are numerical artifacts.
         Default 0.05.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         'compositions'      (N, n_el) float array — original compositions
@@ -388,8 +368,8 @@ def compute_ternary_phase_regions(
         'temperature_C'     float
         'fine_grid'         dict with 'x0', 'x1', 'gm', 'region' on fine grid
     """
-    from scipy.spatial import ConvexHull
     from scipy.interpolate import LinearNDInterpolator
+    from scipy.spatial import ConvexHull
 
     data = load_table(table_path)
     elements = data["elements"]
@@ -401,14 +381,14 @@ def compute_ternary_phase_regions(
     x0_raw = comps[:, idx[0]]
     x1_raw = comps[:, idx[1]]
 
-    # ── interpolate G_m onto a fine triangular grid ───────────────────────
     # LinearNDInterpolator covers only the convex hull of the raw data.
     # NearestNDInterpolator fills the rest so the full simplex (0→1 for every
     # element) is always covered, even when composition_ranges don't reach 0 or 1.
     from scipy.interpolate import NearestNDInterpolator
-    raw_pts   = list(zip(x0_raw, x1_raw))
+
+    raw_pts = list(zip(x0_raw, x1_raw))
     gm_interp_lin = LinearNDInterpolator(raw_pts, gm)
-    gm_interp_nn  = NearestNDInterpolator(raw_pts, gm)
+    gm_interp_nn = NearestNDInterpolator(raw_pts, gm)
 
     fine_pts = []
     for i in range(n_fine + 1):
@@ -418,22 +398,20 @@ def compute_ternary_phase_regions(
             if xa + xb <= 1.0:
                 fine_pts.append((xa, xb))
     fine_pts = np.array(fine_pts)
-    gm_fine  = gm_interp_lin(fine_pts[:, 0], fine_pts[:, 1])
+    gm_fine = gm_interp_lin(fine_pts[:, 0], fine_pts[:, 1])
 
     # Fill NaN (outside data hull) with nearest-neighbor extrapolation so the
     # phase map extends to all simplex edges and corners.
     nan_mask = np.isnan(gm_fine)
     if nan_mask.any():
-        gm_fine[nan_mask] = gm_interp_nn(fine_pts[nan_mask, 0],
-                                         fine_pts[nan_mask, 1])
+        gm_fine[nan_mask] = gm_interp_nn(fine_pts[nan_mask, 0], fine_pts[nan_mask, 1])
 
-    valid   = ~np.isnan(gm_fine)   # should now be all True
+    valid = ~np.isnan(gm_fine)  # should now be all True
     fine_pts = fine_pts[valid]
-    gm_fine  = gm_fine[valid]
-    x0_fine  = fine_pts[:, 0]
-    x1_fine  = fine_pts[:, 1]
+    gm_fine = gm_fine[valid]
+    x0_fine = fine_pts[:, 0]
+    x1_fine = fine_pts[:, 1]
 
-    # ── lower convex hull on the fine grid ───────────────────────────────
     pts_3d = np.column_stack([x0_fine, x1_fine, gm_fine])
     hull = ConvexHull(pts_3d)
 
@@ -452,7 +430,6 @@ def compute_ternary_phase_regions(
     df_tol = driving_force_tol_frac * max(abs(gm_range), 1.0)
     df_fine = gm_fine - gm_hull_fine
 
-    # ── identify tie-triangles ────────────────────────────────────────────
     # In a ternary single-phase miscibility gap the three-phase tie-triangle
     # appears as the largest flat facet(s) of the lower convex hull.
     # Small facets (area < min_triangle_area) are discretization artifacts.
@@ -460,26 +437,22 @@ def compute_ternary_phase_regions(
     for s in lower_simplices:
         v0 = x0_fine[s]
         v1 = x1_fine[s]
-        area = 0.5 * abs(
-            (v0[1] - v0[0]) * (v1[2] - v1[0])
-            - (v0[2] - v0[0]) * (v1[1] - v1[0])
-        )
+        area = 0.5 * abs((v0[1] - v0[0]) * (v1[2] - v1[0]) - (v0[2] - v0[0]) * (v1[1] - v1[0]))
         if area >= min_triangle_area:
             tie_triangles.append(np.column_stack([v0, v1]))
 
-    # ── classify fine-grid points ─────────────────────────────────────────
     region_fine = np.where(df_fine < df_tol, "single", "two")
     for tt in tie_triangles:
         inside = _points_in_triangle(x0_fine, x1_fine, tt)
         region_fine[inside] = "three"
 
-    # ── project classification back to original raw data points ──────────
     # Encode region as int for NearestNDInterpolator (strings not supported)
     _enc = {"single": 0, "two": 1, "three": 2}
     _dec = {0: "single", 1: "two", 2: "three"}
     region_enc = np.array([_enc[r] for r in region_fine])
 
     from scipy.interpolate import NearestNDInterpolator
+
     region_nn = NearestNDInterpolator(list(zip(x0_fine, x1_fine)), region_enc)
 
     # Also compute driving force at raw data locations via hull planes
@@ -493,25 +466,23 @@ def compute_ternary_phase_regions(
     region_raw = np.array([_dec[int(v)] for v in region_nn(x0_raw, x1_raw)])
 
     return {
-        "compositions":         comps,
-        "gm":                   gm,
-        "driving_force":        df_raw,
-        "region":               region_raw,
-        "tie_triangles":        tie_triangles,
-        "elements":             elements,
+        "compositions": comps,
+        "gm": gm,
+        "driving_force": df_raw,
+        "region": region_raw,
+        "tie_triangles": tie_triangles,
+        "elements": elements,
         "independent_elements": independent_elements,
-        "temperature_C":        T_C,
+        "temperature_C": T_C,
         "fine_grid": {
-            "x0":            x0_fine,
-            "x1":            x1_fine,
-            "gm":            gm_fine,
+            "x0": x0_fine,
+            "x1": x1_fine,
+            "gm": gm_fine,
             "driving_force": df_fine,
-            "region":        region_fine,
+            "region": region_fine,
         },
     }
 
-
-# ── generalized n-component phase-region classification ───────────────────────
 
 def compute_phase_regions_multi(
     table_path: str | Path,
@@ -520,8 +491,7 @@ def compute_phase_regions_multi(
     driving_force_tol_frac: float = 5e-4,
     min_simplex_vol: float = 0.001,
 ) -> dict:
-    """
-    Classify compositions into phase regions for any n-component system (n≥3).
+    """Classify compositions into phase regions for any n-component system (n≥3).
 
     Uses the lower convex hull of the Gibbs energy surface in
     (n_independent + 1)-dimensional space.  Works for ternary, quaternary,
@@ -550,7 +520,7 @@ def compute_phase_regions_multi(
         Minimum k-simplex volume (in composition units) for a hull facet to
         be classified as a multi-phase region.  Default 0.001.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         compositions          (n_pts, n_el) float array
@@ -563,25 +533,30 @@ def compute_phase_regions_multi(
         temperature_C         float
     """
     from math import factorial
+
     from scipy.spatial import ConvexHull
 
     data = load_table(table_path)
     elements = data["elements"]
-    comps    = data["compositions"]
-    gm       = data["GM"]
-    T_C      = data["metadata"].get("temperature", 273.15) - 273.15
+    comps = data["compositions"]
+    gm = data["GM"]
+    T_C = data["metadata"].get("temperature", 273.15) - 273.15
 
     n_ind = len(independent_elements)
-    idx   = [elements.index(el) for el in independent_elements]
+    idx = [elements.index(el) for el in independent_elements]
     x_ind = comps[:, idx]  # (n_pts, n_ind)
 
-    # ── lower convex hull in (n_ind+1)-dimensional space ─────────────────
     pts_nd = np.column_stack([x_ind, gm])
 
     _fallback = dict(
-        compositions=comps, gm=gm, driving_force=np.zeros(len(gm)),
-        region=np.full(len(gm), "single"), spinodal=np.zeros(len(gm), dtype=bool),
-        elements=elements, independent_elements=independent_elements, temperature_C=T_C,
+        compositions=comps,
+        gm=gm,
+        driving_force=np.zeros(len(gm)),
+        region=np.full(len(gm), "single"),
+        spinodal=np.zeros(len(gm), dtype=bool),
+        elements=elements,
+        independent_elements=independent_elements,
+        temperature_C=T_C,
     )
     try:
         hull = ConvexHull(pts_nd)
@@ -589,40 +564,39 @@ def compute_phase_regions_multi(
         return _fallback
 
     # Lower facets: normal component in the Gm axis (index n_ind, i.e. -2) < 0
-    lower_mask    = hull.equations[:, n_ind] < 0
-    lower_eqs     = hull.equations[lower_mask]
-    lower_simps   = hull.simplices[lower_mask]
+    lower_mask = hull.equations[:, n_ind] < 0
+    lower_eqs = hull.equations[lower_mask]
+    lower_simps = hull.simplices[lower_mask]
 
     # Hull G_m at each composition point
     gm_hull = np.full(len(gm), -np.inf)
     for eq in lower_eqs:
-        n_x = eq[:n_ind]      # composition-axis normals
-        n_g = eq[n_ind]       # G_m-axis normal
-        d   = eq[-1]          # offset
+        n_x = eq[:n_ind]  # composition-axis normals
+        n_g = eq[n_ind]  # G_m-axis normal
+        d = eq[-1]  # offset
         z_plane = -(x_ind @ n_x + d) / n_g
         gm_hull = np.maximum(gm_hull, z_plane)
 
     gm_range = float(np.nanmax(gm) - np.nanmin(gm))
-    df_tol   = driving_force_tol_frac * max(abs(gm_range), 1.0)
-    df       = gm - gm_hull
-    region   = np.where(df < df_tol, "single", "two").astype(object)
+    df_tol = driving_force_tol_frac * max(abs(gm_range), 1.0)
+    df = gm - gm_hull
+    region = np.where(df < df_tol, "single", "two").astype(object)
 
     # Identify large hull simplices = multi-phase tie-regions
     for s in lower_simps:
-        verts = x_ind[s]           # (k+1, n_ind) in composition space
-        k     = len(verts) - 1
+        verts = x_ind[s]  # (k+1, n_ind) in composition space
+        k = len(verts) - 1
         if k < 2:
             continue
-        edges = verts[1:] - verts[0]      # (k, n_ind)
-        G     = edges @ edges.T            # (k, k) Gram matrix
-        vol   = float(np.sqrt(max(np.linalg.det(G), 0.0))) / factorial(k)
+        edges = verts[1:] - verts[0]  # (k, n_ind)
+        G = edges @ edges.T  # (k, k) Gram matrix
+        vol = float(np.sqrt(max(np.linalg.det(G), 0.0))) / factorial(k)
         if vol >= min_simplex_vol:
             inside = _points_in_simplex_nd(x_ind, verts)
-            label  = {2: "two", 3: "three", 4: "four"}.get(k + 1, "multi")
+            label = {2: "two", 3: "three", 4: "four"}.get(k + 1, "multi")
             region[inside] = label
 
-    # ── spinodal: min eigenvalue of Hessian < 0 ──────────────────────────
-    n_pts      = len(gm)
+    n_pts = len(gm)
     is_spinodal = np.zeros(n_pts, dtype=bool)
     if "dMU" in data:
         for pt in range(n_pts):
@@ -631,7 +605,8 @@ def compute_phase_regions_multi(
                 for ci, el2 in enumerate(independent_elements):
                     key = f"{el1}_{el2}"
                     if key not in data["dMU"]:
-                        valid = False; break
+                        valid = False
+                        break
                     val = data["dMU"][key][pt]
                     if reference_element is not None:
                         ref_key = f"{reference_element}_{el2}"
@@ -644,9 +619,13 @@ def compute_phase_regions_multi(
                 is_spinodal[pt] = np.linalg.eigvalsh(H).min() < 0
 
     return dict(
-        compositions=comps, gm=gm, driving_force=df,
-        region=region, spinodal=is_spinodal,
-        elements=elements, independent_elements=independent_elements,
+        compositions=comps,
+        gm=gm,
+        driving_force=df,
+        region=region,
+        spinodal=is_spinodal,
+        elements=elements,
+        independent_elements=independent_elements,
         temperature_C=T_C,
     )
 
@@ -655,22 +634,21 @@ def _points_in_simplex_nd(
     points: np.ndarray,
     simplex_verts: np.ndarray,
 ) -> np.ndarray:
-    """
-    Return bool mask: True where points[i] lie inside the n-d simplex.
+    """Return bool mask: True where points[i] lie inside the n-d simplex.
 
     Uses barycentric coordinates via least-squares; works for any dimension.
     simplex_verts : (k+1, n_dim) array of vertex coordinates.
     points        : (n_pts, n_dim) array of query points.
     """
     n_pts = len(points)
-    T     = (simplex_verts[1:] - simplex_verts[0]).T   # (n_dim, k)
-    rhs   = (points - simplex_verts[0]).T               # (n_dim, n_pts)
+    T = (simplex_verts[1:] - simplex_verts[0]).T  # (n_dim, k)
+    rhs = (points - simplex_verts[0]).T  # (n_dim, n_pts)
     try:
         bary, _, _, _ = np.linalg.lstsq(T, rhs, rcond=None)  # (k, n_pts)
     except Exception:
         return np.zeros(n_pts, dtype=bool)
     bary_last = 1.0 - bary.sum(axis=0)
-    all_bary  = np.vstack([bary, bary_last])            # (k+1, n_pts)
+    all_bary = np.vstack([bary, bary_last])  # (k+1, n_pts)
     return np.all(all_bary >= -1e-9, axis=0)
 
 
@@ -679,8 +657,7 @@ def _points_in_triangle(
     py: np.ndarray,
     triangle: np.ndarray,
 ) -> np.ndarray:
-    """
-    Return boolean mask: True where (px[i], py[i]) lies inside ``triangle``.
+    """Return boolean mask: True where (px[i], py[i]) lies inside ``triangle``.
 
     Uses barycentric coordinates.  Points exactly on the boundary are
     considered inside.
@@ -705,8 +682,6 @@ def _points_in_triangle(
     return (w1 >= -1e-9) & (w2 >= -1e-9) & (w3 >= -1e-9)
 
 
-# ── PFM parameter recommendation ─────────────────────────────────────────────
-
 def recommend_pfm_params(
     calphad_fit: dict,
     temperature_K: float,
@@ -716,8 +691,7 @@ def recommend_pfm_params(
     safety: float = 0.4,
     M: float | None = None,
 ) -> dict:
-    """
-    Recommend phase-field simulation parameters derived from the G_m spline.
+    """Recommend phase-field simulation parameters derived from the G_m spline.
 
     Uses the Cahn-Hilliard length scales:
 
@@ -744,7 +718,7 @@ def recommend_pfm_params(
     M : float, optional
         Mobility [m⁵/(J·s)].  Required for dt recommendation.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         kappa_min   float   Minimum κ for δ = delta_over_dx × dx  [J·m²/mol]
@@ -762,9 +736,9 @@ def recommend_pfm_params(
         c0_in_spinodal bool   Whether c0 lies inside the spinodal region
     """
     stored_T = np.array(calphad_fit["temperatures_K"])
-    T_K      = stored_T[int(np.argmin(np.abs(stored_T - temperature_K)))]
-    el_key   = list(calphad_fit["fits"][T_K]["models"].keys())[0]
-    mdl      = calphad_fit["fits"][T_K]["models"][el_key]
+    T_K = stored_T[int(np.argmin(np.abs(stored_T - temperature_K)))]
+    el_key = list(calphad_fit["fits"][T_K]["models"].keys())[0]
+    mdl = calphad_fit["fits"][T_K]["models"][el_key]
 
     if "spline_dfdx" not in mdl:
         raise ValueError(
@@ -773,14 +747,14 @@ def recommend_pfm_params(
         )
 
     spl_dfdx = mdl["spline_dfdx"]
-    x        = np.linspace(0.01, 0.99, 2000)
-    d2G      = spl_dfdx.derivative()(x)
+    x = np.linspace(0.01, 0.99, 2000)
+    d2G = spl_dfdx.derivative()(x)
 
     d2G_max = float(np.max(np.abs(d2G)))
-    d2G_c0  = float(abs(float(spl_dfdx.derivative()(c0))))
+    d2G_c0 = float(abs(float(spl_dfdx.derivative()(c0))))
 
     # Spinodal boundaries: zero-crossings of d²G/dx²
-    sign      = np.sign(d2G)
+    sign = np.sign(d2G)
     crossings = np.where(np.diff(sign) != 0)[0]
     boundaries = []
     for idx in crossings:
@@ -790,15 +764,9 @@ def recommend_pfm_params(
             boundaries.append(float(x0 - f0 * (x1 - x0) / (f1 - f0)))
     sp_lo = min(boundaries) if len(boundaries) >= 2 else None
     sp_hi = max(boundaries) if len(boundaries) >= 2 else None
-    c0_in_spinodal = (sp_lo is not None and sp_hi is not None
-                      and sp_lo < c0 < sp_hi)
+    c0_in_spinodal = sp_lo is not None and sp_hi is not None and sp_lo < c0 < sp_hi
 
     # κ_min: interface spans delta_over_dx grid points
-    # δ = sqrt(κ / d2G_max)  and  δ = delta_over_dx × dx
-    # λ* = 4π sqrt(κ / d2G_c0)
-    # dx = δ / delta_over_dx  →  κ_min determined by choosing δ = 5×dx self-consistently
-    # Starting guess: any κ; solve dx = Lx/N with N large enough
-    # Simplest: set δ/dx = delta_over_dx and pick κ, then derive Lx from λ*
 
     # We want: δ = delta_over_dx × dx  and  Lx = n_interfaces × λ*
     # From δ = sqrt(κ/d2G_max): κ = δ² × d2G_max
@@ -809,7 +777,7 @@ def recommend_pfm_params(
     d2G_c0_safe = max(d2G_c0, 1e-10)
     d2G_max_safe = max(d2G_max, 1e-10)
 
-    lambda_star = 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)   # at κ=1 (scale below)
+    lambda_star = 4.0 * np.pi * np.sqrt(1.0 / d2G_c0_safe)  # at κ=1 (scale below)
     lambda_crit = 2.0 * np.pi * np.sqrt(2.0 / d2G_c0_safe)
 
     # Choose κ_min such that δ = delta_over_dx × (Lx/N) and N is power-of-2.
@@ -822,7 +790,7 @@ def recommend_pfm_params(
         Lx_guess = n_interfaces * 4.0 * np.pi * np.sqrt(kappa_min / d2G_c0_safe)
         dx_guess = Lx_guess / N_guess
         delta_guess = delta_over_dx * dx_guess
-        kappa_new = delta_guess ** 2 * d2G_max_safe
+        kappa_new = delta_guess**2 * d2G_max_safe
         lambda_star = 4.0 * np.pi * np.sqrt(kappa_new / d2G_c0_safe)
         lambda_crit = 2.0 * np.pi * np.sqrt(2.0 * kappa_new / d2G_c0_safe)
         Lx_min = n_interfaces * lambda_star
@@ -841,27 +809,25 @@ def recommend_pfm_params(
 
     dt_stable = None
     if M is not None:
-        M_eff_max = M * 0.25   # degenerate mobility peak at c=0.5
-        dt_stable = safety * dx ** 2 / (M_eff_max * d2G_max_safe)
+        M_eff_max = M * 0.25  # degenerate mobility peak at c=0.5
+        dt_stable = safety * dx**2 / (M_eff_max * d2G_max_safe)
 
     return {
-        "kappa_min":       kappa_min,
-        "lambda_star":     lambda_star,
-        "lambda_crit":     lambda_crit,
-        "delta":           delta,
-        "Lx_min":          Lx_min,
-        "N_min":           N_min,
-        "dx":              dx,
-        "dt_stable":       dt_stable,
-        "d2G_max":         d2G_max,
-        "d2G_c0":          d2G_c0,
-        "spinodal_lo":     sp_lo,
-        "spinodal_hi":     sp_hi,
-        "c0_in_spinodal":  c0_in_spinodal,
+        "kappa_min": kappa_min,
+        "lambda_star": lambda_star,
+        "lambda_crit": lambda_crit,
+        "delta": delta,
+        "Lx_min": Lx_min,
+        "N_min": N_min,
+        "dx": dx,
+        "dt_stable": dt_stable,
+        "d2G_max": d2G_max,
+        "d2G_c0": d2G_c0,
+        "spinodal_lo": sp_lo,
+        "spinodal_hi": sp_hi,
+        "c0_in_spinodal": c0_in_spinodal,
     }
 
-
-# ── plotting ──────────────────────────────────────────────────────────────────
 
 def plot_spinodal(
     spinodal_data: dict,
@@ -873,8 +839,7 @@ def plot_spinodal(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """
-    Plot the spinodal boundary in composition-temperature space.
+    """Plot the spinodal boundary in composition-temperature space.
 
     Works with output from either ``spinodal_boundary_binary()`` or
     ``spinodal_boundary_multi()``.
@@ -893,7 +858,7 @@ def plot_spinodal(
     save_path : str or Path, optional
     show : bool
 
-    Returns
+    Returns:
     -------
     matplotlib.axes.Axes
     """
@@ -902,38 +867,32 @@ def plot_spinodal(
 
     temps = np.array(spinodal_data["temperatures_celsius"])
 
-    # ── binary path ───────────────────────────────────────────────────────
+    # binary path
     if "x_spinodal_low" in spinodal_data:
         x_lo = spinodal_data["x_spinodal_low"]
         x_hi = spinodal_data["x_spinodal_high"]
 
-        # Filter temperatures where both boundaries exist
-        valid = [(T, lo, hi) for T, lo, hi in zip(temps, x_lo, x_hi)
-                 if lo is not None and hi is not None]
+        valid = [(T, lo, hi) for T, lo, hi in zip(temps, x_lo, x_hi) if lo is not None and hi is not None]
 
         if not valid:
             warnings.warn("No spinodal region found across the given temperatures.")
             return ax
 
         T_v, lo_v, hi_v = zip(*valid)
-        T_v  = np.array(T_v)
+        T_v = np.array(T_v)
         lo_v = np.array(lo_v)
         hi_v = np.array(hi_v)
 
-        # Shaded spinodal region
-        ax.fill_betweenx(T_v, lo_v, hi_v, color=fill_color, alpha=fill_alpha,
-                         label="Spinodal region")
-        # Boundary lines
+        ax.fill_betweenx(T_v, lo_v, hi_v, color=fill_color, alpha=fill_alpha, label="Spinodal region")
         ax.plot(lo_v, T_v, color=fill_color, linewidth=2, label="Spinodal boundary")
         ax.plot(hi_v, T_v, color=fill_color, linewidth=2)
 
-        # Mark individual data points
         ax.scatter(lo_v, T_v, color=fill_color, s=30, zorder=4)
         ax.scatter(hi_v, T_v, color=fill_color, s=30, zorder=4)
 
-    # ── multicomponent path (project onto one element) ────────────────────
+    # multicomponent path (project onto one element)
     elif "min_eigenvalue" in spinodal_data:
-        elements = None  # extracted from compositions shape implicitly
+        elements = None
         for T, comps, is_sp in zip(
             spinodal_data["temperatures_celsius"],
             spinodal_data["compositions"],
@@ -942,14 +901,16 @@ def plot_spinodal(
             sp_comps = comps[is_sp]
             if len(sp_comps) > 0:
                 ax.scatter(
-                    sp_comps[:, 0],   # first element — caller should pass correct x_element
+                    sp_comps[:, 0],  # first element — caller should pass correct x_element
                     np.full(len(sp_comps), T),
-                    color=fill_color, alpha=0.4, s=15,
+                    color=fill_color,
+                    alpha=0.4,
+                    s=15,
                 )
 
     ax.set_xlabel(f"$x_{{\\rm {x_element.title()}}}$  (mol fraction)", fontsize=12)
     ax.set_ylabel("Temperature  (°C)", fontsize=12)
-    ax.set_title(f"Spinodal region — Nb-V  BCC_A2", fontsize=13)
+    ax.set_title("Spinodal region — Nb-V  BCC_A2", fontsize=13)
     ax.legend(fontsize=10)
     ax.grid(False)
     plt.tight_layout()
@@ -974,8 +935,7 @@ def plot_phase_diagram(
     save_path: str | Path | None = None,
     show: bool = True,
 ) -> plt.Axes:
-    """
-    Plot binodal and spinodal boundaries together on a T–x phase diagram.
+    """Plot binodal and spinodal boundaries together on a T–x phase diagram.
 
     The binodal (solid lines, blue) marks the two-phase region boundaries
     where the phases are in chemical equilibrium (common tangent).
@@ -988,7 +948,7 @@ def plot_phase_diagram(
     ----------
     spinodal_data : dict
         Output of spinodal_boundary_binary() (after remapping to x_element
-        space, as done in step2_spinodal of the pipeline).
+        space, as done in workflows/02_fit_surrogate/run.py).
     binodal_data : dict
         Output of binodal_boundary_binary() (also in x_element space).
     x_element : str
@@ -1000,97 +960,92 @@ def plot_phase_diagram(
     save_path : str or Path, optional
     show : bool
 
-    Returns
+    Returns:
     -------
     matplotlib.axes.Axes
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
 
-    # ── binodal ───────────────────────────────────────────────────────────
     temps_b = np.array(binodal_data["temperatures_celsius"])
-    b_lo    = binodal_data["x_binodal_low"]
-    b_hi    = binodal_data["x_binodal_high"]
+    b_lo = binodal_data["x_binodal_low"]
+    b_hi = binodal_data["x_binodal_high"]
 
     valid_b = sorted(
-        [(T, lo, hi) for T, lo, hi in zip(temps_b, b_lo, b_hi)
-         if lo is not None and hi is not None],
-        key=lambda v: v[0]   # sort by temperature
+        [(T, lo, hi) for T, lo, hi in zip(temps_b, b_lo, b_hi) if lo is not None and hi is not None],
+        key=lambda v: v[0],  # sort by temperature
     )
     if valid_b:
         T_b, lo_b, hi_b = zip(*valid_b)
-        T_b  = np.array(T_b)
+        T_b = np.array(T_b)
         lo_b = np.array(lo_b)
         hi_b = np.array(hi_b)
 
         # Remove duplicate temperatures before spline fitting
         _, unique_idx = np.unique(T_b, return_index=True)
-        T_b  = T_b[unique_idx]
+        T_b = T_b[unique_idx]
         lo_b = lo_b[unique_idx]
         hi_b = hi_b[unique_idx]
 
         # Smooth curves through data points
         from scipy.interpolate import make_interp_spline
-        T_fine = np.linspace(T_b.min(), T_b.max(), 400)
-        lo_b_sm = make_interp_spline(T_b, lo_b, k=min(3, len(T_b)-1))(T_fine)
-        hi_b_sm = make_interp_spline(T_b, hi_b, k=min(3, len(T_b)-1))(T_fine)
 
-        ax.fill_betweenx(T_fine, lo_b_sm, hi_b_sm, color="#1f77b4", alpha=0.08,
-                         label="Two-phase region (binodal)")
+        T_fine = np.linspace(T_b.min(), T_b.max(), 400)
+        lo_b_sm = make_interp_spline(T_b, lo_b, k=min(3, len(T_b) - 1))(T_fine)
+        hi_b_sm = make_interp_spline(T_b, hi_b, k=min(3, len(T_b) - 1))(T_fine)
+
+        ax.fill_betweenx(T_fine, lo_b_sm, hi_b_sm, color="#1f77b4", alpha=0.08, label="Two-phase region (binodal)")
         ax.plot(lo_b_sm, T_fine, color="#1f77b4", linewidth=2.2, label="Binodal")
         ax.plot(hi_b_sm, T_fine, color="#1f77b4", linewidth=2.2)
         ax.scatter(lo_b, T_b, color="#1f77b4", s=30, zorder=5)
         ax.scatter(hi_b, T_b, color="#1f77b4", s=30, zorder=5)
 
-    # ── spinodal ──────────────────────────────────────────────────────────
     temps_s = np.array(spinodal_data["temperatures_celsius"])
-    s_lo    = spinodal_data["x_spinodal_low"]
-    s_hi    = spinodal_data["x_spinodal_high"]
+    s_lo = spinodal_data["x_spinodal_low"]
+    s_hi = spinodal_data["x_spinodal_high"]
 
     valid_s = sorted(
-        [(T, lo, hi) for T, lo, hi in zip(temps_s, s_lo, s_hi)
-         if lo is not None and hi is not None],
-        key=lambda v: v[0]   # sort by temperature
+        [(T, lo, hi) for T, lo, hi in zip(temps_s, s_lo, s_hi) if lo is not None and hi is not None],
+        key=lambda v: v[0],  # sort by temperature
     )
     if valid_s:
         T_s, lo_s, hi_s = zip(*valid_s)
-        T_s  = np.array(T_s)
+        T_s = np.array(T_s)
         lo_s = np.array(lo_s)
         hi_s = np.array(hi_s)
 
         # Remove duplicate temperatures before spline fitting
         _, unique_idx = np.unique(T_s, return_index=True)
-        T_s  = T_s[unique_idx]
+        T_s = T_s[unique_idx]
         lo_s = lo_s[unique_idx]
         hi_s = hi_s[unique_idx]
 
         # Smooth curves through data points
         T_fine_s = np.linspace(T_s.min(), T_s.max(), 400)
-        lo_s_sm = make_interp_spline(T_s, lo_s, k=min(3, len(T_s)-1))(T_fine_s)
-        hi_s_sm = make_interp_spline(T_s, hi_s, k=min(3, len(T_s)-1))(T_fine_s)
+        lo_s_sm = make_interp_spline(T_s, lo_s, k=min(3, len(T_s) - 1))(T_fine_s)
+        hi_s_sm = make_interp_spline(T_s, hi_s, k=min(3, len(T_s) - 1))(T_fine_s)
 
-        ax.fill_betweenx(T_fine_s, lo_s_sm, hi_s_sm, color="#d62728", alpha=0.12,
-                         label="Spinodal region")
-        ax.plot(lo_s_sm, T_fine_s, color="#d62728", linewidth=2.0,
-                linestyle="--", label="Spinodal")
+        ax.fill_betweenx(T_fine_s, lo_s_sm, hi_s_sm, color="#d62728", alpha=0.12, label="Spinodal region")
+        ax.plot(lo_s_sm, T_fine_s, color="#d62728", linewidth=2.0, linestyle="--", label="Spinodal")
         ax.plot(hi_s_sm, T_fine_s, color="#d62728", linewidth=2.0, linestyle="--")
         ax.scatter(lo_s, T_s, color="#d62728", s=30, zorder=5)
         ax.scatter(hi_s, T_s, color="#d62728", s=30, zorder=5)
 
-    # ── critical point: apex of spinodal (highest T where spinodal exists) ──
+    # critical point: apex of spinodal (highest T where spinodal exists)
     if valid_s:
-        T_s_arr  = T_s   # already np.array, sorted
+        T_s_arr = T_s  # already np.array, sorted
         lo_s_arr = lo_s
         hi_s_arr = hi_s
         idx_crit = int(np.argmax(T_s_arr))
-        T_crit   = float(T_s_arr[idx_crit])
-        x_crit   = float((lo_s_arr[idx_crit] + hi_s_arr[idx_crit]) / 2.0)
-        ax.scatter([x_crit], [T_crit], color="#d62728", s=80, zorder=6,
-                   marker="^", label=f"Critical point  (~{T_crit:.0f} °C)")
+        T_crit = float(T_s_arr[idx_crit])
+        x_crit = float((lo_s_arr[idx_crit] + hi_s_arr[idx_crit]) / 2.0)
+        ax.scatter([x_crit], [T_crit], color="#d62728", s=80, zorder=6, marker="^", label=f"Critical point  (~{T_crit:.0f} °C)")
         ax.annotate(
             f"$T_c$ ≈ {T_crit:.0f} °C",
-            xy=(x_crit, T_crit), xytext=(x_crit + 0.08, T_crit + 100),
-            fontsize=9, color="#d62728",
+            xy=(x_crit, T_crit),
+            xytext=(x_crit + 0.08, T_crit + 100),
+            fontsize=9,
+            color="#d62728",
             arrowprops=dict(arrowstyle="->", color="#d62728", lw=1.2),
         )
 

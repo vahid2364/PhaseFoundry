@@ -1,5 +1,4 @@
-"""
-Polynomial fitting of exchange chemical potentials Δμ_i = μ_i - μ_ref
+"""Polynomial fitting of exchange chemical potentials Δμ_i = μ_i - μ_ref
 as a function of composition, at fixed temperature.
 
 The fitted models are stored in HDF5 with enough information to fully
@@ -40,8 +39,7 @@ HDF5 layout
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import h5py
@@ -53,16 +51,13 @@ from sklearn.preprocessing import PolynomialFeatures
 from .storage import load_table
 
 
-# ── core fitting ──────────────────────────────────────────────────────────────
-
 def fit_delta_mu(
     table_paths: list[str | Path],
     reference_element: str,
     poly_degree: int = 4,
     temperatures_K: list[float] | None = None,
 ) -> list[dict]:
-    """
-    Fit Δμ_i = μ_i − μ_ref as a polynomial in composition at each temperature.
+    """Fit Δμ_i = μ_i − μ_ref as a polynomial in composition at each temperature.
 
     Parameters
     ----------
@@ -76,7 +71,7 @@ def fit_delta_mu(
     temperatures_K : list of float, optional
         Override temperatures (K). If None, read from file metadata.
 
-    Returns
+    Returns:
     -------
     list of dict, one per temperature, each containing:
         'temperature_K'     float
@@ -100,25 +95,18 @@ def fit_delta_mu(
         elements = data["elements"]
 
         if reference_element not in elements:
-            raise ValueError(
-                f"reference_element '{reference_element}' not in elements {elements}"
-            )
+            raise ValueError(f"reference_element '{reference_element}' not in elements {elements}")
         if "MU" not in data:
             raise KeyError(f"'MU' not stored in {path}. Re-generate with quantities=('MU',...)")
 
-        T_K = (
-            temperatures_K[i]
-            if temperatures_K is not None
-            else float(data["metadata"]["temperature"])
-        )
+        T_K = temperatures_K[i] if temperatures_K is not None else float(data["metadata"]["temperature"])
         T_C = T_K - 273.15
 
-        # Independent composition variables = all except reference
         x_vars = [el for el in elements if el != reference_element]
         col_indices = [elements.index(el) for el in x_vars]
 
-        X = data["compositions"][:, col_indices]     # (n_pts, n_vars)
-        mu_ref = data["MU"][reference_element]        # (n_pts,)
+        X = data["compositions"][:, col_indices]  # (n_pts, n_vars)
+        mu_ref = data["MU"][reference_element]  # (n_pts,)
 
         # Build polynomial features (shared transformer for all elements)
         poly = PolynomialFeatures(degree=poly_degree, include_bias=True)
@@ -129,7 +117,7 @@ def fit_delta_mu(
         fitted_elements = [el for el in elements if el != reference_element]
 
         for el in fitted_elements:
-            delta_mu = data["MU"][el] - mu_ref       # Δμ_i = μ_i − μ_ref
+            delta_mu = data["MU"][el] - mu_ref
 
             valid = np.isfinite(delta_mu)
             reg = LinearRegression(fit_intercept=False)  # bias included in poly features
@@ -137,56 +125,50 @@ def fit_delta_mu(
 
             y_pred = reg.predict(X_poly[valid])
             rmse = float(np.sqrt(mean_squared_error(delta_mu[valid], y_pred)))
-            r2   = float(r2_score(delta_mu[valid], y_pred))
+            r2 = float(r2_score(delta_mu[valid], y_pred))
 
             # Coefficients align 1-to-1 with feature_powers rows
             coeffs = reg.coef_.copy()
             intercept = 0.0  # absorbed into bias term (first feature = 1^0)
 
-            # Human-readable description of the leading terms
-            desc = _describe_poly(el, reference_element, x_vars,
-                                  coeffs, feature_powers, poly_degree)
+            desc = _describe_poly(el, reference_element, x_vars, coeffs, feature_powers, poly_degree)
 
             models[el] = {
-                "coefficients":   coeffs,
-                "intercept":      intercept,
+                "coefficients": coeffs,
+                "intercept": intercept,
                 "feature_powers": feature_powers,
-                "rmse":           rmse,
-                "r2":             r2,
-                "n_points":       int(valid.sum()),
-                "description":    desc,
+                "rmse": rmse,
+                "r2": r2,
+                "n_points": int(valid.sum()),
+                "description": desc,
             }
 
-        results.append({
-            "temperature_K":     T_K,
-            "temperature_C":     T_C,
-            "elements":          elements,
-            "x_variables":       x_vars,
-            "reference_element": reference_element,
-            "poly_degree":       poly_degree,
-            "models":            models,
-        })
+        results.append(
+            {
+                "temperature_K": T_K,
+                "temperature_C": T_C,
+                "elements": elements,
+                "x_variables": x_vars,
+                "reference_element": reference_element,
+                "poly_degree": poly_degree,
+                "models": models,
+            }
+        )
 
         print(
             f"T = {T_K:.1f} K ({T_C:.1f} °C)  |  "
-            + "  ".join(
-                f"Δμ_{el}: RMSE={m['rmse']:.1f} J/mol  R²={m['r2']:.4f}"
-                for el, m in models.items()
-            )
+            + "  ".join(f"Δμ_{el}: RMSE={m['rmse']:.1f} J/mol  R²={m['r2']:.4f}" for el, m in models.items())
         )
 
     return results
 
-
-# ── spline surrogate ──────────────────────────────────────────────────────────
 
 def build_spline_surrogate(
     table_paths: list[str | Path],
     reference_element: str,
     temperatures_K: list[float] | None = None,
 ) -> dict:
-    """
-    Build a CubicSpline surrogate for Δμ and G_m at each temperature.
+    """Build a CubicSpline surrogate for Δμ and G_m at each temperature.
 
     Instead of fitting a global polynomial, this constructs a
     ``scipy.interpolate.CubicSpline`` directly through the pycalphad data
@@ -206,7 +188,7 @@ def build_spline_surrogate(
         e.g. 'V'.
     temperatures_K : list of float, optional
 
-    Returns
+    Returns:
     -------
     dict  — same top-level structure as ``load_fits()`` so it can be
     passed directly to the PFM solver:
@@ -231,11 +213,7 @@ def build_spline_surrogate(
         data = load_table(path)
         elements = data["elements"]
 
-        T_K = (
-            temperatures_K[i]
-            if temperatures_K is not None
-            else float(data["metadata"]["temperature"])
-        )
+        T_K = temperatures_K[i] if temperatures_K is not None else float(data["metadata"]["temperature"])
         stored_T.append(T_K)
 
         col_indices = {el: elements.index(el) for el in elements}
@@ -245,7 +223,7 @@ def build_spline_surrogate(
         models = {}
         for el in x_vars:
             col = col_indices[el]
-            x   = data["compositions"][:, col]
+            x = data["compositions"][:, col]
             dmu = data["MU"][el] - mu_ref
 
             valid = np.isfinite(dmu)
@@ -253,47 +231,44 @@ def build_spline_surrogate(
             order = np.argsort(x)
             x, dmu = x[order], dmu[order]
 
-            spl      = CubicSpline(x, dmu, extrapolate=True)
-            spl_intg = spl.antiderivative()   # PPoly — analytic ∫Δμ dx
+            spl = CubicSpline(x, dmu, extrapolate=True)
+            spl_intg = spl.antiderivative()  # PPoly — analytic ∫Δμ dx
 
             models[el] = {
-                "spline":           spl,
+                "spline": spl,
                 "spline_antideriv": spl_intg,
-                "x_data":           x,
-                "dmu_data":         dmu,
-                "rmse":             0.0,   # interpolating — exact
-                "r2":               1.0,
+                "x_data": x,
+                "dmu_data": dmu,
+                "rmse": 0.0,  # interpolating — exact
+                "r2": 1.0,
             }
 
         fits[T_K] = {
-            "models":            models,
-            "x_variables":       x_vars,
+            "models": models,
+            "x_variables": x_vars,
             "reference_element": reference_element,
         }
 
-        print(f"T = {T_K:.1f} K ({T_K-273.15:.1f} °C)  |  spline built on {valid.sum()} pts")
+        print(f"T = {T_K:.1f} K ({T_K - 273.15:.1f} °C)  |  spline built on {valid.sum()} pts")
 
     return {
         "temperatures_K": np.array(stored_T),
         "metadata": {
             "reference_element": reference_element,
-            "x_variables":       x_vars,
-            "poly_degree":       "spline",
-            "surrogate_type":    "CubicSpline",
+            "x_variables": x_vars,
+            "poly_degree": "spline",
+            "surrogate_type": "CubicSpline",
         },
         "fits": fits,
     }
 
-
-# ── Gm spline surrogate ───────────────────────────────────────────────────────
 
 def build_gm_spline_surrogate(
     table_paths: list[str | Path],
     reference_element: str,
     temperatures_K: list[float] | None = None,
 ) -> dict:
-    """
-    Build a CubicSpline surrogate fitted **directly to G_m** at each temperature.
+    """Build a CubicSpline surrogate fitted **directly to G_m** at each temperature.
 
     This is the preferred approach for CALPHAD-PFM coupling because:
 
@@ -317,7 +292,7 @@ def build_gm_spline_surrogate(
         e.g. 'V'.  The composition axis is x_{reference_element}.
     temperatures_K : list of float, optional
 
-    Returns
+    Returns:
     -------
     dict  — same top-level structure as ``load_fits()`` / ``build_spline_surrogate()``:
         'temperatures_K'   np.ndarray
@@ -332,58 +307,46 @@ def build_gm_spline_surrogate(
     """
     from scipy.interpolate import CubicSpline
 
-    fits     = {}
+    fits = {}
     stored_T = []
 
     for i, path in enumerate(table_paths):
-        data     = load_table(path)
+        data = load_table(path)
         elements = data["elements"]
 
         if "GM" not in data:
-            raise KeyError(
-                f"'GM' not stored in {path}. "
-                "Re-generate with quantities=('GM', ...)."
-            )
+            raise KeyError(f"'GM' not stored in {path}. Re-generate with quantities=('GM', ...).")
 
-        T_K = (
-            temperatures_K[i]
-            if temperatures_K is not None
-            else float(data["metadata"]["temperature"])
-        )
+        T_K = temperatures_K[i] if temperatures_K is not None else float(data["metadata"]["temperature"])
         stored_T.append(T_K)
 
-        # Composition axis: x_V (mol fraction of reference element)
         ref_col = elements.index(reference_element)
-        x_V     = data["compositions"][:, ref_col]
-        GM      = data["GM"]
+        x_V = data["compositions"][:, ref_col]
+        GM = data["GM"]
 
-        # Remove any non-finite points and sort by x_V
-        valid   = np.isfinite(GM)
+        valid = np.isfinite(GM)
         x_V, GM = x_V[valid], GM[valid]
-        order   = np.argsort(x_V)
+        order = np.argsort(x_V)
         x_V, GM = x_V[order], GM[order]
 
-        # Spline on G_m(x_V) — interpolating, exact through every data point
-        spl_gm   = CubicSpline(x_V, GM,        extrapolate=True)
-        spl_dfdx = spl_gm.derivative()          # dG_m/dx_V  (analytic)
+        spl_gm = CubicSpline(x_V, GM, extrapolate=True)
+        spl_dfdx = spl_gm.derivative()  # dG_m/dx_V  (analytic)
 
         fits[T_K] = {
             "models": {
                 reference_element: {
-                    "spline_gm":   spl_gm,
+                    "spline_gm": spl_gm,
                     "spline_dfdx": spl_dfdx,
-                    "x_data":      x_V,
-                    "gm_data":     GM,
+                    "x_data": x_V,
+                    "gm_data": GM,
                 }
             },
-            "x_variables":       [reference_element],
+            "x_variables": [reference_element],
             "reference_element": reference_element,
         }
 
         print(
-            f"T = {T_K:.1f} K ({T_K-273.15:.1f} °C)  |  "
-            f"Gm spline built on {valid.sum()} pts  "
-            f"x_V=[{x_V[0]:.4f}, {x_V[-1]:.4f}]"
+            f"T = {T_K:.1f} K ({T_K - 273.15:.1f} °C)  |  Gm spline built on {valid.sum()} pts  x_V=[{x_V[0]:.4f}, {x_V[-1]:.4f}]"
         )
 
     x_vars = [reference_element]
@@ -391,23 +354,20 @@ def build_gm_spline_surrogate(
         "temperatures_K": np.array(stored_T),
         "metadata": {
             "reference_element": reference_element,
-            "x_variables":       x_vars,
-            "poly_degree":       "gm_spline",
-            "surrogate_type":    "CubicSpline_on_Gm",
+            "x_variables": x_vars,
+            "poly_degree": "gm_spline",
+            "surrogate_type": "CubicSpline_on_Gm",
         },
         "fits": fits,
     }
 
-
-# ── storage ───────────────────────────────────────────────────────────────────
 
 def save_fits(
     fit_results: list[dict],
     output_path: str | Path,
     source_db: str = "",
 ) -> None:
-    """
-    Save polynomial fit results to HDF5.
+    """Save polynomial fit results to HDF5.
 
     Parameters
     ----------
@@ -424,21 +384,19 @@ def save_fits(
     ref0 = fit_results[0]
 
     with h5py.File(path, "w") as f:
-        # ── global metadata ───────────────────────────────────────────────
         meta = f.create_group("metadata")
         meta.attrs["reference_element"] = ref0["reference_element"]
-        meta.attrs["x_variables"]       = ",".join(ref0["x_variables"])
-        meta.attrs["all_elements"]      = ",".join(ref0["elements"])
-        meta.attrs["poly_degree"]       = ref0["poly_degree"]
-        meta.attrs["source_db"]         = str(source_db)
-        meta.attrs["fit_date"]          = datetime.now(timezone.utc).isoformat()
-        meta.attrs["n_temperatures"]    = len(fit_results)
+        meta.attrs["x_variables"] = ",".join(ref0["x_variables"])
+        meta.attrs["all_elements"] = ",".join(ref0["elements"])
+        meta.attrs["poly_degree"] = ref0["poly_degree"]
+        meta.attrs["source_db"] = str(source_db)
+        meta.attrs["fit_date"] = datetime.now(UTC).isoformat()
+        meta.attrs["n_temperatures"] = len(fit_results)
 
-        # ── one group per temperature ─────────────────────────────────────
         for res in fit_results:
-            T_K  = res["temperature_K"]
-            T_C  = res["temperature_C"]
-            grp  = f.create_group(f"T_{T_K:.2f}K")
+            T_K = res["temperature_K"]
+            T_C = res["temperature_C"]
+            grp = f.create_group(f"T_{T_K:.2f}K")
 
             tm = grp.create_group("metadata")
             tm.attrs["temperature_K"] = T_K
@@ -449,39 +407,29 @@ def save_fits(
                 eg = grp.create_group(f"delta_mu_{el}")
 
                 ds_c = eg.create_dataset("coefficients", data=m["coefficients"])
-                ds_c.attrs["units"]       = "J/mol"
-                ds_c.attrs["description"] = (
-                    "Coefficients c_k such that "
-                    "Δμ = Σ_k c_k · Π_j x_j^power[k,j]"
-                )
+                ds_c.attrs["units"] = "J/mol"
+                ds_c.attrs["description"] = "Coefficients c_k such that Δμ = Σ_k c_k · Π_j x_j^power[k,j]"
 
                 ds_p = eg.create_dataset("feature_powers", data=m["feature_powers"])
-                ds_p.attrs["columns"]     = ",".join(res["x_variables"])
-                ds_p.attrs["description"] = (
-                    "Row k: exponent of each composition variable in term k"
-                )
+                ds_p.attrs["columns"] = ",".join(res["x_variables"])
+                ds_p.attrs["description"] = "Row k: exponent of each composition variable in term k"
 
-                eg.attrs["intercept"]         = m["intercept"]
-                eg.attrs["rmse_J_per_mol"]    = m["rmse"]
-                eg.attrs["r2"]                = m["r2"]
-                eg.attrs["n_points"]          = m["n_points"]
+                eg.attrs["intercept"] = m["intercept"]
+                eg.attrs["rmse_J_per_mol"] = m["rmse"]
+                eg.attrs["r2"] = m["r2"]
+                eg.attrs["n_points"] = m["n_points"]
                 eg.attrs["reference_element"] = res["reference_element"]
-                eg.attrs["x_variables"]       = ",".join(res["x_variables"])
-                eg.attrs["description"]       = m["description"]
-                eg.attrs["delta_mu_formula"]  = (
-                    f"Δμ_{el} = μ_{el} - μ_{res['reference_element']}  [J/mol]"
-                )
+                eg.attrs["x_variables"] = ",".join(res["x_variables"])
+                eg.attrs["description"] = m["description"]
+                eg.attrs["delta_mu_formula"] = f"Δμ_{el} = μ_{el} - μ_{res['reference_element']}  [J/mol]"
 
-    print(f"\nSaved fits → {path}  "
-          f"({len(fit_results)} temperatures, "
-          f"reference = {ref0['reference_element']})")
+    print(f"\nSaved fits → {path}  ({len(fit_results)} temperatures, reference = {ref0['reference_element']})")
 
 
 def load_fits(path: str | Path) -> dict:
-    """
-    Load polynomial fit results from HDF5.
+    """Load polynomial fit results from HDF5.
 
-    Returns
+    Returns:
     -------
     dict with keys:
         'metadata'        dict  (global metadata)
@@ -509,36 +457,33 @@ def load_fits(path: str | Path) -> dict:
             for el_key in grp:
                 if not el_key.startswith("delta_mu_"):
                     continue
-                el = el_key[len("delta_mu_"):]
+                el = el_key[len("delta_mu_") :]
                 eg = grp[el_key]
                 models[el] = {
-                    "coefficients":   eg["coefficients"][:],
+                    "coefficients": eg["coefficients"][:],
                     "feature_powers": eg["feature_powers"][:],
-                    "intercept":      float(eg.attrs["intercept"]),
-                    "rmse":           float(eg.attrs["rmse_J_per_mol"]),
-                    "r2":             float(eg.attrs["r2"]),
-                    "n_points":       int(eg.attrs["n_points"]),
-                    "x_variables":    eg.attrs["x_variables"].split(","),
-                    "description":    eg.attrs.get("description", ""),
+                    "intercept": float(eg.attrs["intercept"]),
+                    "rmse": float(eg.attrs["rmse_J_per_mol"]),
+                    "r2": float(eg.attrs["r2"]),
+                    "n_points": int(eg.attrs["n_points"]),
+                    "x_variables": eg.attrs["x_variables"].split(","),
+                    "description": eg.attrs.get("description", ""),
                 }
             out["fits"][T_K] = {
                 "temperature_K": T_K,
                 "temperature_C": T_C,
-                "models":        models,
+                "models": models,
             }
 
     out["temperatures_K"].sort()
     return out
 
 
-# ── evaluation ────────────────────────────────────────────────────────────────
-
 def eval_delta_mu(
     fit: dict,
     compositions: np.ndarray,
 ) -> dict[str, np.ndarray]:
-    """
-    Evaluate Δμ_i at given compositions using stored polynomial coefficients.
+    """Evaluate Δμ_i at given compositions using stored polynomial coefficients.
 
     This function does NOT require sklearn — it reconstructs the polynomial
     from ``coefficients`` and ``feature_powers`` directly.
@@ -551,17 +496,17 @@ def eval_delta_mu(
         Mole fractions of the independent elements in the same order as
         fit['models'][el]['x_variables'].
 
-    Returns
+    Returns:
     -------
     dict[str, np.ndarray]  Δμ_i in J/mol for each fitted element.
     """
     results = {}
     for el, m in fit["models"].items():
-        coeffs  = m["coefficients"]       # (n_features,)
-        powers  = m["feature_powers"]     # (n_features, n_vars)
+        coeffs = m["coefficients"]  # (n_features,)
+        powers = m["feature_powers"]  # (n_features, n_vars)
 
         # Compute each polynomial term: Π_j x_j^power[k,j]
-        n_pts     = compositions.shape[0]
+        n_pts = compositions.shape[0]
         n_features = len(coeffs)
         terms = np.ones((n_pts, n_features))
         for k in range(n_features):
@@ -572,8 +517,6 @@ def eval_delta_mu(
         results[el] = terms @ coeffs + m["intercept"]
     return results
 
-
-# ── helper ────────────────────────────────────────────────────────────────────
 
 def _describe_poly(
     el: str,
@@ -591,9 +534,9 @@ def _describe_poly(
     for k in order[:n_terms]:
         c = coeffs[k]
         pw = powers[k]
-        var_str = "·".join(
-            (f"x_{x_vars[j]}^{pw[j]}" if pw[j] > 1 else f"x_{x_vars[j]}")
-            for j in range(len(x_vars)) if pw[j] > 0
-        ) or "1"
+        var_str = (
+            "·".join((f"x_{x_vars[j]}^{pw[j]}" if pw[j] > 1 else f"x_{x_vars[j]}") for j in range(len(x_vars)) if pw[j] > 0)
+            or "1"
+        )
         terms.append(f"{c:+.2e}·{var_str}")
     return f"Δμ_{el} - μ_{ref}  ≈  " + " ".join(terms) + "  + ..."

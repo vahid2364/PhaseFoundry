@@ -1,5 +1,4 @@
-"""
-phasefoundry.elasticity.interpolation
+"""phasefoundry.elasticity.interpolation
 ====================================
 Composition-interpolation functions for the elastically inhomogeneous
 Cahn-Hilliard model (Gururajan & Abinandanan, 2007).
@@ -19,7 +18,7 @@ interpolants with respect to c:
                   - beta'(c) * eps_T * delta_ij * sigma_ij
 
 This module centralizes every interpolant (and its derivative) so that
-``fft_solver.py`` and the (future) elastic chemical-potential module both
+``fft_solver.py`` and the elastic chemical-potential module both
 read from one place instead of redefining ``h(c)`` inline.
 
 Available schemes
@@ -37,16 +36,15 @@ Available schemes
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 
 ArrayFn = Callable[[np.ndarray], np.ndarray]
 
 
-# ── cubic (G&A 2007, Eq. 47-48) ─────────────────────────────────────────────
-
+# cubic (G&A 2007, Eq. 47-48)
 def cubic_h(c: np.ndarray) -> np.ndarray:
     """Smoothstep interpolant h(c) = c^3 (10 - 15c + 6c^2).  h(0)=0, h(1)=1."""
     return c**3 * (10.0 - 15.0 * c + 6.0 * c**2)
@@ -54,7 +52,7 @@ def cubic_h(c: np.ndarray) -> np.ndarray:
 
 def cubic_dh(c: np.ndarray) -> np.ndarray:
     """dh/dc = 30 c^2 (1 - c)^2  (always >= 0, vanishes at c=0 and c=1)."""
-    return 30.0 * c**2 * (1.0 - c)**2
+    return 30.0 * c**2 * (1.0 - c) ** 2
 
 
 def cubic_alpha(c: np.ndarray) -> np.ndarray:
@@ -77,8 +75,7 @@ def cubic_dbeta(c: np.ndarray) -> np.ndarray:
     return cubic_dh(c)
 
 
-# ── linear (ablation / sanity-check alternative) ────────────────────────────
-
+# linear (ablation / sanity-check alternative)
 def linear_h(c: np.ndarray) -> np.ndarray:
     return c
 
@@ -103,16 +100,14 @@ def linear_dbeta(c: np.ndarray) -> np.ndarray:
     return np.ones_like(c)
 
 
-# ── sharp step (for sharp-interface benchmarks only) ────────────────────────
-
+# sharp step (for sharp-interface benchmarks only)
 def step_h(c: np.ndarray) -> np.ndarray:
     """Sharp indicator: 1 where c >= 0.5, else 0. Matches a binary phase mask."""
     return (c >= 0.5).astype(c.dtype)
 
 
 def step_dh(c: np.ndarray) -> np.ndarray:
-    """
-    Derivative of a step function is a delta function; not representable on
+    """Derivative of a step function is a delta function; not representable on
     a grid. Returned as zero everywhere -- this scheme must NOT be used to
     drive Cahn-Hilliard evolution (mu_el would be silently wrong), only for
     constructing a sharp stiffness/eigenstrain field for static benchmarks.
@@ -136,11 +131,10 @@ def step_dbeta(c: np.ndarray) -> np.ndarray:
     return step_dh(c)
 
 
-# ── scheme bundle + registry ─────────────────────────────────────────────────
-
 @dataclass(frozen=True)
 class InterpolationScheme:
     """Bundles an interpolant family's value/derivative pairs under one name."""
+
     name: str
     h: ArrayFn
     dh: ArrayFn
@@ -152,37 +146,48 @@ class InterpolationScheme:
 
 _SCHEMES: dict[str, InterpolationScheme] = {
     "cubic": InterpolationScheme(
-        name="cubic", h=cubic_h, dh=cubic_dh,
-        alpha=cubic_alpha, dalpha=cubic_dalpha,
-        beta=cubic_beta, dbeta=cubic_dbeta,
+        name="cubic",
+        h=cubic_h,
+        dh=cubic_dh,
+        alpha=cubic_alpha,
+        dalpha=cubic_dalpha,
+        beta=cubic_beta,
+        dbeta=cubic_dbeta,
     ),
     "linear": InterpolationScheme(
-        name="linear", h=linear_h, dh=linear_dh,
-        alpha=linear_alpha, dalpha=linear_dalpha,
-        beta=linear_beta, dbeta=linear_dbeta,
+        name="linear",
+        h=linear_h,
+        dh=linear_dh,
+        alpha=linear_alpha,
+        dalpha=linear_dalpha,
+        beta=linear_beta,
+        dbeta=linear_dbeta,
     ),
     "step": InterpolationScheme(
-        name="step", h=step_h, dh=step_dh,
-        alpha=step_alpha, dalpha=step_dalpha,
-        beta=step_beta, dbeta=step_dbeta,
+        name="step",
+        h=step_h,
+        dh=step_dh,
+        alpha=step_alpha,
+        dalpha=step_dalpha,
+        beta=step_beta,
+        dbeta=step_dbeta,
     ),
 }
 
 
 def get_scheme(name: str = "cubic") -> InterpolationScheme:
-    """
-    Look up an interpolation scheme by name.
+    """Look up an interpolation scheme by name.
 
     Parameters
     ----------
     name : str
         One of "cubic" (default, paper's choice), "linear", "step".
 
-    Returns
+    Returns:
     -------
     InterpolationScheme
 
-    Raises
+    Raises:
     ------
     ValueError
         If `name` is not a registered scheme.
@@ -190,10 +195,7 @@ def get_scheme(name: str = "cubic") -> InterpolationScheme:
     try:
         return _SCHEMES[name]
     except KeyError:
-        raise ValueError(
-            f"Unknown interpolation scheme {name!r}. "
-            f"Available: {sorted(_SCHEMES)}"
-        )
+        raise ValueError(f"Unknown interpolation scheme {name!r}. Available: {sorted(_SCHEMES)}")
 
 
 def register_scheme(scheme: InterpolationScheme) -> None:

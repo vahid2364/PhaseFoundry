@@ -1,5 +1,4 @@
-"""
-phasefoundry.elasticity.elastic_potential
+"""phasefoundry.elasticity.elastic_potential
 =========================================
 Elastic contribution to the chemical potential, μ_el (Eq. 36 in
 Gururajan & Abinandanan, 2007).
@@ -35,12 +34,8 @@ import numpy as np
 from .interpolation import InterpolationScheme, get_scheme
 
 
-# ── Vegard tensor ────────────────────────────────────────────────────────────
-
-def build_vegard_tensor(alpha: dict, ind_elements: list[str],
-                        ndim: int = 2) -> np.ndarray:
-    """
-    Build the Vegard eigenstrain coefficient tensor Λ, shape (N_ind, ndim, ndim).
+def build_vegard_tensor(alpha: dict, ind_elements: list[str], ndim: int = 2) -> np.ndarray:
+    """Build the Vegard eigenstrain coefficient tensor Λ, shape (N_ind, ndim, ndim).
 
     Λ[k] = α_k × I_d,   where α_k = (a_k − a_ref) / a_ref
 
@@ -60,7 +55,7 @@ def build_vegard_tensor(alpha: dict, ind_elements: list[str],
     ndim : int
         Spatial dimension (2 for 2-D, 3 for 3-D).
 
-    Returns
+    Returns:
     -------
     Lambda : ndarray, shape (N_ind, ndim, ndim)
     """
@@ -71,11 +66,8 @@ def build_vegard_tensor(alpha: dict, ind_elements: list[str],
     return Lambda
 
 
-def compute_mu_el_tensorial(sigma: np.ndarray,
-                             Lambda: np.ndarray,
-                             N_V: float) -> np.ndarray:
-    """
-    Elastic chemical potential in the tensorial Vegard formulation.
+def compute_mu_el_tensorial(sigma: np.ndarray, Lambda: np.ndarray, N_V: float) -> np.ndarray:
+    """Elastic chemical potential in the tensorial Vegard formulation.
 
     μ_el_k(x) = −(1/N_V) × σ(x) : Λ_k
                = −(1/N_V) × σ_ij(x) × Λ_{k,ij}
@@ -96,22 +88,18 @@ def compute_mu_el_tensorial(sigma: np.ndarray,
         Molar density [mol/m³] = 1/V_m.  Converts Pa → J/mol so the result
         can be added directly to μ_ch [J/mol].
 
-    Returns
+    Returns:
     -------
     mu_el : ndarray, shape (N_ind, *spatial)
         Elastic chemical potential for each independent element [J/mol].
     """
-    return -np.einsum('...ij,kij->k...', sigma, Lambda) / N_V
+    return -np.einsum("...ij,kij->k...", sigma, Lambda) / N_V
 
 
-# ── elastic strain ──────────────────────────────────────────────────────────
-
-def elastic_strain(strain: np.ndarray,
-                    c: np.ndarray,
-                    eigenstrain: np.ndarray,
-                    scheme: InterpolationScheme | str = "cubic") -> np.ndarray:
-    """
-    Elastic strain  eps^el(x) = strain(x) - beta(c(x)) * eigenstrain.
+def elastic_strain(
+    strain: np.ndarray, c: np.ndarray, eigenstrain: np.ndarray, scheme: InterpolationScheme | str = "cubic"
+) -> np.ndarray:
+    """Elastic strain  eps^el(x) = strain(x) - beta(c(x)) * eigenstrain.
 
     Parameters
     ----------
@@ -125,23 +113,19 @@ def elastic_strain(strain: np.ndarray,
     scheme : InterpolationScheme or str
         Composition-interpolation scheme (default "cubic", matches the paper).
 
-    Returns
+    Returns:
     -------
     eps_el : ndarray (N, N, 2, 2)
     """
     if isinstance(scheme, str):
         scheme = get_scheme(scheme)
-    beta = scheme.beta(c)                       # (N, N)
-    es2  = eigenstrain[:2, :2]                    # (2, 2)
+    beta = scheme.beta(c)  # (N, N)
+    es2 = eigenstrain[:2, :2]  # (2, 2)
     return strain - beta[..., None, None] * es2[None, None]
 
 
-# ── elastic free-energy density (for validation only) ──────────────────────
-
-def elastic_free_energy_density(elastic_strain_field: np.ndarray,
-                                  stress: np.ndarray) -> np.ndarray:
-    """
-    Elastic free-energy density  f_el(x) = 1/2 * sigma_ij * eps^el_ij  (Eq. 8).
+def elastic_free_energy_density(elastic_strain_field: np.ndarray, stress: np.ndarray) -> np.ndarray:
+    """Elastic free-energy density  f_el(x) = 1/2 * sigma_ij * eps^el_ij  (Eq. 8).
 
     Not used in the Cahn-Hilliard timestep itself -- this exists purely so
     that mu_el can be validated against a finite-difference derivative of
@@ -152,25 +136,24 @@ def elastic_free_energy_density(elastic_strain_field: np.ndarray,
     elastic_strain_field : ndarray (N, N, 2, 2)
     stress : ndarray (N, N, 2, 2)
 
-    Returns
+    Returns:
     -------
     f_el : ndarray (N, N)
     """
     return 0.5 * np.einsum("xyij,xyij->xy", stress, elastic_strain_field)
 
 
-# ── elastic chemical potential (Eq. 36) ─────────────────────────────────────
-
-def elastic_potential(c: np.ndarray,
-                       strain: np.ndarray,
-                       stress: np.ndarray,
-                       C_mat: np.ndarray,
-                       C_ppt: np.ndarray,
-                       eigenstrain: np.ndarray,
-                       N_V: float = 1.0,
-                       scheme: InterpolationScheme | str = "cubic") -> np.ndarray:
-    """
-    Elastic contribution to the chemical potential, mu_el(x) (Eq. 36).
+def elastic_potential(
+    c: np.ndarray,
+    strain: np.ndarray,
+    stress: np.ndarray,
+    C_mat: np.ndarray,
+    C_ppt: np.ndarray,
+    eigenstrain: np.ndarray,
+    N_V: float = 1.0,
+    scheme: InterpolationScheme | str = "cubic",
+) -> np.ndarray:
+    """Elastic contribution to the chemical potential, mu_el(x) (Eq. 36).
 
     mu_el(x) = [ 1/2 * alpha'(c) * (eps^el : ΔC : eps^el)
                  - beta'(c) * (eigenstrain : sigma) ] / N_V
@@ -193,7 +176,7 @@ def elastic_potential(c: np.ndarray,
     scheme : InterpolationScheme or str
         Composition-interpolation scheme (default "cubic").
 
-    Returns
+    Returns:
     -------
     mu_el : ndarray (N, N)
         Elastic chemical potential, same units as mu_ch, ready to be added
@@ -202,38 +185,34 @@ def elastic_potential(c: np.ndarray,
     if isinstance(scheme, str):
         scheme = get_scheme(scheme)
 
-    eps_el = elastic_strain(strain, c, eigenstrain, scheme)   # (N, N, 2, 2)
+    eps_el = elastic_strain(strain, c, eigenstrain, scheme)  # (N, N, 2, 2)
 
-    dC  = (C_ppt - C_mat)[:2, :2, :2, :2]                      # (2,2,2,2)
-    es2 = eigenstrain[:2, :2]                                  # (2,2)
+    dC = (C_ppt - C_mat)[:2, :2, :2, :2]  # (2,2,2,2)
+    es2 = eigenstrain[:2, :2]  # (2,2)
 
-    dalpha = scheme.dalpha(c)                                  # (N, N)
-    dbeta  = scheme.dbeta(c)                                   # (N, N)
+    dalpha = scheme.dalpha(c)  # (N, N)
+    dbeta = scheme.dbeta(c)  # (N, N)
 
-    term1 = 0.5 * dalpha * np.einsum(
-        "xyij,ijkl,xykl->xy", eps_el, dC, eps_el
-    )                                                           # (N, N)
-    term2 = dbeta * np.einsum("ij,xyij->xy", es2, stress)      # (N, N)
+    term1 = 0.5 * dalpha * np.einsum("xyij,ijkl,xykl->xy", eps_el, dC, eps_el)  # (N, N)
+    term2 = dbeta * np.einsum("ij,xyij->xy", es2, stress)  # (N, N)
 
     return (term1 - term2) / N_V
 
 
-# ── convenience wrapper ──────────────────────────────────────────────────────
-
-def compute_mu_el_from_result(c: np.ndarray,
-                               result: dict,
-                               C_mat: np.ndarray,
-                               C_ppt: np.ndarray,
-                               eigenstrain: np.ndarray,
-                               N_V: float = 1.0,
-                               scheme: InterpolationScheme | str = "cubic") -> np.ndarray:
-    """
-    Compute mu_el directly from a ``solve_elasticity()`` result dict.
+def compute_mu_el_from_result(
+    c: np.ndarray,
+    result: dict,
+    C_mat: np.ndarray,
+    C_ppt: np.ndarray,
+    eigenstrain: np.ndarray,
+    N_V: float = 1.0,
+    scheme: InterpolationScheme | str = "cubic",
+) -> np.ndarray:
+    """Compute mu_el directly from a ``solve_elasticity()`` result dict.
 
     Equivalent to::
 
-        elastic_potential(c, result["strain"], result["stress"],
-                           C_mat, C_ppt, eigenstrain, N_V, scheme)
+        elastic_potential(c, result["strain"], result["stress"], C_mat, C_ppt, eigenstrain, N_V, scheme)
 
     Parameters
     ----------
@@ -245,11 +224,17 @@ def compute_mu_el_from_result(c: np.ndarray,
     N_V : float
     scheme : InterpolationScheme or str
 
-    Returns
+    Returns:
     -------
     mu_el : ndarray (N, N)
     """
     return elastic_potential(
-        c, result["strain"], result["stress"],
-        C_mat, C_ppt, eigenstrain, N_V=N_V, scheme=scheme,
+        c,
+        result["strain"],
+        result["stress"],
+        C_mat,
+        C_ppt,
+        eigenstrain,
+        N_V=N_V,
+        scheme=scheme,
     )
