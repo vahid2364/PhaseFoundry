@@ -17,7 +17,22 @@ dependencies = [
     "tqdm>=4.65",
     "scikit-learn>=1.2",
     "pycalphad>=0.11",
+    "colorama>=0.4",
+    "psutil>=5.9",
 ]
+
+[project.scripts]
+pf-generate    = "phasefoundry.cli:generate"
+pf-elastic        = "phasefoundry.cli:elastic"
+pf-elastic-solve  = "phasefoundry.cli:elastic_solve"
+pf-tieline     = "phasefoundry.cli:tieline"
+pf-phase-map   = "phasefoundry.cli:phase_map"
+pf-surrogate   = "phasefoundry.cli:surrogate"
+pf-simulate    = "phasefoundry.cli:simulate"
+pf-postprocess = "phasefoundry.cli:postprocess"
+pf-validate    = "phasefoundry.cli:validate"
+pf-compare     = "phasefoundry.cli:compare"
+pf-run-all     = "phasefoundry.cli:run_all"
 
 [tool.setuptools.packages.find]
 where = ["src"]
