@@ -26,7 +26,7 @@ Run standalone
 """
 
 from __future__ import annotations
-import argparse, sys
+import argparse, sys, time
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +40,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from phasefoundry.config import load_config, apply_overrides, resolve_paths
+from phasefoundry.logger import get_logger
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -232,7 +233,7 @@ def make_comparison_figure(
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Step 6 — Chemical vs. elasto-chemical comparison figure")
     parser.add_argument("--config", required=True)
@@ -251,6 +252,9 @@ if __name__ == "__main__":
     sim         = cfg["simulation"]
     results_dir = Path(cfg["output"]["results_dir"])
     T_C         = int(sim["temperature_C"])
+
+    log = get_logger(cfg, step="compare", results_dir=results_dir)
+
     kappa       = sim["kappa"] if not isinstance(sim["kappa"], list) else sim["kappa"][0]
     M_cfg       = sim["M"]
     M           = M_cfg if not isinstance(M_cfg, list) else (
@@ -266,6 +270,7 @@ if __name__ == "__main__":
     print(f"   Snapshot:     {args.snap} ({'final' if args.snap == -1 else args.snap})")
     print(f"   Results dir:  {results_dir}")
 
+    _t0 = time.perf_counter()
     make_comparison_figure(
         results_dir  = results_dir,
         T_C          = T_C,
@@ -276,4 +281,18 @@ if __name__ == "__main__":
         M            = float(M),
         tdb_tag      = tdb_tag,
     )
+    _elapsed = time.perf_counter() - _t0
+
+    if log.enabled:
+        log.log_timing_record({
+            "label":        "compare",
+            "elapsed_s":    round(_elapsed, 2),
+            "compositions": args.compositions,
+            "snap_idx":     args.snap,
+        })
+        log.info(f"Comparison figure complete  │  {_elapsed:.1f} s")
     print("Done.")
+
+
+if __name__ == "__main__":
+    main()

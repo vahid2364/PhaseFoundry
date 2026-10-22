@@ -25,7 +25,7 @@ Called from the main pipeline
 """
 
 from __future__ import annotations
-import argparse, sys
+import argparse, sys, time
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +40,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.logger import get_logger
 from phasefoundry.thermodynamics.storage import load_table
 from phasefoundry.thermodynamics.interpolant import build_interpolant
 
@@ -83,9 +84,18 @@ def _load_best_table(data_dir: Path, T_target: float) -> tuple[Path, dict]:
 
 def _spinodal_bounds(x_axis: np.ndarray, h: np.ndarray,
                      x_min: float = 0.02, x_max: float = 0.98):
-    """Return (x_lo, x_hi) of the spinodal region in the interior."""
-    interior = (x_axis > x_min) & (x_axis < x_max)
-    sp = x_axis[interior & (h < 0)]
+    """Return (x_lo, x_hi) of the spinodal region in the interior.
+
+    Near-pure-element compositions cause Jansson derivatives to diverge to
+    ±∞, which falsely satisfy H < 0.  Filter these out by requiring H to be
+    finite and within 50× the median |H| of interior points.
+    """
+    interior = (x_axis > x_min) & (x_axis < x_max) & np.isfinite(h)
+    if not interior.any():
+        return None, None
+    h_med = np.median(np.abs(h[interior]))
+    outlier_free = interior & (np.abs(h) <= 50.0 * max(h_med, 1.0))
+    sp = x_axis[outlier_free & (h < 0)]
     if sp.size == 0:
         return None, None
     return sp.min(), sp.max()
@@ -121,12 +131,19 @@ def plot_thermo_properties(cfg: dict, out_dir: Path) -> None:
     gm       = data["GM"]
     mu_pri   = data["MU"][primary]
     mu_ref   = data["MU"][ref_el]
-    h_pri    = data["dMU"][f"{primary}_{primary}"]
+    # d²G/dx_i² = dMU[i_i] − dMU[ref_i]  (Gibbs-Duhem correction)
+    h_pri    = data["dMU"][f"{primary}_{primary}"] - data["dMU"][f"{ref_el}_{primary}"]
 
-    # sort by x_ref (ascending) for clean lines
-    idx   = np.argsort(x_ref)
-    x_ref = x_ref[idx]
-    gm    = gm[idx]
+    # sort by x_ref (ascending) for clean lines; drop non-finite rows
+    finite = np.isfinite(gm) & np.isfinite(mu_pri) & np.isfinite(mu_ref) & np.isfinite(h_pri)
+    x_ref  = x_ref[finite]
+    gm     = gm[finite]
+    mu_pri = mu_pri[finite]
+    mu_ref = mu_ref[finite]
+    h_pri  = h_pri[finite]
+    idx    = np.argsort(x_ref)
+    x_ref  = x_ref[idx]
+    gm     = gm[idx]
     mu_pri = mu_pri[idx]
     mu_ref = mu_ref[idx]
     h_pri  = h_pri[idx]
@@ -173,10 +190,13 @@ def plot_thermo_properties(cfg: dict, out_dir: Path) -> None:
 
     # Panel 3: Hessian
     ax = axes[2]
-    x_mask    = (x_ref > 0.05) & (x_ref < 0.95)
+    x_mask    = (x_ref > 0.05) & (x_ref < 0.95) & np.isfinite(h_pri)
     h_int     = h_pri[x_mask]
-    y_lo      = h_int.min() / 1e3 * 1.15
-    y_hi      = max(h_int.max() / 1e3 * 1.15, abs(y_lo) * 0.3)
+    if len(h_int) == 0 or not np.isfinite(h_int).any():
+        y_lo, y_hi = -1.0, 1.0
+    else:
+        y_lo = h_int.min() / 1e3 * 1.15
+        y_hi = max(h_int.max() / 1e3 * 1.15, abs(y_lo) * 0.3)
     _shade_spinodal(ax, sp_lo, sp_hi, label=False)
     if sp_lo is not None:
         ax.fill_between(x_ref, h_pri / 1e3, 0,
@@ -206,13 +226,14 @@ def plot_thermo_properties(cfg: dict, out_dir: Path) -> None:
 
 # ── plot 2: derivative method comparison ─────────────────────────────────────
 
-def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
+def plot_derivative_comparison(cfg: dict, out_dir: Path) -> dict | None:
     """Compare FD / Jansson / hybrid interpolants against raw CALPHAD data."""
     data_dir = Path(cfg["output"]["data_dir"])
     T_target = cfg["simulation"]["temperature_C"] + 273.15
     elements = cfg["system"]["elements"]
     ref_el   = cfg["system"]["reference_element"]
     ind_els  = [e for e in elements if e != ref_el]
+    n_ind    = len(ind_els)
     primary  = ind_els[0]
 
     best, data = _load_best_table(data_dir, T_target)
@@ -229,6 +250,36 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
     mu_raw   = data["MU"][primary] - data["MU"][ref_el]
     h_raw    = data["dMU"][f"{primary}_{primary}"] - data["dMU"][f"{ref_el}_{primary}"]
 
+    # For ternary+ systems, restrict raw scatter to a slice near the fixed
+    # secondary-element values so the 1-D scan is comparable to the raw data.
+    if n_ind > 1:
+        c0_cfg_local = cfg.get("simulation", {}).get("c0", [0.5] * n_ind)
+        if isinstance(c0_cfg_local, (int, float)):
+            c0_cfg_local = [c0_cfg_local]
+        slice_mask = np.ones(len(x_nb_raw), dtype=bool)
+        for i, el in enumerate(ind_els):
+            if el == primary:
+                continue
+            col_sec = el_list.index(el)
+            x_sec   = data["compositions"][:, col_sec]
+            sec_val = float(c0_cfg_local[i]) if i < len(c0_cfg_local) else 0.1
+            # Use ~1 grid-step tolerance: snap to the nearest sampled value
+            # so we get a clean 1-D slice instead of a wide band
+            nearest = x_sec[np.argmin(np.abs(x_sec - sec_val))]
+            unique_sec = np.unique(np.round(x_sec, 6))
+            if len(unique_sec) > 1:
+                tol = np.diff(unique_sec).min() * 0.6
+            else:
+                tol = 0.01
+            slice_mask &= np.abs(x_sec - nearest) <= tol
+        if slice_mask.sum() < 5:
+            slice_mask = np.ones(len(x_nb_raw), dtype=bool)  # fall back to all
+        x_nb_raw  = x_nb_raw[slice_mask]
+        x_ref_raw = x_ref_raw[slice_mask]
+        gm_raw    = gm_raw[slice_mask]
+        mu_raw    = mu_raw[slice_mask]
+        h_raw     = h_raw[slice_mask]
+
     order = np.argsort(x_ref_raw)
     x_ref_raw, x_nb_raw, gm_raw, mu_raw, h_raw = (
         x_ref_raw[order], x_nb_raw[order],
@@ -243,21 +294,39 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
             [best], elements=elements, reference_element=ref_el,
             temperature_K=T_K, derivative_method=m)
 
-    # dense scan
+    # dense scan along the primary element axis; hold secondary elements
+    # at their c0 values so c_scan is always (N_ind, 500)
+    n_ind    = len(ind_els)
+    pri_idx  = ind_els.index(primary)
     xnb_scan = np.linspace(x_nb_raw.min() + 1e-4, x_nb_raw.max() - 1e-4, 500)
-    xref_scan = 1.0 - xnb_scan
-    c_scan    = xnb_scan.reshape(1, -1)
+
+    c0_cfg = cfg.get("simulation", {}).get("c0", [0.5] * n_ind)
+    if isinstance(c0_cfg, (int, float)):
+        c0_cfg = [c0_cfg]
+
+    rows = []
+    for i, el in enumerate(ind_els):
+        if el == primary:
+            rows.append(xnb_scan)
+        else:
+            rows.append(np.full(500, float(c0_cfg[i]) if i < len(c0_cfg) else 0.1))
+    c_scan    = np.array(rows)                    # (N_ind, 500)
+    xref_scan = 1.0 - c_scan.sum(axis=0)         # x_ref along the scan
 
     curves = {}
     for m, interp in interps.items():
+        mu_all = interp.mu(c_scan)                # (N_ind, 500)
+        h_all  = interp.d2g(c_scan)              # (N_ind, N_ind, 500)
         curves[m] = dict(
             gm = interp.gm(c_scan).squeeze(),
-            mu = interp.mu(c_scan).squeeze(),
-            h  = interp.d2g(c_scan).squeeze(),
+            mu = mu_all[pri_idx],                 # primary element row
+            h  = h_all[pri_idx, pri_idx],         # primary diagonal H_ii
         )
 
     h_ref         = curves["jansson"]["h"]
     spinodal_mask = h_ref < 0
+    # x-axis of the plot is xref_scan (x_V), so spinodal bounds must use the
+    # same axis — not xnb_scan — to avoid a left-right mirror artifact.
     sp_lo, sp_hi  = _spinodal_bounds(xref_scan, h_ref)
 
     # style
@@ -293,6 +362,7 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
         ax_gm.plot(xref_scan, curves[m]["gm"] / 1e3,
                    ls=LS[m], color=COLORS[m], zorder=ZO[m], label=LABELS[m])
     ax_gm.set_xlabel(xlabel)
+    ax_gm.set_xlim(-0.05, 1.05)
     ax_gm.set_ylabel("$G_m$  (kJ mol$^{-1}$)")
     ax_gm.text(0.97, 0.05, "(a)", transform=ax_gm.transAxes,
                ha="right", va="bottom", fontsize=9, fontweight="bold")
@@ -306,21 +376,30 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
         ax_mu.plot(xref_scan, curves[m]["mu"] / 1e3,
                    ls=LS[m], color=COLORS[m], zorder=ZO[m])
     ax_mu.set_xlabel(xlabel)
+    ax_mu.set_xlim(-0.05, 1.05)
     ax_mu.set_ylabel(
         f"$\\mu_{{\\rm {sec_cap}}} - \\mu_{{\\rm {pri_cap}}}$  (kJ mol$^{{-1}}$)")
     ax_mu.text(0.97, 0.05, "(b)", transform=ax_mu.transAxes,
                ha="right", va="bottom", fontsize=9, fontweight="bold")
 
     # Panel C: H
+    # Mask divergent near-pure-element values before plotting so they don't
+    # produce oscillating vertical stripes at the edges.
+    H_LIM = 150.0  # kJ/mol display clip
     _shade(ax_h)
     ax_h.axhline(0, color="0.35", lw=1.0, ls="--", zorder=1)
-    ax_h.scatter(x_ref_raw, h_raw / 1e3, s=14,
+    h_raw_plot = h_raw / 1e3
+    h_raw_plot = np.where(np.abs(h_raw_plot) <= H_LIM, h_raw_plot, np.nan)
+    ax_h.scatter(x_ref_raw, h_raw_plot, s=14,
                  color=COLORS["calphad"], alpha=0.4, linewidths=0, zorder=5)
     for m in methods:
-        ax_h.plot(xref_scan, curves[m]["h"] / 1e3,
+        h_curve = curves[m]["h"] / 1e3
+        h_curve = np.where(np.abs(h_curve) <= H_LIM, h_curve, np.nan)
+        ax_h.plot(xref_scan, h_curve,
                   ls=LS[m], color=COLORS[m], zorder=ZO[m])
-    ax_h.set_ylim(-150, 150)
+    ax_h.set_ylim(-H_LIM, H_LIM)
     ax_h.set_xlabel(xlabel)
+    ax_h.set_xlim(-0.05, 1.05)
     ax_h.set_ylabel(
         f"$\\partial^2 G / \\partial x_{{\\rm {sec_cap}}}^2$  (kJ mol$^{{-1}}$)")
     ax_h.text(0.97, 0.05, "(c)", transform=ax_h.transAxes,
@@ -345,17 +424,27 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
                frameon=True, fontsize=7.5,
                handlelength=2.0, columnspacing=1.2)
 
-    # residual summary
+    # residual summary — rebuild eval grid at raw primary compositions,
+    # holding secondary elements fixed at their c0 values (same as c_scan)
     print(f"\n  {'Method':<10}  {'RMSE G_m':>12}  {'RMSE μ':>12}  {'RMSE H':>12}  J/mol")
-    x_eval = x_nb_raw.reshape(1, -1)
+    eval_rows = []
+    for i, el in enumerate(ind_els):
+        if el == primary:
+            eval_rows.append(x_nb_raw)
+        else:
+            eval_rows.append(np.full(len(x_nb_raw),
+                                     float(c0_cfg[i]) if i < len(c0_cfg) else 0.1))
+    x_eval = np.array(eval_rows)   # (N_ind, n_raw_pts)
+    rmse_by_method: dict[str, dict[str, float]] = {}
     for m, interp in interps.items():
         gm_c = interp.gm(x_eval).squeeze()
-        mu_c = interp.mu(x_eval).squeeze()
-        h_c  = interp.d2g(x_eval).squeeze()
-        print(f"  {m:<10}  "
-              f"{np.sqrt(np.mean((gm_c - gm_raw)**2)):>12.1f}  "
-              f"{np.sqrt(np.mean((mu_c - mu_raw)**2)):>12.1f}  "
-              f"{np.sqrt(np.mean((h_c  - h_raw )**2)):>12.1f}")
+        mu_c = interp.mu(x_eval)[pri_idx]
+        h_c  = interp.d2g(x_eval)[pri_idx, pri_idx]
+        rmse_gm = float(np.sqrt(np.mean((gm_c - gm_raw)**2)))
+        rmse_mu = float(np.sqrt(np.mean((mu_c - mu_raw)**2)))
+        rmse_h  = float(np.sqrt(np.mean((h_c  - h_raw )**2)))
+        rmse_by_method[m] = {"rmse_gm": rmse_gm, "rmse_mu": rmse_mu, "rmse_h": rmse_h}
+        print(f"  {m:<10}  {rmse_gm:>12.1f}  {rmse_mu:>12.1f}  {rmse_h:>12.1f}")
 
     for ext in ("pdf", "png"):
         out = out_dir / f"derivative_comparison.{ext}"
@@ -363,23 +452,60 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> None:
         print(f"  Saved: {out}")
     plt.close(fig)
 
+    # Report accuracy for whichever method the simulation step will actually
+    # use, expressed as a percentage of the raw G_m / H range (matching the
+    # RMSE-in-J/mol values already printed above, just normalized for logging).
+    sim_method = cfg.get("simulation", {}).get("derivative_method", "fd")
+    if sim_method not in rmse_by_method:
+        sim_method = next(iter(rmse_by_method), None)
+    if sim_method is None:
+        return {}
+    gm_range = float(np.ptp(gm_raw)) or 1.0
+    h_range  = float(np.ptp(h_raw)) or 1.0
+    m_rmse = rmse_by_method[sim_method]
+    return {
+        "derivative_method":    sim_method,
+        "rmse_by_method":       rmse_by_method,
+        "gm_rel_err_pct":       round(100.0 * m_rmse["rmse_gm"] / gm_range, 4),
+        "hessian_rel_err_pct":  round(100.0 * m_rmse["rmse_h"]  / h_range,  4),
+    }
+
 
 # ── main entry point ──────────────────────────────────────────────────────────
 
 def run(cfg: dict) -> None:
+    _t0 = time.perf_counter()
+    results_dir = Path(cfg["output"]["results_dir"])
     T_label = f"{cfg['simulation']['temperature_C']}C"
-    out_dir = Path(cfg["output"]["results_dir"]) / T_label / "thermodynamics"
+    out_dir = results_dir / T_label / "thermodynamics"
     out_dir.mkdir(parents=True, exist_ok=True)
     print(f"  Output → {out_dir}")
+
+    pf_log = get_logger(cfg, step="validate", results_dir=out_dir)
 
     print("\n  [1/2] Thermodynamic properties plot ...")
     plot_thermo_properties(cfg, out_dir)
 
     print("\n  [2/2] Derivative method comparison ...")
-    plot_derivative_comparison(cfg, out_dir)
+    result = plot_derivative_comparison(cfg, out_dir)
+
+    _elapsed = time.perf_counter() - _t0
+    if pf_log.enabled:
+        record: dict = {"label": "validate", "elapsed_s": round(_elapsed, 2)}
+        # plot_derivative_comparison returns accuracy metrics when available
+        if isinstance(result, dict):
+            record.update(result)
+        pf_log.log_timing_record(record)
+        if isinstance(result, dict) and "gm_rel_err_pct" in result:
+            pf_log.info(
+                f"Surrogate accuracy  │  "
+                f"G_m: {result['gm_rel_err_pct']:.3f}%  "
+                f"Hessian: {result.get('hessian_rel_err_pct', 'n/a')}%"
+            )
+        pf_log.info(f"Validation complete  │  {_elapsed:.1f} s")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Step 5 — Validate thermodynamic tables")
     parser.add_argument("--config", default="configs/nb_v.yaml")
     parser.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
@@ -393,3 +519,7 @@ if __name__ == "__main__":
     print(summary(cfg))
     run(cfg)
     print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()

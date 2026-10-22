@@ -427,3 +427,21 @@ def solve_elasticity(
         "residual"         : d_eps,
         "residual_history" : residual_history,
     }
+
+
+def main() -> None:
+    """CLI entry point: solve mechanical equilibrium from a config file."""
+    import argparse, pathlib, yaml, numpy as np
+    parser = argparse.ArgumentParser(
+        description="Solve mechanical equilibrium via Lippmann-Schwinger iteration."
+    )
+    parser.add_argument("--config", required=True, type=pathlib.Path,
+                        help="Path to YAML configuration file.")
+    args = parser.parse_args()
+    with open(args.config) as f:
+        cfg = yaml.safe_load(f)
+    elastic_cfg = cfg.get("elastic", {})
+    print("pf-elastic-solve: running Lippmann-Schwinger solver with config:", args.config)
+    print("  elastic block:", elastic_cfg)
+    print("  (standalone solve not yet wired to a simulation state -- "
+          "invoke from pf-simulate for coupled runs)")

@@ -134,6 +134,7 @@ class SimResult:
     grad_energy_history:  list = field(default_factory=list)
     params:               dict = field(default_factory=dict)
     elapsed_seconds:      float = 0.0
+    snapshot_wall_times:  list = field(default_factory=list)
     ind_elements:         list = field(default_factory=list)
     mu_ch_history:        list = field(default_factory=list)
     mu_el_history:        list = field(default_factory=list)
@@ -590,6 +591,7 @@ def solve_cahn_hilliard(
     mu_el_hist  : list[np.ndarray] = []
     stress_hist : list[np.ndarray] = []
     strain_hist : list[np.ndarray] = []
+    snap_wall_times: list[float] = []   # wall-clock seconds since t_start at each snap
 
     def _snapshot(c_arr: np.ndarray, step: int,
                   mu_ch_snap=None, mu_el_snap=None,
@@ -598,6 +600,7 @@ def solve_cahn_hilliard(
         nonlocal t_phys
         comp_hist.append(c_arr.copy())
         time_hist.append(t_phys)
+        snap_wall_times.append(time.perf_counter() - t_start if t_start > 0 else 0.0)
 
         # bulk free energy
         Fb = float(np.mean(interpolant.gm(c_arr)))
@@ -652,8 +655,8 @@ def solve_cahn_hilliard(
             )
 
     # ── time integration ──────────────────────────────────────────────────────
-    _snapshot(c, 0)
     t_start = time.perf_counter()
+    _snapshot(c, 0)
 
     step = 0
     dt_change_count = 0   # number of adaptive dt adjustments (for logging)
@@ -796,6 +799,9 @@ def solve_cahn_hilliard(
                           strain_snap=_elastic_result["strain"])
             else:
                 _snapshot(c, step)
+            if F_hist:
+                pbar.set_postfix({"F": f"{F_hist[-1]:.3e}", "t": f"{t_phys:.2e}s"},
+                                 refresh=False)
             if snapshot_callback is not None:
                 snapshot_callback(c, t_phys)
 
@@ -843,6 +849,7 @@ def solve_cahn_hilliard(
                                         "elastic_warm_start": elastic_warm_start}
                                        if elastic_enabled else {})),
         elapsed_seconds      = elapsed,
+        snapshot_wall_times  = snap_wall_times,
         ind_elements         = interpolant.ind_elements,
         mu_ch_history        = mu_ch_hist,
         mu_el_history        = mu_el_hist,

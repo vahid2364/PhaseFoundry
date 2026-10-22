@@ -253,7 +253,7 @@ def run(cfg: dict) -> Path:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Step 1b — Lookup elastic constants from SQS/DFT CSV"
     )
@@ -278,3 +278,7 @@ if __name__ == "__main__":
     print("=" * 60)
 
     run(cfg)
+
+
+if __name__ == "__main__":
+    main()

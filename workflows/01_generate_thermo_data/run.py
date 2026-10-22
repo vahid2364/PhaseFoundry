@@ -23,7 +23,7 @@ Run standalone
 """
 
 from __future__ import annotations
-import argparse, sys, warnings
+import argparse, sys, time, warnings
 from pathlib import Path
 
 import pycalphad  # noqa: F401 — must be imported first
@@ -32,6 +32,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.logger import get_logger
 from phasefoundry.thermodynamics import generate_table
 
 
@@ -43,9 +44,15 @@ def _table_filename(cfg: dict, T_C: float) -> str:
 
 def run(cfg: dict) -> list[Path]:
     """Generate thermodynamic tables; skip existing. Returns list of paths."""
+    T_list = cfg["thermo"]["temperatures_C"]
+    T_label = f"{T_list[0]}C" if len(T_list) == 1 else "multi"
+    _log_dir = Path(cfg["output"]["results_dir"]) / T_label / "thermodynamics"
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    log = get_logger(cfg, step="generate", results_dir=_log_dir)
     data_dir = Path(cfg["output"]["data_dir"])
     data_dir.mkdir(parents=True, exist_ok=True)
 
+    _t0 = time.perf_counter()
     paths = []
     for T_C in cfg["thermo"]["temperatures_C"]:
         T_K = T_C + 273.15
@@ -66,13 +73,22 @@ def run(cfg: dict) -> list[Path]:
                     temperature        = T_K,
                     output_path        = str(out),
                     quantities         = ("GM", "MU", "dMU"),
+                    sampling           = cfg["thermo"].get("sampling", "sobol"),
+                    seed               = cfg["thermo"].get("seed", 42),
                 )
             print(f"  {T_C:>6.1f} °C  →  saved {out.name}")
         paths.append(out)
+    _elapsed = time.perf_counter() - _t0
+    if log.enabled:
+        log.log_timing_record({"label": "thermodynamic sampling",
+                               "n_tables": len(paths),
+                               "elapsed_s": round(_elapsed, 2)})
+        log.info(f"Thermodynamic sampling complete  │  {len(paths)} tables  │  "
+                 f"{_elapsed:.1f} s")
     return paths
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Step 1 — Generate thermodynamic tables (general)")
     parser.add_argument("--config", required=True,
@@ -93,3 +109,9 @@ if __name__ == "__main__":
 
     paths = run(cfg)
     print(f"\nDone. {len(paths)} tables in {cfg['output']['data_dir']}")
+    if n_el >= 3:
+        print("  → Run  pf-phase-map --config <config>  to generate the ternary phase map.")
+
+
+if __name__ == "__main__":
+    main()

@@ -21,7 +21,7 @@ Run standalone
 """
 
 from __future__ import annotations
-import argparse, sys
+import argparse, sys, time
 from pathlib import Path
 
 import h5py
@@ -32,7 +32,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
-from phasefoundry.phasefield import plot_free_energy_history
+from phasefoundry.logger import get_logger
+from phasefoundry.phasefield import plot_free_energy_history, plot_microstructure_from_npz
 
 
 def plot_d2G_vs_T(cfg: dict, thermo_dir: Path) -> None:
@@ -109,7 +110,39 @@ def plot_d2G_vs_T(cfg: dict, thermo_dir: Path) -> None:
     print(f"  Saved → {out}")
 
 
+def _plot_microstructure(cfg: dict, run_dir: Path) -> None:
+    """
+    Generate a STEM-style composition microstructure figure from fields.npz.
+    Works for binary, ternary, quaternary, and higher-order systems.
+    Skips silently when fields.npz does not exist.
+    """
+    npz = run_dir / "fields.npz"
+    if not npz.exists():
+        print(f"  No fields.npz in {run_dir} — skipping microstructure figure.")
+        return
+
+    elements  = cfg["system"]["elements"]           # e.g. ["NB", "HF", "V"]
+    ref_el    = cfg["system"]["reference_element"]  # e.g. "V"
+    display   = {el: el.title() for el in elements}
+
+    out = run_dir / "microstructure.pdf"
+    try:
+        plot_microstructure_from_npz(
+            npz_path=npz,
+            elements=elements,
+            ref_element=ref_el,
+            time_index=-1,
+            display_names=display,
+            show=False,
+            save_path=out,
+        )
+        print(f"  Microstructure figure → {out}")
+    except Exception as exc:
+        print(f"  Warning: microstructure figure failed ({exc})")
+
+
 def run(cfg: dict) -> None:
+    _t0 = time.perf_counter()
     T_label     = f"{cfg['simulation']['temperature_C']}C"
     results_dir = Path(cfg["output"]["results_dir"])
     run_dir     = results_dir / T_label / "kinetics" / cfg["output"]["run_name"]
@@ -117,6 +150,8 @@ def run(cfg: dict) -> None:
 
     if not run_dir.exists():
         raise FileNotFoundError(f"Run directory not found: {run_dir}\nRun step 3 first.")
+
+    pf_log = get_logger(cfg, step="postprocess", results_dir=run_dir)
 
     # Re-plot free energy history from log file
     log = run_dir / "free_energy_log.txt"
@@ -138,9 +173,14 @@ def run(cfg: dict) -> None:
         print(f"  No free_energy_log.txt found in {run_dir} — skipping.")
 
     plot_d2G_vs_T(cfg, thermo_dir)
+    _plot_microstructure(cfg, run_dir)
+    _elapsed = time.perf_counter() - _t0
+    if pf_log.enabled:
+        pf_log.log_timing_record({"label": "postprocess", "elapsed_s": round(_elapsed, 2)})
+        pf_log.info(f"Post-processing complete  │  {_elapsed:.1f} s")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Step 4 — Post-processing (general, any N-component system)"
     )
@@ -158,3 +198,7 @@ if __name__ == "__main__":
     print(summary(cfg))
     run(cfg)
     print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()

@@ -21,7 +21,7 @@ Run standalone
 """
 
 from __future__ import annotations
-import argparse, sys
+import argparse, sys, time
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +31,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT))
 
 from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.logger import get_logger
 from phasefoundry.thermodynamics.storage import load_table
 from phasefoundry.thermodynamics.interpolant import build_interpolant
 
@@ -72,6 +73,10 @@ def run(cfg: dict) -> None:
     results_dir = Path(cfg["output"]["results_dir"])
     results_dir.mkdir(parents=True, exist_ok=True)
 
+    T_label = f"{cfg['simulation']['temperature_C']}C"
+    _log_dir = results_dir / T_label / "thermodynamics"
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    log = get_logger(cfg, step="surrogate", results_dir=_log_dir)
     elements  = cfg["system"]["elements"]
     ref_el    = cfg["system"]["reference_element"]
     n_ind     = len(elements) - 1
@@ -80,6 +85,7 @@ def run(cfg: dict) -> None:
     paths = _glob_tables(cfg)
     print(f"  Found {len(paths)} temperature table(s).")
 
+    _t0 = time.perf_counter()
     # ── binary: use existing spline + phase diagram code ─────────────────────
     if n_ind == 1:
         _run_binary(cfg, paths, results_dir, ref_el, sim_T_C)
@@ -87,7 +93,12 @@ def run(cfg: dict) -> None:
         _run_multicomponent(cfg, paths, results_dir, elements, ref_el,
                             n_ind, sim_T_C)
 
+    _elapsed = time.perf_counter() - _t0
     print(f"  Outputs saved → {results_dir}")
+    if log.enabled:
+        log.log_timing_record({"label": "surrogate fit + spinodal",
+                               "elapsed_s": round(_elapsed, 2)})
+        log.info(f"Surrogate complete  │  {_elapsed:.1f} s")
 
 
 # ── binary path ───────────────────────────────────────────────────────────────
@@ -107,14 +118,15 @@ def _run_binary(cfg, paths, results_dir, ref_el, sim_T_C):
     fit = build_gm_spline_surrogate(paths, reference_element=ref_el)
 
     print("  Computing spinodal/binodal boundaries ...")
-    raw_sp = spinodal_boundary_binary(paths, independent_element=ind_el)
+    raw_sp = spinodal_boundary_binary(paths, independent_element=ind_el, reference_element=ref_el)
     sp = dict(raw_sp)
     sp["x_spinodal_low"]  = [1-h if h is not None else None
                               for h in raw_sp["x_spinodal_high"]]
     sp["x_spinodal_high"] = [1-l if l is not None else None
                               for l in raw_sp["x_spinodal_low"]]
 
-    raw_bn = binodal_boundary_binary(paths, independent_element=ind_el)
+    raw_bn = binodal_boundary_binary(paths, independent_element=ind_el,
+                                     spinodal_data=raw_sp)
     bn = dict(raw_bn)
     bn["x_binodal_low"]  = [1-h if h is not None else None
                              for h in raw_bn["x_binodal_high"]]
@@ -195,24 +207,65 @@ def _run_multicomponent(cfg, paths, results_dir, elements, ref_el,
 
 
 def _plot_gm_surface(data, interp, ind_elements, thermo_dir, T_label):
-    """Heatmap of G_m(c₁, c₂) for ternary systems."""
-    comps = data["compositions"]
-    GM    = data["GM"]
+    """Ternary heatmap of G_m(c₁, c₂) using python-ternary."""
+    import ternary
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+
+    comps           = data["compositions"]
+    GM              = data["GM"]
+    elements_stored = data["elements"]
 
     el0, el1 = ind_elements[0], ind_elements[1]
-    elements_stored = data["elements"]
+    # third corner = reference element (the one not in ind_elements)
+    ref_el = [e for e in elements_stored if e not in ind_elements][0]
+
     col0 = list(elements_stored).index(el0)
     col1 = list(elements_stored).index(el1)
+    col2 = list(elements_stored).index(ref_el)
 
     x0 = comps[:, col0]
     x1 = comps[:, col1]
+    x2 = comps[:, col2]
 
-    fig, ax = plt.subplots(figsize=(6, 5))
-    sc = ax.scatter(x0, x1, c=GM, cmap="viridis", s=10)
-    ax.set_xlabel(f"$x_{{\\rm {el0.capitalize()}}}$", fontsize=12)
-    ax.set_ylabel(f"$x_{{\\rm {el1.capitalize()}}}$", fontsize=12)
-    ax.set_title(f"$G_m$ landscape — {T_label} °C", fontsize=12)
-    plt.colorbar(sc, ax=ax, label="$G_m$ [J/mol]")
+    gm_min, gm_max = float(GM.min()), float(GM.max())
+    norm  = Normalize(vmin=gm_min, vmax=gm_max)
+    cmap  = plt.cm.viridis
+
+    # python-ternary expects points as (a, b, c) with a+b+c = scale
+    scale = 100
+    # Build dict {(a,b,c): color} for heatmap_scatter
+    point_colors = {}
+    for i in range(len(GM)):
+        a = round(x0[i] * scale)
+        b = round(x1[i] * scale)
+        c = round(x2[i] * scale)
+        point_colors[(a, b, c)] = cmap(norm(GM[i]))
+
+    fig, tax = ternary.figure(scale=scale)
+    fig.set_size_inches(6, 5)
+    tax.boundary(linewidth=1.2)
+    tax.gridlines(multiple=20, color="gray", linewidth=0.5, alpha=0.5)
+
+    # scatter with color mapped to G_m
+    pts  = np.array(list(point_colors.keys()))
+    cols = [point_colors[tuple(p)] for p in pts]
+    tax.scatter(pts, marker="o", s=12, c=cols, zorder=3)
+
+    tax.top_corner_label(  f"$x_{{\\rm {ref_el.capitalize()}}}$", fontsize=11)
+    tax.left_corner_label( f"$x_{{\\rm {el0.capitalize()}}}$",    fontsize=11)
+    tax.right_corner_label(f"$x_{{\\rm {el1.capitalize()}}}$",    fontsize=11)
+    tax.set_title(f"$G_m$ landscape — {T_label} °C", fontsize=12, pad=14)
+    tax.ticks(axis="lbr", linewidth=1, multiple=20, tick_formats="%d%%",
+              offset=0.022, fontsize=8)
+    tax.get_axes().axis("off")
+
+    # colorbar via a hidden ScalarMappable
+    sm = ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=tax.get_axes(), fraction=0.03, pad=0.04)
+    cbar.set_label("$G_m$  [J/mol]", fontsize=10)
+
     fig.tight_layout()
     fig.savefig(thermo_dir / "GM_surface.png", dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -269,7 +322,7 @@ def _plot_spinodal_map(interp, n_ind, ind_elements, thermo_dir, T_label):
     plt.close(fig)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Step 2 — Build G_m interpolant (general)")
     parser.add_argument("--config", required=True)
@@ -288,3 +341,7 @@ if __name__ == "__main__":
     print(summary(cfg))
     run(cfg)
     print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()

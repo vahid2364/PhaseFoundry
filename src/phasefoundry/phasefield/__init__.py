@@ -43,7 +43,7 @@ from .binary import solve_cahn_hilliard_binary, plot_result, CHResult, stable_dt
 from .free_energy import double_well_df_dc, double_well_f, calphad_df_dc, calphad_f
 from .spectral import laplacian_operator, wavenumbers
 from .solver import solve_cahn_hilliard, SimResult
-from .visualize import save_slices_2d, save_pyvista_3d
+from .visualize import save_slices_2d, save_pyvista_3d, plot_microstructure_composition, plot_microstructure_from_npz
 
 __all__ = [
     # general solver
@@ -52,6 +52,8 @@ __all__ = [
     # visualization
     "save_slices_2d",
     "save_pyvista_3d",
+    "plot_microstructure_composition",
+    "plot_microstructure_from_npz",
     # binary (legacy, kept for backward compatibility)
     "solve_cahn_hilliard_binary",
     "plot_result",

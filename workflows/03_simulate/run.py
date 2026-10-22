@@ -48,6 +48,7 @@ sys.path.insert(0, str(_ROOT))
 import yaml
 
 from phasefoundry.config import load_config, apply_overrides, resolve_paths, summary
+from phasefoundry.logger import get_logger
 from phasefoundry.thermodynamics.storage import load_table
 from phasefoundry.thermodynamics.interpolant import build_interpolant
 from phasefoundry.phasefield.solver import solve_cahn_hilliard, SimResult
@@ -84,6 +85,30 @@ def run(cfg: dict) -> SimResult:
     ref_el      = cfg["system"]["reference_element"]
     n_ind       = len(elements) - 1
 
+    # ── output directories — derivable from config alone ─────────────────────
+    T_folder   = f"{sim['temperature_C']}C"
+    output_dir = results_dir / T_folder / "kinetics" / cfg["output"]["run_name"]
+    thermo_dir = results_dir / T_folder / "thermodynamics"
+    thermo_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── logger — init first so every subsequent line is captured ─────────────
+    log = get_logger(cfg, step="simulate", results_dir=output_dir)
+    if log.enabled:
+        fp = log.fingerprint(cfg, tdb_path=cfg["system"].get("db_path"))
+        log.banner(
+            f"pf-simulate  ·  {cfg['system']['name'].upper()}  ·  {T_folder}",
+            config_path=str(cfg.get("_config_path", "")),
+            fingerprint=fp,
+        )
+        ndim_preview = int(sim.get("dimensions", 2))
+        grid_preview = "×".join([str(sim["N"])] * ndim_preview)
+        log.info(f"System   : {cfg['system']['name']}  "
+                 f"({len(elements)} components, {n_ind} field(s))")
+        log.info(f"Grid     : {grid_preview}  ×  Lx={sim['Lx']:.2e} m  "
+                 f"·  {sim['n_steps']:,} steps")
+        log.info(f"Output   : {output_dir}")
+
     paths = _glob_tables(cfg)
 
     # match requested temperature
@@ -94,29 +119,31 @@ def run(cfg: dict) -> SimResult:
     T_K = min(all_T, key=lambda t: abs(t - T_target))
     print(f"  Temperature: {sim['temperature_C']} °C  →  matched "
           f"{T_K - 273.15:.1f} °C in data")
+    log.info(f"Temperature: {sim['temperature_C']} °C  →  matched "
+             f"{T_K - 273.15:.1f} °C in data")
 
-    # build interpolant
-    deriv_method = sim.get("derivative_method", "fd")
-    print(f"  Derivative method: {deriv_method!r}")
-    interp = build_interpolant(
-        paths,
-        elements          = elements,
-        reference_element = ref_el,
-        temperature_K     = T_K,
-        derivative_method = deriv_method,
-    )
-
-    # output directories
-    T_folder   = f"{sim['temperature_C']}C"
-    output_dir = results_dir / T_folder / "kinetics" / cfg["output"]["run_name"]
-    thermo_dir = results_dir / T_folder / "thermodynamics"
-    thermo_dir.mkdir(parents=True, exist_ok=True)
     ndim        = int(sim.get("dimensions", 2))
     use_gpu     = bool(sim.get("use_gpu", False))
     adaptive_dt = bool(sim.get("adaptive_dt", False))
     grid_str    = "×".join([str(sim["N"])] * ndim)
     print(f"  Dimensions: {ndim}D  ({grid_str} grid)")
     print(f"  GPU FFT: {use_gpu}  |  Adaptive dt: {adaptive_dt}")
+
+    # build interpolant
+    deriv_method       = sim.get("derivative_method", "fd")
+    surrogate_backend  = cfg.get("thermo", {}).get("surrogate_backend", "auto")
+    rgi_n_grid         = cfg.get("thermo", {}).get("rgi_n_grid", 20)
+    print(f"  Derivative method: {deriv_method!r}  |  Surrogate backend: {surrogate_backend!r}")
+    with log.timing("surrogate load"):
+        interp = build_interpolant(
+            paths,
+            elements           = elements,
+            reference_element  = ref_el,
+            temperature_K      = T_K,
+            derivative_method  = deriv_method,
+            surrogate_backend  = surrogate_backend,
+            rgi_n_grid         = rgi_n_grid,
+        )
     print(f"  Output → {output_dir}")
 
     # handle dt
@@ -251,7 +278,7 @@ def run(cfg: dict) -> SimResult:
         elements = np.array([e for e in elements if e != ref_el]),
     )
 
-    with warnings.catch_warnings():
+    with log.timing("simulation"), warnings.catch_warnings():
         warnings.simplefilter("ignore")
         result = solve_cahn_hilliard(
             interpolant     = interp,
@@ -276,6 +303,15 @@ def run(cfg: dict) -> SimResult:
         )
 
     print(f"  Elapsed: {result.elapsed_seconds:.1f} s")
+    if log.enabled:
+        log.log_timing_record({
+            "label":        "simulation",
+            "elapsed_s":    round(result.elapsed_seconds, 2),
+            "n_steps":      sim["n_steps"],
+            "grid":         "×".join([str(sim["N"])] * int(sim.get("dimensions", 2))),
+            "elastic":      sim.get("elastic", {}).get("enabled", False),
+            "steps_per_s":  round(sim["n_steps"] / max(result.elapsed_seconds, 1e-3), 1),
+        })
 
     # ── post-simulation visualization ─────────────────────────────────────────
     ind_elements = [e for e in elements if e != ref_el]
@@ -317,6 +353,18 @@ def run(cfg: dict) -> SimResult:
     size_mb = npz_path.stat().st_size / 1e6
     print(f"  Raw fields saved → fields.npz  ({size_mb:.1f} MB, "
           f"{len(result.time_history)} snapshots)")
+
+    # ── post-run diagnostics ──────────────────────────────────────────────────
+    if log.enabled:
+        log.section("Post-run diagnostics")
+        log.check_monotonicity(result.free_energy_history)
+        log.memory()
+        if hasattr(result, "snapshot_wall_times") and result.snapshot_wall_times:
+            log.step_rate_histogram(
+                result.snapshot_wall_times,
+                result.elapsed_seconds,
+                output_dir=output_dir,
+            )
 
     # ── save elastic field snapshots (optional) ───────────────────────────────
     if el_cfg.get("enabled", False) and el_cfg.get("save_fields", False):
@@ -368,7 +416,7 @@ def run(cfg: dict) -> SimResult:
     return result
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Step 3 — Phase-field simulation (general)")
     parser.add_argument("--config", required=True,
@@ -394,3 +442,7 @@ if __name__ == "__main__":
     for i, el in enumerate(result.ind_elements):
         ci = result.compositions[i]
         print(f"  x_{el:<4}: [{ci.min():.4f}, {ci.max():.4f}]")
+
+
+if __name__ == "__main__":
+    main()
