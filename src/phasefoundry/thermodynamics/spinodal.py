@@ -14,6 +14,7 @@ negative eigenvalue means the composition is inside the spinodal.
 This module provides:
     spinodal_boundary_binary()       — binary: find zero-crossings of d²G/dx²
     spinodal_boundary_multi()        — multicomponent: eigenvalue analysis
+    binodal_boundary_binary()        — lower convex hull of G_m (common tangent)
     compute_ternary_phase_regions()  — lower convex hull → 1/2/3-phase labels
     plot_spinodal()                  — composition-temperature phase diagram
 """
@@ -25,8 +26,9 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.interpolate import interp1d
+from scipy.interpolate import CubicSpline, interp1d
 from scipy.optimize import fsolve
+from scipy.spatial import ConvexHull
 
 from .storage import load_table
 
@@ -37,33 +39,61 @@ def binodal_boundary_binary(
     table_paths: list[str | Path],
     independent_element: str,
     temperatures_celsius: list[float] | None = None,
+    method: str = "hull",
+    min_separation: float = 0.05,
+    df_tol_frac: float = 1e-4,
+    n_fine: int = 2000,
     residual_tol: float = 500.0,
-    min_separation: float = 0.15,
+    spinodal_data: dict | None = None,
 ) -> dict:
     """
     Compute binodal (equilibrium / solvus) boundaries for a binary system.
 
-    Uses the equal chemical potential condition — two phases α and β are in
-    equilibrium when:
+    Two interchangeable methods are available via ``method``:
 
-        μ_A(x_α) = μ_A(x_β)   and   μ_B(x_α) = μ_B(x_β)
+    ``"hull"`` (default) — the **lower convex hull of G_m(x)**, geometrically
+        equivalent to the common tangent construction.  For any composition
+        inside the two-phase region, the convex envelope lies below the G_m
+        curve; the compositions where the envelope re-joins the G_m curve are
+        the binodal endpoints.  Requires only 'GM' data.  No initial guess
+        needed — a global, deterministic geometric construction, so it cannot
+        converge to a spurious root or get stuck depending on a starting guess.
 
-    Solved numerically via ``scipy.optimize.fsolve`` with cubic-spline
-    interpolants of the pycalphad chemical potential data.  Multiple initial
-    guesses bracket the solution from both sides of the two-phase region.
+    ``"fsolve"`` (legacy) — solves the equal-chemical-potential condition
+        (μ_A(x_α) = μ_A(x_β), μ_B(x_α) = μ_B(x_β)) via ``scipy.optimize.fsolve``,
+        tried against several hardcoded initial guess pairs until one converges.
+        Requires 'MU' data.  Kept for cross-checking against the hull method and
+        for tables that only have 'MU' (not 'GM').
 
     Parameters
     ----------
     table_paths : list of str or Path
         HDF5 tables (one per temperature) produced by generate_table().
-        Must contain 'MU' datasets.
+        Must contain 'GM' (method="hull") or 'MU' (method="fsolve") datasets.
     independent_element : str
-        e.g. 'NB'.  The complementary element is inferred from 'MU' keys.
+        e.g. 'NB'.
     temperatures_celsius : list of float, optional
-    residual_tol : float
-        Maximum allowed |residual| in J/mol for a solution to be accepted.
+    method : {"hull", "fsolve"}
+        Which algorithm to use.  Default "hull" (more robust).
     min_separation : float
-        Minimum composition gap between the two equilibrium phases.
+        Minimum composition gap accepted as a real two-phase region (not noise).
+        Used by both methods.
+    df_tol_frac : float
+        ``method="hull"`` only.  Fraction of the G_m range used as the
+        single-phase threshold — points with driving force < df_tol_frac * ΔG_m
+        are on the hull (single phase).  Default 1e-4.
+    n_fine : int
+        ``method="hull"`` only.  Number of points in the fine composition grid
+        used for hull evaluation.
+    residual_tol : float
+        ``method="fsolve"`` only.  Maximum allowed |residual| in J/mol for a
+        solution to be accepted.
+    spinodal_data : dict, optional
+        Near T_c the two-phase gap can vanish and either method may miss it.
+        Physical constraint: binodal ⊇ spinodal always (they coincide at T_c).
+        If supplied, any temperature where the binodal search found nothing
+        but a spinodal boundary exists falls back to the spinodal boundaries.
+        Applies to both methods.
 
     Returns
     -------
@@ -72,6 +102,146 @@ def binodal_boundary_binary(
         'x_binodal_low'          list[float | None]
         'x_binodal_high'         list[float | None]
     """
+    if method == "hull":
+        temps, x_lo, x_hi = _binodal_via_hull(
+            table_paths, independent_element, temperatures_celsius,
+            min_separation, df_tol_frac, n_fine,
+        )
+    elif method == "fsolve":
+        temps, x_lo, x_hi = _binodal_via_fsolve(
+            table_paths, independent_element, temperatures_celsius,
+            residual_tol, min_separation,
+        )
+    else:
+        raise ValueError(f"Unknown method '{method}'. Choose 'hull' or 'fsolve'.")
+
+    # Near T_c the driving force vanishes and either method may miss the gap.
+    # Physical constraint: binodal ⊇ spinodal always.  If spinodal_data is
+    # supplied and binodal is None at a temperature where spinodal exists, use
+    # the spinodal boundaries as the binodal (they coincide at T_c).
+    if spinodal_data is not None:
+        sp_map = {
+            float(T): (slo, shi)
+            for T, slo, shi in zip(
+                spinodal_data["temperatures_celsius"],
+                spinodal_data["x_spinodal_low"],
+                spinodal_data["x_spinodal_high"],
+            )
+            if slo is not None and shi is not None
+        }
+        for k, T in enumerate(temps):
+            if x_lo[k] is None and float(T) in sp_map:
+                x_lo[k], x_hi[k] = sp_map[float(T)]
+
+    return {
+        "temperatures_celsius": temps,
+        "x_binodal_low":        x_lo,
+        "x_binodal_high":       x_hi,
+    }
+
+
+def _binodal_via_hull(
+    table_paths: list[str | Path],
+    independent_element: str,
+    temperatures_celsius: list[float] | None,
+    min_separation: float,
+    df_tol_frac: float,
+    n_fine: int,
+) -> tuple[list[float], list[float | None], list[float | None]]:
+    """Lower convex hull of G_m(x) — see binodal_boundary_binary(method="hull")."""
+    temps, x_lo, x_hi = [], [], []
+
+    for i, path in enumerate(table_paths):
+        data = load_table(path)
+        elements = data["elements"]
+
+        if "GM" not in data:
+            raise KeyError(
+                f"GM not found in {path}. "
+                "Re-generate with quantities=(..., 'GM')."
+            )
+
+        T_C = (
+            temperatures_celsius[i]
+            if temperatures_celsius is not None
+            else data["metadata"].get("temperature", 273.15) - 273.15
+        )
+        temps.append(T_C)
+
+        col = elements.index(independent_element)
+        x   = data["compositions"][:, col]
+        gm  = data["GM"]
+
+        order = np.argsort(x)
+        x, gm = x[order], gm[order]
+
+        # Dense spline and fine grid for smooth hull
+        spl    = CubicSpline(x, gm)
+        x_fine = np.linspace(float(x[0]), float(x[-1]), n_fine)
+        gm_fine = spl(x_fine)
+
+        # Lower convex hull of the 2-D point set (x, G_m)
+        pts = np.column_stack([x_fine, gm_fine])
+        try:
+            hull = ConvexHull(pts)
+        except Exception:
+            x_lo.append(None)
+            x_hi.append(None)
+            continue
+
+        # Reconstruct convex envelope G_m at each x_fine point.
+        # Lower-hull facets have an outward normal with negative y-component.
+        lower_eqs = hull.equations[hull.equations[:, 1] < 0]
+        gm_hull = np.full(n_fine, -np.inf)
+        for eq in lower_eqs:
+            a, b, c = eq          # a*x + b*gm + c = 0  →  gm = -(a*x + c)/b
+            gm_hull = np.maximum(gm_hull, -(a * x_fine + c) / b)
+
+        # Driving force: positive inside two-phase region
+        gm_range = float(np.nanmax(gm_fine) - np.nanmin(gm_fine))
+        tol      = max(0.01, df_tol_frac * gm_range)  # at least 0.01 J/mol
+        df       = gm_fine - gm_hull
+        in_two   = df > tol
+
+        if not in_two.any():
+            x_lo.append(None)
+            x_hi.append(None)
+            continue
+
+        # Binodal = transition points where df crosses the threshold
+        trans = np.where(np.diff(in_two.astype(int)) != 0)[0]
+        if len(trans) < 2:
+            x_lo.append(None)
+            x_hi.append(None)
+            continue
+
+        # Refine each transition by linear interpolation on df
+        def _refine(idx):
+            df0, df1 = df[idx] - tol, df[idx + 1] - tol
+            return float(x_fine[idx] - df0 * (x_fine[idx + 1] - x_fine[idx]) / (df1 - df0))
+
+        x_blo = _refine(trans[0])
+        x_bhi = _refine(trans[-1])
+
+        if x_bhi - x_blo >= min_separation:
+            x_lo.append(x_blo)
+            x_hi.append(x_bhi)
+        else:
+            x_lo.append(None)
+            x_hi.append(None)
+
+    return temps, x_lo, x_hi
+
+
+def _binodal_via_fsolve(
+    table_paths: list[str | Path],
+    independent_element: str,
+    temperatures_celsius: list[float] | None,
+    residual_tol: float,
+    min_separation: float,
+) -> tuple[list[float], list[float | None], list[float | None]]:
+    """Equal chemical potential condition via multi-start fsolve — legacy method,
+    see binodal_boundary_binary(method="fsolve")."""
     # Initial guesses: pairs (x_lo, x_hi) spanning the two-phase region
     _INIT_GUESSES = [
         (0.05, 0.95), (0.10, 0.90), (0.15, 0.85),
@@ -141,11 +311,7 @@ def binodal_boundary_binary(
         x_lo.append(found_lo)
         x_hi.append(found_hi)
 
-    return {
-        "temperatures_celsius": temps,
-        "x_binodal_low":        x_lo,
-        "x_binodal_high":       x_hi,
-    }
+    return temps, x_lo, x_hi
 
 
 # ── binary ────────────────────────────────────────────────────────────────────
@@ -1096,7 +1262,6 @@ def plot_phase_diagram(
 
     ax.set_xlabel(f"$x_{{\\rm {x_element.title()}}}$  (mol fraction)", fontsize=12)
     ax.set_ylabel("Temperature  (°C)", fontsize=12)
-    ax.set_title(f"Phase diagram — {system_name}", fontsize=13)
     ax.set_xlim(0, 1)
     all_temps = list(temps_b) + list(temps_s)
     if all_temps:

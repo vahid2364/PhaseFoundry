@@ -53,7 +53,7 @@ def generate_table(
     output_path: str = "thermodynamic_table.h5",
     n_workers: int = 1,
     quantities: tuple[str, ...] = ("GM", "MU", "dMU"),
-    sampling: str = "grid",
+    sampling: str = "sobol",
     seed: int = 42,
 ) -> dict:
     """

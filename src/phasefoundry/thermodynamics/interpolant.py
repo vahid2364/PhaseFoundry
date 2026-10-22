@@ -65,6 +65,8 @@ def build_interpolant(
     temperature_K: float,
     fd_eps: float = 1e-4,
     derivative_method: DerivativeMethod = "fd",
+    surrogate_backend: str = "auto",
+    rgi_n_grid: int = 20,
 ) -> "GmInterpolant":
     """
     Build a G_m interpolant from HDF5 thermodynamic tables.
@@ -81,6 +83,16 @@ def build_interpolant(
                         ``"hybrid"`` (for the Hessian).
     derivative_method : one of ``"fd"``, ``"jansson"``, ``"hybrid"``.
                         See module docstring for details.
+    surrogate_backend : interpolant backend to use for N_ind >= 2.
+                        ``"auto"`` (default) selects CT2D for ternary and
+                        RBF→RGI for quaternary+.
+                        ``"rbf_rgi"`` forces the two-stage RBF→RGI path for
+                        all multicomponent cases.
+                        ``"rbf_pure"`` queries the RBFInterpolator directly at
+                        every simulation step (no grid precomputation); slower
+                        at runtime but useful as a throughput baseline.
+    rgi_n_grid        : points per axis for the RBF→RGI dense evaluation grid
+                        (only used when ``surrogate_backend="rbf_rgi"``). Default 20.
 
     Returns
     -------
@@ -111,6 +123,12 @@ def build_interpolant(
     # ── build G_m interpolant (always needed) ─────────────────────────────────
     if N_ind == 1:
         gm_interp = _build_1d(comps, GM, col_idx[0])
+    elif surrogate_backend == "rbf_rgi":
+        pts = comps[:, col_idx]
+        gm_interp = _build_rbf(pts, GM, n_grid=rgi_n_grid)
+    elif surrogate_backend == "rbf_pure":
+        pts = comps[:, col_idx]
+        gm_interp = _build_rbf_pure(pts, GM)
     else:
         gm_interp = _build_nd(comps, GM, col_idx, N_ind)
 
@@ -133,13 +151,13 @@ def build_interpolant(
     if derivative_method in ("jansson", "hybrid"):
         mu_interps = _build_mu_interps(
             data, comps, ind_elements, reference_element, col_idx, N_ind,
-            el_list,
+            el_list, surrogate_backend=surrogate_backend, rgi_n_grid=rgi_n_grid,
         )
 
     if derivative_method == "jansson":
         dmu_interps = _build_dmu_interps(
             data, comps, ind_elements, reference_element, col_idx, N_ind,
-            el_list,
+            el_list, surrogate_backend=surrogate_backend, rgi_n_grid=rgi_n_grid,
         )
 
     return GmInterpolant(
@@ -167,6 +185,8 @@ def _build_mu_interps(
     col_idx:           list[int],
     N_ind:             int,
     el_list:           list[str],
+    surrogate_backend: str = "auto",
+    rgi_n_grid:        int = 20,
 ) -> list:
     """
     Build one interpolant per independent element for the relative chemical
@@ -188,7 +208,8 @@ def _build_mu_interps(
     print(f"  Building Jansson μ interpolants for {ind_elements} …", flush=True)
     for ind_el in ind_elements:
         y = data["MU"][ind_el] - mu_ref
-        interp = _build_scalar_interp(comps, y, col_idx, N_ind, label=f"μ_{ind_el}")
+        interp = _build_scalar_interp(comps, y, col_idx, N_ind, label=f"μ_{ind_el}",
+                                      surrogate_backend=surrogate_backend, rgi_n_grid=rgi_n_grid)
         interps.append(interp)
 
     return interps
@@ -202,6 +223,8 @@ def _build_dmu_interps(
     col_idx:           list[int],
     N_ind:             int,
     el_list:           list[str],
+    surrogate_backend: str = "auto",
+    rgi_n_grid:        int = 20,
 ) -> dict:
     """
     Build one interpolant per (i, j) Hessian element for:
@@ -242,18 +265,21 @@ def _build_dmu_interps(
             y = dmu_data[key_ij] - dmu_data[key_rj]
             label = f"∂μ_{el_i}/∂x_{el_j}"
             interps[(i, j)] = _build_scalar_interp(
-                comps, y, col_idx, N_ind, label=label
+                comps, y, col_idx, N_ind, label=label,
+                surrogate_backend=surrogate_backend, rgi_n_grid=rgi_n_grid,
             )
 
     return interps
 
 
 def _build_scalar_interp(
-    comps:   np.ndarray,
-    y:       np.ndarray,
-    col_idx: list[int],
-    N_ind:   int,
-    label:   str = "",
+    comps:             np.ndarray,
+    y:                 np.ndarray,
+    col_idx:           list[int],
+    N_ind:             int,
+    label:             str = "",
+    surrogate_backend: str = "auto",
+    rgi_n_grid:        int = 20,
 ):
     """
     Build a smooth interpolant for an arbitrary scalar field y(composition).
@@ -265,7 +291,11 @@ def _build_scalar_interp(
         return _build_1d(comps, y, col_idx[0])
     else:
         pts = comps[:, col_idx]
-        if N_ind == 2:
+        if surrogate_backend == "rbf_rgi":
+            return _build_rbf(pts, y, n_grid=rgi_n_grid, label=label)
+        elif surrogate_backend == "rbf_pure":
+            return _build_rbf_pure(pts, y, label=label)
+        elif N_ind == 2:
             return _build_ct2d(pts, y)
         else:
             return _build_rbf(pts, y, label=label)
@@ -293,8 +323,10 @@ def _build_nd(
 
     N_ind == 2 (ternary)  → CloughTocher2DInterpolator (C1 smooth, exact at
                             data points, natural on scattered simplex data).
-    N_ind ≥ 3 (quaternary+) → RBFInterpolator with thin-plate-spline kernel
-                            (smooth, works on any scattered N-D data, no grid).
+    N_ind ≥ 3 (quaternary+) → RBF→RGI two-stage: thin-plate-spline RBF fit
+                            to scattered data, then resampled onto a regular
+                            n_grid^N_ind grid for fast RegularGridInterpolator
+                            queries at simulation time.
     """
     pts = comps[:, col_idx]          # (n_valid, N_ind)
 
@@ -331,6 +363,41 @@ class _CT2DWithFallback:
 
 def _build_ct2d(pts: np.ndarray, GM: np.ndarray) -> _CT2DWithFallback:
     return _CT2DWithFallback(pts, GM)
+
+
+def _build_rbf_pure(pts: np.ndarray, GM: np.ndarray, label: str = "G_m"):
+    """
+    Direct RBFInterpolator surrogate — no grid precomputation.
+
+    Queries the thin-plate-spline RBF at every call.  O(N_basis) per
+    evaluation point, making simulation throughput proportional to the
+    number of training points.  Useful as a throughput baseline vs the
+    two-stage RBF→RGI backend.
+    """
+    print(f"    Building pure RBF (TPS) for {label!r} from {len(pts)} points …",
+          flush=True)
+    y_scale = float(np.abs(GM).mean()) or 1.0
+
+    class _ScaledRBF:
+        def __init__(self, rbf, scale):
+            self._rbf   = rbf
+            self._scale = scale
+            self._grid_bounds = [
+                (float(pts[:, i].min()), float(pts[:, i].max()))
+                for i in range(pts.shape[1])
+            ]
+
+        def __call__(self, query_pts: np.ndarray) -> np.ndarray:
+            return self._rbf(query_pts) * self._scale
+
+    rbf = RBFInterpolator(
+        pts,
+        GM / y_scale,
+        kernel    = "thin_plate_spline",
+        smoothing = 1e-3,
+        degree    = 1,
+    )
+    return _ScaledRBF(rbf, y_scale)
 
 
 def _build_rbf(pts: np.ndarray, GM: np.ndarray, n_grid: int = 20,
@@ -472,6 +539,27 @@ class GmInterpolant:
 
     # ── helpers ───────────────────────────────────────────────────────────────
 
+    def _clip_to_bounds(self, c_flat: np.ndarray) -> np.ndarray:
+        """
+        Clip composition inputs to the surrogate's grid bounds before
+        evaluation, preventing extrapolation outside the training simplex.
+
+        For N_ind == 1 the returned array is the same shape; for N_ind > 1
+        each column i is clipped to [grid_bounds[i][0], grid_bounds[i][1]].
+        The simplex sum constraint (Σcᵢ ≤ 1) is not re-imposed here — the
+        grid fill already handles out-of-simplex corners via NearestND.
+        """
+        if self.grid_bounds is None:
+            return c_flat
+        c = c_flat.copy()
+        if self.N_ind == 1:
+            lo, hi = self.grid_bounds[0]
+            c[:, 0] = np.clip(c[:, 0], lo, hi)
+        else:
+            for i, (lo, hi) in enumerate(self.grid_bounds):
+                c[:, i] = np.clip(c[:, i], lo, hi)
+        return c
+
     def _eval_flat(self, c_flat: np.ndarray) -> np.ndarray:
         """
         Evaluate G_m at composition points.
@@ -484,6 +572,7 @@ class GmInterpolant:
         -------
         gm_flat : shape (N_pts,)
         """
+        c_flat = self._clip_to_bounds(c_flat)
         if self.N_ind == 1:
             return self._interp(c_flat[:, 0])
         else:
@@ -503,6 +592,7 @@ class GmInterpolant:
         -------
         shape (N_pts,)
         """
+        c_flat = self._clip_to_bounds(c_flat)
         if self.N_ind == 1:
             return interp(c_flat[:, 0])
         else:

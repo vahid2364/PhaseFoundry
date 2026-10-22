@@ -570,6 +570,13 @@ def plot_ternary_spinodal(
                     color="k", zorder=10)
 
     # ── corner labels ─────────────────────────────────────────────────────
+    # Font sizes tuned for publication figures (readable at reduced scale
+    # when placed as a sub-panel).
+    CORNER_LABEL_FONTSIZE = 17
+    TITLE_FONTSIZE        = 13
+    TICK_FONTSIZE         = 11
+    LEGEND_FONTSIZE       = 9
+
     if corner_labels is None:
         # right = el0, top = el1, left = ref
         corner_labels = [
@@ -577,15 +584,15 @@ def plot_ternary_spinodal(
             independent_elements[1].title(),
             ref_el.title(),
         ]
-    tax.right_corner_label(corner_labels[0], fontsize=9, offset=0.12)
-    tax.top_corner_label(corner_labels[1],   fontsize=9, offset=0.20)
-    tax.left_corner_label(corner_labels[2],  fontsize=9, offset=0.18)
+    tax.right_corner_label(corner_labels[0], fontsize=CORNER_LABEL_FONTSIZE, offset=0.12)
+    tax.top_corner_label(corner_labels[1],   fontsize=CORNER_LABEL_FONTSIZE, offset=0.20)
+    tax.left_corner_label(corner_labels[2],  fontsize=CORNER_LABEL_FONTSIZE, offset=0.18)
 
     tax.set_title(
-        f"Ternary phase map — {T_C:.0f} °C", fontsize=9, pad=30
+        f"Ternary phase map — {T_C:.0f} °C", fontsize=TITLE_FONTSIZE, pad=30
     )
     tax.ticks(axis="lbr", linewidth=0.6, multiple=0.2,
-              tick_formats="%.1f", fontsize=6, offset=0.025)
+              tick_formats="%.1f", fontsize=TICK_FONTSIZE, offset=0.025)
     tax.clear_matplotlib_ticks()
     ax.axis("off")
 
@@ -594,8 +601,6 @@ def plot_ternary_spinodal(
         Patch(facecolor=COLORS["single"][0],   alpha=COLORS["single"][1],   label="single-phase"),
         Patch(facecolor=COLORS["two"][0],       alpha=COLORS["two"][1],      label="two-phase"),
         Patch(facecolor=COLORS["three"][0],     alpha=COLORS["three"][1],    label="three-phase"),
-        # Line2D([0], [0], color="k", linewidth=1.4, linestyle="-",
-        #        label="binodal boundary"),  # temporarily disabled
         Line2D([0], [0], color="k", linewidth=1.4, linestyle="--",
                label="spinodal boundary"),
     ]
@@ -604,7 +609,7 @@ def plot_ternary_spinodal(
             Line2D([0], [0], marker="*", color="k", markersize=6,
                    ls="none", label="simulated composition")
         )
-    ax.legend(handles=handles, fontsize=6.5, frameon=True,
+    ax.legend(handles=handles, fontsize=LEGEND_FONTSIZE, frameon=True,
               loc="upper center", ncol=2, handletextpad=0.3,
               borderpad=0.4, columnspacing=0.7,
               bbox_to_anchor=(0.5, 0.02))
@@ -687,9 +692,11 @@ def plot_as_umap(
     region[is_spinodal] = "spinodal"
 
     # ── full simplex background for AS embedding ──────────────────────────
-    # scale=15 gives 816 background pts for quaternary — dense enough for a
-    # clear hypocycloid boundary without being slow.
-    scale       = umap_scale or max(10, 60 // n_el)
+    # Minimum lattice scale of 22 (vs. the lower bound used for n_el<=2)
+    # keeps the hypocycloid boundary dense enough to read clearly even for
+    # quaternary+ systems, where 60 // n_el alone would be too coarse.
+    MIN_SIMPLEX_SCALE = 22
+    scale       = umap_scale or max(MIN_SIMPLEX_SCALE, 60 // n_el)
     simplex_pts = _full_simplex_lattice(n_el, scale)
     n_simplex   = len(simplex_pts)
     n_data      = len(comps)
@@ -771,11 +778,14 @@ def plot_as_umap(
                    c="gold", edgecolors="k", linewidths=0.8,
                    zorder=5, label="Simulated composition")
 
+    CORNER_ANNOTATION_FONTSIZE = 13
+
     lab_els = corner_labels if corner_labels is not None else elements
     for el, lab in zip(elements, lab_els):
         ex, ey = pure_embs[el]
         ax.annotate(
-            lab, (ex, ey), fontsize=9, fontweight="bold", ha="center",
+            lab, (ex, ey), fontsize=CORNER_ANNOTATION_FONTSIZE,
+            fontweight="bold", ha="center",
             bbox=dict(boxstyle="round,pad=0.25", fc="white",
                       ec="0.7", alpha=0.85, lw=0.6),
         )
@@ -895,8 +905,8 @@ def _fit_dim_reduction(pts: np.ndarray) -> tuple[str, np.ndarray]:
         large datasets.
     ─────────────────────────────────────────────────────────────────────────
     """
-    UMAP_N_NEIGHBORS  = 30
-    UMAP_MIN_DIST     = 0.6
+    UMAP_N_NEIGHBORS  = 25
+    UMAP_MIN_DIST     = 0.4
     UMAP_RANDOM_STATE = 42
     TSNE_MAX_ITER     = 1000
 
