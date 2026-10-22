@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-V Ternary — RBF→RGI benchmark, 40×40 grid (accuracy test)
+# Same as nb_hf_v_rginterp_benchmark.yaml but rgi_n_grid=40 (4× more grid
+# points vs the 20×20 run).  Purpose: quantify accuracy gain vs cost.
+#
+# pf-simulate --config configs/nb_hf_v_rginterp_40grid.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+    HF: [0.001, 0.999]
+  n_points:          20
+  temperatures_C:    [500]
+  surrogate_backend: rbf_rgi             # "auto" | "rbf_rgi"  — forces RBF→RGI (bypasses CT2D)
+  rgi_n_grid:        40                  # 40×40 = 1600 grid points; matches CT2D accuracy at ~614 steps/s
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 7.0e-12]
+
+  M:
+    - [5.0e-21, 0.0    ]
+    - [0.0,     5.0e-23]
+
+  c0:            [0.50, 0.10]
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.5
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:            20000
+  save_every:         5000
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  results_dir: results/paper_benchmark/NbHfV_rgi_40
+  run_name:    auto
+
+logging:
+  enabled:           true
+  level:             info
+  log_file:          auto
+  timings_file:      auto
+  progress_interval: 1000
+  track_memory:      true
+  fingerprint:       true
+  pipeline_summary:  true

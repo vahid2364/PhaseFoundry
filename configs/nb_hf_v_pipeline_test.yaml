@@ -35,6 +35,13 @@ thermo:
   temperatures_C:  [500]
   phase_map_style: ternary             # ternary | umap | both
 
+  # Surrogate backend — see configs/nb_hf_v.yaml for benchmark numbers.
+  # "auto" uses CT2D for ternary (~644 steps/s); "rbf_rgi" with rgi_n_grid≥40
+  # gives comparable speed and accuracy but runs on a structured grid.
+  #
+  # surrogate_backend: auto   # "auto" | "rbf_rgi"
+  # rgi_n_grid:        40     # only used when surrogate_backend: rbf_rgi
+
 simulation:
   temperature_C: 500
   dimensions:    2

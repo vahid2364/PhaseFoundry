@@ -20,6 +20,21 @@ thermo:
   n_points:          20                 # 20×20 grid → ~210 valid simplex points
   temperatures_C:    [300, 400, 500, 600, 700, 800, 900, 1000]
 
+  # Surrogate interpolant backend — controls the G_m surface fit used at
+  # simulation time.  Benchmark results (128² grid, 20k steps, 500°C):
+  #
+  #   "auto"    (default) — CT2D for ternary, RBF→RGI for quaternary+.
+  #              Ternary CT2D: ~644 steps/s, C1-smooth, exact at data points.
+  #   "rbf_rgi" — two-stage: fit RBF to scatter, then bake onto a regular
+  #              n_grid×n_grid grid and wrap in RegularGridInterpolator.
+  #              rgi_n_grid=20 → ~247 steps/s (inaccurate, mismatched mic.)
+  #              rgi_n_grid=40 → ~614 steps/s (accurate, matches CT2D mic.)
+  #              Use when you need a structured-grid surrogate or want to
+  #              benchmark against CT2D.
+  #
+  # surrogate_backend: auto   # "auto" | "rbf_rgi"
+  # rgi_n_grid:        40     # grid points per axis; 40 recommended for ternary
+
 simulation:
   temperature_C: 500
   dimensions:    2                 # spatial dimensions: 2 (NxN) or 3 (NxNxN)

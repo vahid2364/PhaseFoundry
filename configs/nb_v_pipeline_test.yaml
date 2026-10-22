@@ -33,7 +33,7 @@ thermo:
   sampling:        grid                # grid is optimal for binary (1-D linspace)
   seed:            42
   temperatures_C:  [100, 200, 300, 400, 500, 600, 700, 800, 900, 950, 980, 990,
-                    1000, 1002]
+                    1002]
   phase_map_style: ternary             # ternary | umap | both  (binary: not applicable)
 
 simulation:
@@ -60,3 +60,14 @@ output:
   data_dir:    data/pipeline_test/NbV
   results_dir: results/pipeline_test/NbV
   run_name:    auto
+
+# ── Logging (optional; remove or set enabled: false to silence) ───────────────
+logging:
+  enabled:           true
+  level:             info          # debug | info | warning
+  log_file:          auto          # auto = results_dir/run.log
+  timings_file:      auto          # auto = results_dir/timings.jsonl
+  progress_interval: 1000          # steps between progress lines (simulate only)
+  track_memory:      true          # report peak RAM / VRAM
+  fingerprint:       true          # hash config + TDB at start
+  pipeline_summary:  true          # summary table after pf-run-all

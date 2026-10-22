@@ -1,0 +1,68 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Hf-Nb-Ti-V Quaternary — RBF→RGI 40×40×40 benchmark
+# Matches the ternary rgi_n_grid=40 run for direct throughput comparison.
+# Note: 40³ = 64 000 grid points vs ternary 40² = 1 600; surrogate fit will
+# be slower. Shares the same HDF5 thermo table as nb_hf_ti_v_paper_benchmark.
+#
+# Run steps in order:
+#   pf-surrogate   --config configs/nb_hf_ti_v_rgi_40.yaml
+#   pf-simulate    --config configs/nb_hf_ti_v_rgi_40.yaml
+#
+# (pf-generate not needed — reuses data/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV)
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_ti_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, TI, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.01, 0.99]
+    HF: [0.01, 0.99]
+    TI: [0.01, 0.99]
+  n_points:          20
+  temperatures_C:    [500]
+  surrogate_backend: rbf_rgi
+  rgi_n_grid:        40                  # 40³ grid — matches ternary rgi_40 benchmark
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 1.0e-12, 1.0e-12]
+
+  M:
+    - [5.0e-21, 0.0,     0.0    ]
+    - [0.0,     5.0e-21, 0.0    ]
+    - [0.0,     0.0,     5.0e-21]
+
+  c0:            [0.25, 0.25, 0.25]     # equiatomic; x_V = 0.25
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.5
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:            20000
+  save_every:         5000
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  results_dir: results/paper_benchmark/NbHfTiV_rgi_40
+  run_name:    auto
+
+logging:
+  enabled:           true
+  level:             info
+  log_file:          auto
+  timings_file:      auto
+  progress_interval: 1000
+  track_memory:      true
+  fingerprint:       true
+  pipeline_summary:  true

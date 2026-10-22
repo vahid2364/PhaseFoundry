@@ -1,69 +1,71 @@
-# Nb-Hf-V Ternary — Elasto-Chemical Spinodal Decomposition at 500 °C
-# Composition: x_NB = 0.50, x_HF = 0.10, x_V = 0.40
-# Run: 01_generate_thermo_data → 02_fit_surrogate → 01b_lookup_elastic → 03_simulate
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-V Ternary — Elasto-Chemical Pipeline Test at 500 °C
+# Composition: x_NB=0.50, x_HF=0.10, x_V=0.40 (matches chemical-only config)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_hf_v_elastic_cNb50V40Hf10.yaml
+#   python workflows/01b_lookup_elastic/run.py      --config configs/nb_hf_v_elastic_cNb50V40Hf10.yaml
+#   python workflows/03_simulate/run.py             --config configs/nb_hf_v_elastic_cNb50V40Hf10.yaml
+#   python workflows/04_postprocess/run.py          --config configs/nb_hf_v_elastic_cNb50V40Hf10.yaml
+
 system:
-  name: nb_hf_v
-  db_path: data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
-  elements:
-  - NB
-  - HF
-  - V
-  phase: BCC_A2
+  name:              nb_hf_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]        # V is reference; NB and HF are independent
+  phase:             BCC_A2
   reference_element: V
+
 thermo:
   composition_ranges:
-    NB:
-    - 0.001
-    - 0.999
-    HF:
-    - 0.001
-    - 0.999
-  n_points: 20
-  temperatures_C:
-  - 500
+    NB: [0.001, 0.998]
+    HF: [0.001, 0.998]
+  n_points:          20                 # 20×20 grid → ~210 valid simplex points
+  temperatures_C:    [500]
+
 simulation:
   temperature_C: 500
-  dimensions: 2
-  N: 128
-  Lx: 1.0e-06
-  kappa:
-  - 1.0e-12
-  - 7.0e-12
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 7.0e-12]   # [J·m²/mol]: κ_NB, κ_HF
+
+  # Mobility matrix 2×2 [m⁵/(J·s)]: M_NbNb, M_NbHf / M_HfNb, M_HfHf
   M:
-  - - 5.0e-21
-    - 0.0
-  - - 0.0
-    - 5.0e-23
-  c0:
-  - 0.5
-  - 0.1
-  noise: 0.01
-  seed: 42
-  dt: 0.1
+    - [5.0e-21, 0.0    ]
+    - [0.0,     5.0e-23]
+
+  c0:            [0.50, 0.10]      # [x_NB, x_HF]; x_V = 1 - 0.50 - 0.10 = 0.40
+
+  noise:         0.01
+  seed:          42
+  dt:            0.05                   # auto stable dt
   derivative_method: jansson
-  use_gpu: false
-  adaptive_dt: false
-  n_steps: 600000
-  save_every: 100000
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       600000
+  save_every:    100000
+
   elastic:
-    enabled: true
+    enabled:      true
+
     stiffness_model: cubic_csv
     eigenstrain_model: local_vegard
-    elastic_csv: data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
-    c_mat:
-      NB: 0.78
-      HF: 0.04
-      V: 0.18
-    c_ppt:
-      NB: 0.1
-      HF: 0.14
-      V: 0.76
-    solve_every: 10
-    warm_start: true
-    tol: 1.0e-05
-    max_iter: 500
-    save_fields: true
+    elastic_csv:  data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
+
+    # Approximate tie-line endpoints at 500 °C for step 1b interpolation.
+    # Refine after inspecting the ternary phase map (star at x_NB=0.50, x_HF=0.10).
+    c_mat: {NB: 0.65, HF: 0.05, V: 0.30}   # Nb-rich matrix
+    c_ppt: {NB: 0.25, HF: 0.15, V: 0.60}   # V-rich precipitate
+
+    solve_every:  10
+    warm_start:   true
+    tol:          1.0e-5
+    max_iter:     500
+    save_fields:  true
+
 output:
-  data_dir: data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
-  results_dir: results/HfNbTiV_BCC_PhaseForge_v2/NbHfV
-  run_name: auto
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  run_name:      auto

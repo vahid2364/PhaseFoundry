@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Hf-Nb-Ti-V Quaternary — Paper benchmark run (Table 3, PhaseFoundry CPC paper)
+# Chemical-only spinodal decomposition at 500 °C
+# Composition: x_NB = 0.25, x_HF = 0.25, x_TI = 0.25, x_V = 0.25
+# Grid: 128², n_steps = 20 000, dt = 0.5 s
+#
+# Run steps in order:
+#   pf-generate    --config configs/nb_hf_ti_v_paper_benchmark.yaml
+#   pf-surrogate   --config configs/nb_hf_ti_v_paper_benchmark.yaml
+#   pf-simulate    --config configs/nb_hf_ti_v_paper_benchmark.yaml
+#
+# Or all at once:
+#   pf-run-all     --config configs/nb_hf_ti_v_paper_benchmark.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_ti_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, TI, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.01, 0.99]
+    HF: [0.01, 0.99]
+    TI: [0.01, 0.99]
+  n_points:          20                  # 20³ → ~1140 valid simplex points
+  temperatures_C:    [500]
+  surrogate_backend: auto                # "auto" | "rbf_rgi"  (auto=rbf_rgi for quaternary+)
+  rgi_n_grid:        20                  # grid pts/axis of the RGI evaluation grid
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128                     # 128² grid — matches ternary benchmark
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 1.0e-12, 1.0e-12]
+
+  M:
+    - [5.0e-21, 0.0,     0.0    ]
+    - [0.0,     5.0e-21, 0.0    ]
+    - [0.0,     0.0,     5.0e-21]
+
+  c0:            [0.25, 0.25, 0.25]     # equiatomic; x_V = 0.25
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.5
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:            20000
+  save_every:         5000
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  results_dir: results/paper_benchmark/NbHfTiV
+  run_name:    auto
+
+logging:
+  enabled:           true
+  level:             info
+  log_file:          auto
+  timings_file:      auto
+  progress_interval: 1000
+  track_memory:      true
+  fingerprint:       true
+  pipeline_summary:  true

@@ -1,0 +1,31 @@
+system:
+  name:              <alloy_name>
+  db_path:           data/tdb/<database>.tdb
+  elements:          [EL1, EL2]       # last element = reference element
+  phase:             <phase_name>     # e.g. BCC_A2, FCC_A1
+  reference_element: EL2
+
+thermo:
+  composition_ranges:
+    EL1: [0.001, 0.999]
+  n_points:        20                 # per axis: 20 (ternary), 10 (quaternary)
+  temperatures_C:  [500]
+
+simulation:
+  temperature_C:      500
+  N:                  128             # grid points per axis
+  Lx:                 1.0e-6         # domain size [m]
+  kappa:              1.0e-12        # gradient energy coefficient [J m^2/mol]
+  M:                  1.0e-21        # mobility [m^5/(J s)]
+  c0:                 0.5            # mean composition of EL1 (mole fraction)
+  derivative_method:  jansson        # fd | jansson | hybrid
+  dt:                 null           # null = auto-set from max|H_ii|
+  noise:              0.01           # amplitude of initial composition noise
+  seed:               42
+  n_steps:            100000
+  save_every:         10000
+
+output:
+  data_dir:    data/<alloy_name>
+  results_dir: results/<alloy_name>
+  run_name:    auto                  # auto-generated from composition and tdb

@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-V Ternary — Paper benchmark run (Table 3, PhaseFoundry CPC paper)
+# Chemical-only spinodal decomposition at 500 °C
+# Composition: x_NB = 0.50, x_HF = 0.10, x_V = 0.40
+# Grid: 128², n_steps = 20 000, dt = 0.5 s  (paper Table runtime benchmark)
+#
+# Run steps in order:
+#   pf-generate    --config configs/nb_hf_v_paper_benchmark.yaml
+#   pf-surrogate   --config configs/nb_hf_v_paper_benchmark.yaml
+#   pf-simulate    --config configs/nb_hf_v_paper_benchmark.yaml
+#   pf-validate    --config configs/nb_hf_v_paper_benchmark.yaml
+#
+# Or all at once:
+#   pf-run-all     --config configs/nb_hf_v_paper_benchmark.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+    HF: [0.001, 0.999]
+  n_points:       20                  # 20×20 grid → ~210 valid simplex points
+  temperatures_C: [500]
+  surrogate_backend: auto             # "auto" | "rbf_rgi"  (auto=CT2D for ternary)
+  rgi_n_grid:        40               # only used when surrogate_backend: rbf_rgi
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128                  # 128² grid
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 7.0e-12]  # [κ_NB, κ_HF]  J·m²/mol
+
+  M:
+    - [5.0e-21, 0.0    ]             # M_NbNb, M_NbHf
+    - [0.0,     5.0e-23]             # M_HfNb, M_HfHf
+
+  c0:            [0.50, 0.10]        # x_NB = 0.50, x_HF = 0.10, x_V = 0.40
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.5            # large dt for fast benchmark
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:            20000
+  save_every:         5000
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  results_dir: results/paper_benchmark/NbHfV
+  run_name:    auto
+
+# ── Logging — captures timing for paper Table ─────────────────────────────────
+logging:
+  enabled:           true
+  level:             info
+  log_file:          auto             # → results/paper_benchmark/NbHfV/500C/kinetics/<run>/run.log
+  timings_file:      auto             # → .../timings.jsonl
+  progress_interval: 1000
+  track_memory:      true
+  fingerprint:       true
+  pipeline_summary:  true

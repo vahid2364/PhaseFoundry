@@ -14,8 +14,17 @@ thermo:
     NB: [0.01, 0.99]
     HF: [0.01, 0.99]
     TI: [0.01, 0.99]
-  n_points:          10                    # coarse grid for testing (10³ → ~220 valid simplex pts)
+  n_points:          10                    # coarse sample for testing; with the default
+                                            # sampling="sobol", this is a TOTAL target point
+                                            # count (not per-axis) — see thermo.sampling below
   temperatures_C:    [500]                 # single temperature for testing
+
+  # Surrogate backend — quaternary always uses RBF→RGI ("auto" selects it).
+  # Increase rgi_n_grid for finer G_m resolution (default 20; 30–40 recommended
+  # if microstructure differs from a reference run).
+  #
+  # surrogate_backend: auto   # "auto" | "rbf_rgi"  (auto=rbf_rgi for quaternary+)
+  # rgi_n_grid:        20     # grid points per axis of the RGI evaluation grid
 
 simulation:
   temperature_C: 500

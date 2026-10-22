@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-V Ternary — pure RBF benchmark (direct query, no RGI stage)
+# Queries the RBFInterpolator at every simulation step; no grid precomputation.
+# Use to benchmark throughput baseline vs CT2D and RBF→RGI.
+#
+# pf-simulate --config configs/nb_hf_v_rbf_pure_benchmark.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+system:
+  name:              nb_hf_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, HF, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+    HF: [0.001, 0.999]
+  n_points:          20
+  temperatures_C:    [500]
+  surrogate_backend: rbf_pure            # "auto" | "rbf_rgi" | "rbf_pure"
+  rgi_n_grid:        40                  # unused for rbf_pure; kept for reference
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+
+  kappa:         [1.0e-12, 7.0e-12]
+
+  M:
+    - [5.0e-21, 0.0    ]
+    - [0.0,     5.0e-23]
+
+  c0:            [0.50, 0.10]
+
+  noise:              0.01
+  seed:               42
+  dt:                 0.5
+  derivative_method:  jansson
+  use_gpu:            false
+  adaptive_dt:        false
+  n_steps:            20000
+  save_every:         5000
+
+output:
+  data_dir:    data/HfNbTiV_BCC_PhaseForge_v2/NbHfV
+  results_dir: results/paper_benchmark/NbHfV_rbf_pure
+  run_name:    auto
+
+logging:
+  enabled:           true
+  level:             info
+  log_file:          auto
+  timings_file:      auto
+  progress_interval: 1000
+  track_memory:      true
+  fingerprint:       true
+  pipeline_summary:  true
