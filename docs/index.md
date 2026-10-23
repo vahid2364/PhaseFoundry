@@ -69,15 +69,10 @@
 
 <div class="pf-pipeline">
   <div class="pf-step"><strong>Step 1</strong>pycalphad → HDF5 thermodynamic tables (G_m, μ, ∂μ/∂x)</div>
-  <div class="pf-arrow">→</div>
   <div class="pf-step pf-step--optional"><strong>Step 1b·1c·1d</strong>elastic constants · tie-lines · phase map (optional)</div>
-  <div class="pf-arrow">→</div>
   <div class="pf-step"><strong>Step 2</strong>surrogate fit + spinodal/binodal boundaries</div>
-  <div class="pf-arrow">→</div>
   <div class="pf-step"><strong>Step 3</strong>Cahn-Hilliard PFM simulation (pseudo-spectral)</div>
-  <div class="pf-arrow">→</div>
   <div class="pf-step"><strong>Step 4</strong>post-processing + field extraction</div>
-  <div class="pf-arrow">→</div>
   <div class="pf-step pf-step--optional"><strong>Step 5·6</strong>validation · chemical vs. elasto-chemical comparison (optional)</div>
 </div>
 

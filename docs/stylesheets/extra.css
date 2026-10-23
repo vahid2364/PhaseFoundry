@@ -176,24 +176,21 @@
 /* ── Pipeline step strip ─────────────────────────────────────────────── */
 
 .pf-pipeline {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0.5rem;
-  align-items: stretch;
-  justify-content: center;
   margin: 1.25rem 0 2.25rem;
 }
 
 .pf-pipeline .pf-step {
-  flex: 1 1 150px;
-  max-width: 190px;
+  position: relative;
   background: var(--md-code-bg-color);
   border: 1px solid var(--md-default-fg-color--lightest);
   border-left: 3px solid var(--md-primary-fg-color);
   border-radius: 8px;
-  padding: 0.7rem 0.85rem;
-  font-size: 0.78rem;
-  line-height: 1.4;
+  padding: 0.65rem 0.7rem;
+  font-size: 0.72rem;
+  line-height: 1.38;
 }
 
 .pf-pipeline .pf-step.pf-step--optional {
@@ -203,23 +200,45 @@
 
 .pf-pipeline .pf-step strong {
   display: block;
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
+  font-size: 0.64rem;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
   color: var(--md-primary-fg-color);
   margin-bottom: 0.2rem;
 }
 
-.pf-pipeline .pf-arrow {
-  display: flex;
-  align-items: center;
-  color: var(--md-default-fg-color--lighter);
-  font-size: 1.1rem;
+/* Connector arrows: drawn as pseudo-elements between grid cells (desktop
+   only, where all 6 steps share one row) rather than as separate flex
+   items, so they can never force an extra row to wrap. */
+@media screen and (min-width: 60em) {
+  .pf-pipeline .pf-step:not(:last-child)::after {
+    content: "\2192";
+    position: absolute;
+    top: 50%;
+    right: -0.72rem;
+    transform: translateY(-50%);
+    color: var(--md-default-fg-color--lighter);
+    font-size: 0.85rem;
+    line-height: 1;
+    z-index: 1;
+  }
 }
 
-@media screen and (max-width: 76.1875em) {
-  .pf-pipeline .pf-arrow {
-    display: none;
+@media screen and (max-width: 59.99em) {
+  .pf-pipeline {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 37.4375em) {
+  .pf-pipeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media screen and (max-width: 26.25em) {
+  .pf-pipeline {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
