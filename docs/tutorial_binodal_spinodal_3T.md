@@ -88,6 +88,78 @@ here) for any config that skips Step 3 entirely.
 pf-generate --config configs/nb_v_binodal_spinodal_3T.yaml
 ```
 
+### The mathematics: what "equilibrium" means at each of the 198 points
+
+It's worth being precise here, because the word "equilibrium" is doing two
+different jobs in this tutorial and it's easy to conflate them: Step 1 calls
+`pycalphad` to solve a *constrained single-phase* equilibrium at each
+composition grid point; the binodal/spinodal boundaries in Step 2 are a
+*separate*, downstream calculation done entirely by PhaseFoundry on the
+resulting `G_m(x)` curve, not by `pycalphad` directly.
+
+**What's actually solved, per grid point.** For a fixed temperature `T` and
+a fixed nominal overall composition `x = (x_Nb, x_V)` with `x_Nb + x_V = 1`
+(only `x_Nb` is passed as a condition — `x_V` is implied), `pycalphad`
+minimizes the BCC_A2 phase's own Gibbs energy model over its *internal*
+degrees of freedom `y` (sublattice site fractions — the variables a CALPHAD
+Compound Energy Formalism model is actually written in terms of), subject
+to the constraint that those internal site fractions reproduce the imposed
+overall composition `x`:
+
+```
+G_m(x, T)  =  min_y  G^BCC_A2(T, y)        subject to:
+                                             Σ_k y_s^k = 1   for every sublattice s
+                                             (site fractions y consistent with x)
+```
+
+`G^BCC_A2(T, y)` itself is whatever Compound-Energy-Formalism expression is
+assessed in the TDB — in the usual CALPHAD form, a reference term (weighted
+sum of the pure-element endpoint energies), an ideal configurational-entropy
+term (`+RT·Σ_s a_s Σ_k y_s^k ln y_s^k`), and an excess/interaction term
+(typically a Redlich-Kister polynomial in the site fractions). The exact
+assessed parameters live in `data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb`,
+not in PhaseFoundry — `pycalphad` reads and minimizes that model; PhaseFoundry
+never sees the CEF parameters directly.
+
+**The one detail that makes this whole tutorial possible:** the call in
+`src/phasefoundry/thermodynamics/generate.py` restricts the `Workspace` to a
+*single* phase (`phases=[phase]`, i.e. just `BCC_A2`) and wraps it in
+`IsolatedPhase`, which forces `pycalphad` to stay on that one phase's free
+energy surface. This is **not** the usual multi-phase CALPHAD equilibrium
+(no lever rule, no phase fractions, no checking whether some other phase is
+actually more stable at that `x`). If it *were* a full multi-phase
+equilibrium, then for any `x` inside the two-phase gap `pycalphad` would
+already report the phase-split, lever-rule-averaged result — and `G_m(x)`
+would already be piecewise-linear across the gap, with the common-tangent
+points already baked in. There would be nothing left for Step 2's
+`binodal_boundary_binary()`/`spinodal_boundary_binary()` to compute.
+
+`IsolatedPhase` instead returns the Gibbs energy of the **metastable,
+homogeneous, single-phase state** — "if the whole system were forced to stay
+as one BCC_A2 solid solution at this exact composition, what would its
+energy be?" — smoothly, across the *entire* composition range, including
+deep inside the real two-phase region. That's exactly the curve the common
+tangent/convex-hull construction in [the section above](#the-construction-explicitly-three-temperatures-side-by-side)
+needs as its input. Steps 1 and 2 are therefore doing genuinely different
+jobs: Step 1 answers "what's the energy of this phase, forced to be
+homogeneous, at each composition?"; Step 2 answers "given that whole curve,
+where would the real system actually prefer to split into two phases?"
+
+**Why `μ` and the Hessian come out "for free."** Each grid point's
+`IsolatedPhase` call also evaluates `MU(el)` and `MU(el).X(el)` —
+`pycalphad`'s *exact analytic* derivatives of that same constrained
+minimization, not finite differences on the tabulated `G_m` values. Since
+`μ_A = ∂G_m/∂x_A` by definition, this gives `∂²G_m/∂x_A² = ∂μ_A/∂x_A`
+directly — these are the **Jansson derivatives** referenced throughout this
+project (see the [binary tutorial's equation section](tutorial_2d_binary.md#the-equation-being-solved)),
+and `spinodal_boundary_binary()` uses exactly this stored `∂μ/∂x` to find
+where it crosses zero, rather than differencing the `G_m` curve numerically.
+
+With that established: this is why Step 1's progress bar runs to exactly
+198 — one independent constrained minimization per composition grid point,
+embarrassingly parallel across points (hence
+`ProcessPoolExecutor` in `generate.py`), repeated once per temperature.
+
 On a cold cache (no `nb_v_bcc_a2_{500,900,1200}C.h5` yet), this actually
 computes 198 `pycalphad` equilibria per temperature:
 
