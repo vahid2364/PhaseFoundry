@@ -88,17 +88,28 @@ here) for any config that skips Step 3 entirely.
 pf-generate --config configs/nb_v_binodal_spinodal_3T.yaml
 ```
 
+On a cold cache (no `nb_v_bcc_a2_{500,900,1200}C.h5` yet), this actually
+computes 198 `pycalphad` equilibria per temperature:
+
 ```
-500.0 °C  →  exists, skipping
-900.0 °C  →  exists, skipping
-1200.0 °C  →  exists, skipping
+Grid: 198 valid points, 2 elements
+  NB: [0.0050, 0.9950]  mean=0.5000
+  V: [0.0050, 0.9950]  mean=0.5000
+Computing thermodynamics: 100%|██████████| 198/198 [00:06<00:00, 30.5pt/s]
+Saved 198 points to .../nb_v_bcc_a2_500C.h5
+   500.0 °C  →  saved nb_v_bcc_a2_500C.h5
+  ... (repeats for 900 °C and 1200 °C)
 
 Done. 3 tables in .../data/HfNbTiV_BCC_PhaseForge_v2/NbV
 ```
 
-All three were already cached from earlier work in this same `data_dir`
-(shared across every Nb-V v2 tutorial/config), so this just confirms the
-files exist rather than recomputing anything.
+~23 s total (~7 s/temperature at ~30 equilibria/s) on this machine. Run it
+again and you'll instead see `exists, skipping` for all three — Step 1 only
+(re)computes a temperature if its HDF5 file isn't already in `data_dir`. If
+you're following along on a fresh clone, you'll see the full computed output
+above; if you've already run the other Nb-V tutorials first, you'll see
+`skipping`, since this `data_dir` is shared across every Nb-V v2
+tutorial/config.
 
 ## Step 2 — fit the surrogate and compute both boundaries
 
@@ -138,6 +149,38 @@ spinodal dome sits strictly inside the binodal dome at every temperature
 below `T_c`, and both envelopes converge to the same point at `T_c` — both
 are direct consequences of the two boundaries' definitions above, not
 something imposed by the plotting code.
+
+### What you'd actually get from only 3 points
+
+The figure above benefits from 9 cached temperatures, not the 3 this
+config asks for. So: what does the dome look like built from **only**
+500, 900, and 1200 °C — i.e. deleting the other 6 cached tables first?
+
+![Dome built from only 3 temperatures — flat-topped, and a wrong critical point](images/tutorial_binodal_spinodal_3T/04_dome_3_points_only.png)
+
+This is real output too, from the same two functions, given only those
+three table paths. Two things go wrong, and both matter:
+
+1. **It's not a smooth dome.** `plot_phase_diagram()` fits a spline through
+   whatever temperatures have a valid boundary, with spline order
+   `k = min(3, n_valid_points - 1)`. 1200 °C has no boundary (it's above
+   `T_c`), so only 500 °C and 900 °C remain — two points, `k = 1`, i.e. a
+   **straight line** between them in each direction. The flat top at 900 °C
+   isn't the dome's apex; it's just the highest temperature that happened
+   to still be inside the gap.
+2. **The estimated critical point is wrong, not just imprecise.** The
+   critical-point marker lands at `T_c ≈ 900 °C` here, a full 100 °C below
+   the `T_c ≈ 1000 °C` the 9-temperature version actually resolves — this
+   plot has no way to know the true apex is between 900 and 1200 °C, since
+   it never sampled anything in that interval.
+
+So: yes — **more than 3 points are required**, and specifically, you need
+temperature coverage that actually brackets `T_c` closely on both sides,
+not just "a point below it, a point near it, and a point above it." The
+first phase-diagram figure only looked good because 6 extra temperatures
+(400, 600, 700, 800, 1000, 1400 °C) happened to already be cached in this
+shared `data_dir` from earlier work — this config's own 3 temperatures,
+run in isolation, would not have produced it.
 
 ---
 
@@ -226,6 +269,7 @@ a different assessment could place `T_c` elsewhere.
 | Phase diagram shows more temperatures than your config lists | `data_dir` is shared and Step 2 globs everything cached there (see the Step 2 note above) — use a dedicated empty `data_dir` if you want it limited to exactly your configured temperatures. |
 | Binodal and spinodal boundaries look identical very close to `T_c` | Expected — they coincide exactly at `T_c`, so near it the two methods can legitimately agree to within numerical tolerance. |
 | `method="hull"` and `method="fsolve"` disagree noticeably | `"fsolve"` depends on hardcoded initial guesses and can miss a root the hull method finds (or vice versa, rarely); `"hull"` is the default/more robust choice for exactly this reason — cross-check with `"fsolve"` only if you have a specific reason to distrust the hull result. |
+| Dome looks flat-topped / trapezoidal, or the critical-point marker looks too low | Too few temperatures with a valid boundary — `plot_phase_diagram()`'s spline order is `k = min(3, n_valid - 1)`, so 2 valid points gives a straight line, not a dome. Add more temperatures, concentrated near where you expect `T_c` (see the 3-point-only comparison above). |
 
 ## Where to go next
 
