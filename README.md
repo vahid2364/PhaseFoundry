@@ -21,6 +21,10 @@
 - Semi-implicit pseudo-spectral Cahn–Hilliard solver with Eyre convex-splitting stabilization (per-component A_i)
 - Elasto-chemical phase-field coupling via composition-dependent eigenstrain and Moulinec–Suquet spectral elasticity solver
 - SQS/MLIP elastic constant interpolation across quaternary composition space (supports ORB-v2, GRACE-2L, and other MLIPs)
+- Multiple surrogate backends for the CALPHAD free-energy surface (CT2D, two-stage RBF→RGI, pure RBF) and composition-space sampling strategies (regular grid, Sobol, Dirichlet)
+- `pf-*` console-script CLI (`pf-generate`, `pf-simulate`, `pf-validate`, ...) alongside direct `python workflows/.../run.py` invocation
+- Opt-in structured run logging: timing records, config+TDB fingerprinting, peak-memory tracking, and a free-energy monotonicity check for catching numerical instability
+- STEM-style composition microstructure figures (main panel + per-element insets) generated directly from simulation output
 - Config-driven pipeline: binary, ternary, and quaternary alloy systems with no code changes required
 - GPU acceleration via CuPy (optional) and incremental NPZ checkpointing for long runs
 - Affine projection visualization of spinodal regions in high-dimensional composition spaces
@@ -33,12 +37,19 @@
 PhaseForge TDB
    └─ Step 1   ─  pycalphad → HDF5 thermodynamic tables  (G_m, μ, ∂μ/∂x)
    └─ Step 1b  ─  SQS/MLIP  → elastic constant tables (C_ij, lattice parameter)
+   └─ Step 1c  ─  CALPHAD tie-line equilibrium  (matrix/precipitate endpoints, optional)
+   └─ Step 1d  ─  HDF5 → ternary/quaternary phase-map figure  (optional)
    └─ Step 2   ─  HDF5 → scattered interpolant surrogate + spinodal boundaries
    └─ Step 3   ─  surrogate → Cahn–Hilliard PFM simulation (pseudo-spectral)
    └─ Step 4   ─  simulation outputs → post-processing and field extraction
    └─ Step 5   ─  surrogate + derivatives → thermodynamic validation figures  (optional)
    └─ Step 6   ─  chemical-only vs. elasto-chemical → comparison figures
 ```
+
+`workflows/run_all.py` has its own internal 1–6 numbering (generate →
+phase-map → fit surrogate → simulate → postprocess → validate), selectable via
+`--from`/`--only`. It does not include steps 1b, 1c, or 6 (compare) above —
+those are elasto-chemical/comparison extras invoked separately, as shown below.
 
 ---
 
@@ -47,23 +58,31 @@ PhaseForge TDB
 ```
 PhaseFoundry/
 ├── src/phasefoundry/              installable Python package
+│   ├── cli.py                   pf-* console-script dispatcher
+│   ├── logger.py                structured run logging, timing, config/TDB fingerprinting
 │   ├── thermodynamics/          Hessian, spinodal, Jansson derivatives, surrogate
-│   ├── phasefield/              Cahn–Hilliard solver, Eyre stabilization, FFT ops
-│   └── elasticity/              eigenstrain models, SQS interpolant, Lippmann–Schwinger solver
+│   ├── phasefield/               Cahn–Hilliard solver, Eyre stabilization, FFT ops
+│   └── elasticity/               eigenstrain models, SQS interpolant, Lippmann–Schwinger solver
 │
 ├── configs/                     YAML config files for all alloy systems and runs
 │   ├── nb_v_chem_c50.yaml       binary NbV chemical-only
 │   ├── nb_hf_v_elastic_*.yaml   ternary NbHfV elasto-chemical
-│   └── nb_hf_ti_v_elastic_*.yaml quaternary NbHfTiV elasto-chemical
+│   ├── nb_hf_ti_v_elastic_*.yaml quaternary NbHfTiV elasto-chemical
+│   └── TEMPLATE.yaml            blank scaffold for a new alloy system
 │
 ├── workflows/                   end-to-end pipeline scripts
 │   ├── 01_generate_thermo_data/ pycalphad → HDF5
 │   ├── 01b_lookup_elastic/      SQS/MLIP elastic constant lookup
 │   ├── 01c_calphad_tieline/     CALPHAD tie-line equilibrium
+│   ├── 01d_phase_map/           ternary/quaternary phase-map figure
 │   ├── 02_fit_surrogate/        HDF5 → interpolant surrogate
 │   ├── 03_simulate/             Cahn–Hilliard PFM simulation
+│   ├── 04_postprocess/          post-processing and field extraction
+│   ├── 05_validate/             thermodynamic table and derivative-method validation
 │   ├── 06_compare/              derivative method comparison
-│   └── 07_ternary_figure/       figure generation scripts
+│   ├── 07_ternary_figure/       figure generation scripts
+│   ├── figures/                 one-off publication figure scripts
+│   └── run_all.py               runs the full pipeline (or --from/--only a sub-range)
 │
 ├── data/
 │   ├── tdb/                     TDB input files
@@ -71,7 +90,7 @@ PhaseFoundry/
 │   ├── HfNbTiV_BCC_PhaseForge_v2/           SQS elastic CSVs — ORB-v2
 │   └── HfNbTiV_BCC_PhaseForge_v3/           SQS elastic CSVs — GRACE-2L
 │
-├── paper/                       manuscript source (LaTeX)
+├── paper/                       manuscript source (LaTeX; gitignored)
 └── results/                     simulation outputs (gitignored)
 ```
 
@@ -104,36 +123,57 @@ pip install -e .
 
 ## Running the Pipeline
 
-All runs are driven by a YAML config file. To model a new alloy system, copy an existing config and edit it — no Python code changes needed.
+All runs are driven by a YAML config file. To model a new alloy system, copy an existing config (or `configs/TEMPLATE.yaml`) and edit it — no Python code changes needed.
+
+Every step can be run directly via `python workflows/.../run.py`, or via the
+equivalent installed `pf-*` console script (shown alongside each step below —
+both do the same thing).
 
 ```bash
 # Step 1: generate thermodynamic tables
 python workflows/01_generate_thermo_data/run.py --config configs/nb_v_chem_c50.yaml
+pf-generate --config configs/nb_v_chem_c50.yaml
 
 # Step 1b: look up elastic constants (elasto-chemical runs only)
 python workflows/01b_lookup_elastic/run.py --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+pf-elastic --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
 
 # Step 1c: compute CALPHAD tie-line endpoints (elasto-chemical runs only)
 python workflows/01c_calphad_tieline/run.py --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+pf-tieline --config configs/nb_hf_ti_v_elastic_cNb25V25Hf25Ti25.yaml
+
+# Step 1d: generate a ternary/quaternary phase-map figure (optional)
+python workflows/01d_phase_map/run.py --config configs/nb_hf_v.yaml
+pf-phase-map --config configs/nb_hf_v.yaml
 
 # Step 2: fit surrogate interpolant + spinodal boundaries
 python workflows/02_fit_surrogate/run.py --config configs/nb_v_chem_c50.yaml
+pf-surrogate --config configs/nb_v_chem_c50.yaml
 
 # Step 3: run Cahn–Hilliard simulation
 python workflows/03_simulate/run.py --config configs/nb_v_chem_c50.yaml
+pf-simulate --config configs/nb_v_chem_c50.yaml
 
 # Step 4: post-process simulation outputs
 python workflows/04_postprocess/run.py --config configs/nb_v_chem_c50.yaml
+pf-postprocess --config configs/nb_v_chem_c50.yaml
 
 # Step 5: validate thermodynamic tables and derivatives (optional)
 python workflows/05_validate/run.py --config configs/nb_v_chem_c50.yaml
+pf-validate --config configs/nb_v_chem_c50.yaml
 
 # Step 6: compare chemical-only vs. elasto-chemical results
 python workflows/06_compare/run.py --config configs/nb_v_elastic_c50.yaml
+pf-compare --config configs/nb_v_elastic_c50.yaml
 
-# Or run the full pipeline at once
+# Or run steps 1, 1d, 2-5 at once (--from/--only select a sub-range)
 python workflows/run_all.py --config configs/nb_v_chem_c50.yaml
+pf-run-all --config configs/nb_v_chem_c50.yaml
 ```
+
+Optional run-time logging (timing records, config/TDB fingerprinting, peak
+memory, free-energy monotonicity check) is enabled by adding a `logging:`
+block to the config — see `configs/nb_v_pipeline_test.yaml` for an example.
 
 ---
 
@@ -149,7 +189,7 @@ All runs are configured by a single YAML file. Four modes are supported; example
 ```yaml
 system:
   name:              nb_v
-  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2.tdb
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
   elements:          [NB, V]           # V is the reference element
   phase:             BCC_A2
   reference_element: V
@@ -171,7 +211,7 @@ simulation:
   noise:         0.01                 # amplitude of initial composition noise
   seed:          42
   dt:            1.0e-2               # time step [s]
-  derivative_method: jansson          # jansson | finite_diff | hybrid
+  derivative_method: jansson          # fd | jansson | hybrid
   use_gpu:           false
   adaptive_dt:       false
   n_steps:       100000
@@ -247,7 +287,9 @@ simulation:
     eigenstrain_model: local_vegard     # Vegard eigenstrain: ε* = Λ · δc
     elastic_csv:       data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
 
-    # Tie-line endpoint compositions (from CALPHAD equilibrium at 500 °C via step 1b)
+    # Approximate tie-line endpoints — placeholder estimates, not a
+    # verified CALPHAD-computed tie-line. Run workflows/01c_calphad_tieline/
+    # or 01d_phase_map and refine before relying on these quantitatively.
     c_mat: {NB: 0.70, HF: 0.10, V: 0.20}   # matrix (Nb-rich)
     c_ppt: {NB: 0.15, HF: 0.35, V: 0.50}   # precipitate (V/Hf-rich)
 
@@ -338,11 +380,11 @@ output:
 
 If you use PhaseFoundry in your research, please cite the accompanying paper:
 
-> C. J. Kunselman, D. Sariturk, S. Zhu, V. Attari, R. Arróyave, *From MLIPs to Microstructure: A High-Throughput Computational Framework to Design Spinodal Alloys in High-Dimensional Composition Spaces via Analytic Derivatives of CALPHAD Model Predictions*, 2025. *(in preparation)*
+> C. J. Kunselman, D. Sariturk, S. Zhu, V. Attari, R. Arróyave, *From MLIPs to Microstructure: A High-Throughput Computational Framework to Design Spinodal Alloys in High-Dimensional Composition Spaces via Analytic Derivatives of CALPHAD Model Predictions*, 2025. *(submitted to Acta Materialia; under revision)*
 
-A dedicated PhaseFoundry methods paper is in preparation:
+A dedicated PhaseFoundry methods paper is also submitted:
 
-> V. Attari, R. Arróyave, *PhaseFoundry: A CALPHAD-Coupled Phase-Field Framework for Spinodal Microstructure Design in Multicomponent Alloys*, 2025. *(in preparation)*
+> V. Attari, R. Arróyave, *PhaseFoundry: A CALPHAD-Coupled Phase-Field Framework for Spinodal Microstructure Design in Multicomponent Alloys*, 2025. *(submitted to Computer Physics Communications)*
 
 ---
 

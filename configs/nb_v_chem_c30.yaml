@@ -9,7 +9,7 @@
 
 system:
   name:              nb_v
-  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2.tdb
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
   elements:          [NB, V]
   phase:             BCC_A2
   reference_element: V

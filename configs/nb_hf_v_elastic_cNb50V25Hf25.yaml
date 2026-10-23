@@ -63,7 +63,14 @@ simulation:
     eigenstrain_model: local_vegard
     elastic_csv:  data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
 
-    # Tie-line endpoints from step 1b (CALPHAD equilibrium at 500 °C).
+    # Approximate tie-line endpoints at 500 °C for step 1b interpolation.
+    # These are placeholder estimates, not a verified CALPHAD-computed
+    # tie-line — run workflows/01c_calphad_tieline/run.py (or inspect the
+    # ternary phase map from 01d_phase_map) and refine before relying on
+    # these for quantitative results. (This mismatch is also what
+    # Reviewer 4's Table 6 mass-balance comment on the Kunselman paper
+    # caught: the endpoints below do not actually balance against the
+    # Nb50Hf25V25 parent composition.)
     c_mat: {NB: 0.70, HF: 0.10, V: 0.20}
     c_ppt: {NB: 0.15, HF: 0.35, V: 0.50}
 
