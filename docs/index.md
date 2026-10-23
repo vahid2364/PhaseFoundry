@@ -6,9 +6,9 @@
 
 [GitHub repository](https://github.com/vahid2364/PhaseFoundry) · [Report a bug](https://github.com/vahid2364/PhaseFoundry/issues) · [Request a feature](https://github.com/vahid2364/PhaseFoundry/issues)
 
-![Elasto-chemical spinodal decomposition in Nb-Hf-V](images/tutorial_2d_ternary_elastic/04_final_microstructure_t30000s.png)
+![Elasto-chemical spinodal decomposition in Nb-Hf-V](images/tutorial_2d_ternary_elastic/03_interconnected_spinodal_t5000s.png)
 
-*Real simulation output: coherency-strain-coupled spinodal decomposition in Nb-Hf-V at 500 °C (x_Nb = 0.50, x_Hf = 0.25, x_V = 0.25), 128×128 2D Cahn-Hilliard run at t = 30,000 s. The elongated, diagonally-oriented rafts (rather than isotropic droplets) are a direct consequence of the cubic elastic anisotropy computed from MLIP-derived elastic constants in Step 1b — see the [ternary tutorial](tutorial_2d_ternary_elastic.md) for the full walkthrough.*
+*Real simulation output: coherency-strain-coupled spinodal decomposition in Nb-Hf-V at 500 °C (x_Nb = 0.50, x_Hf = 0.25, x_V = 0.25), 128×128 2D Cahn-Hilliard run, t = 5000 s. This bicontinuous pattern goes on to coarsen into elongated, diagonally-oriented rafts driven by the cubic elastic anisotropy computed from MLIP-derived elastic constants in Step 1b — see the [ternary tutorial](tutorial_2d_ternary_elastic.md) for the full walkthrough, including the late-time numerical-resolution caveats that run surfaces.*
 
 ## Start here
 
