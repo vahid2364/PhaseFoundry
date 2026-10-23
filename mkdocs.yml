@@ -1,0 +1,44 @@
+site_name: PhaseFoundry
+site_description: CALPHAD-coupled phase-field modeling toolkit
+site_url: https://vahid2364.github.io/PhaseFoundry/
+repo_url: https://github.com/vahid2364/PhaseFoundry
+repo_name: vahid2364/PhaseFoundry
+edit_uri: edit/develop-new/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.integrate
+
+nav:
+  - Home: index.md
+  - Tutorial — 2D Binary Walkthrough: tutorial_2d_binary.md
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
