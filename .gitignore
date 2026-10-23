@@ -53,5 +53,9 @@ pipelines/output/
 # ── Paper drafts / manuscripts (not part of the code package) ─────────────────
 paper/
 
+# ── MkDocs (local preview/build artifacts) ─────────────────────────────────────
+site/
+.venv-docs/
+
 # ── Copyrighted reference literature (publisher-typeset, not OA) ──────────────
 literature/Spinodal-modulated solid solution delivers a strong and ductile refractory high-entropy alloy.pdf

@@ -17,6 +17,53 @@ directly from CALPHAD thermodynamics — not a hand-fit double-well potential.
 The chemical potentials and Hessian driving the simulation are the *exact*
 analytic (Jansson) derivatives of the real Nb-V free-energy surface.
 
+### The equation being solved
+
+PhaseFoundry integrates the conserved Cahn-Hilliard equation
+
+```
+∂c/∂t = ∇ · ( M(c) ∇μ ),      μ = ∂G_m/∂c − κ ∇²c
+```
+
+for the single independent composition field `c = x_Nb` (`x_V = 1 − c`). `μ`
+is the variational derivative of the total free-energy functional
+`F[c] = ∫ [ G_m(c) + (κ/2)|∇c|² ] dV`, so it has two parts: a bulk
+chemical-potential term `∂G_m/∂c`, and a gradient-energy term `−κ∇²c` that
+penalizes sharp interfaces (`κ` sets the interface width/energy, same `κ`
+as in the config file).
+
+What makes this "not a hand-fit double-well": `G_m(c)` is the real CALPHAD
+molar Gibbs energy of BCC_A2 Nb-V at 500 °C, from `pycalphad`, and
+`∂G_m/∂c` is the exact *analytic* (Jansson) derivative of that database —
+not a finite-difference approximation of a fitted polynomial. That's also
+exactly what `H_NBNB` in Step 3 below is: the second derivative
+`∂²G_m/∂c²` evaluated at `c₀`, i.e. the local curvature of this same
+`G_m(c)`. Its sign determines spinodal instability directly — negative
+means unstable, which is the whole phenomenon this tutorial demonstrates.
+
+The mobility is degenerate: `M(c) = M̊ · c · (1 − c)`, vanishing at `c = 0`
+and `c = 1` (pure Nb or pure V has zero diffusivity, as it physically
+should) and peaking at `c = 0.5`. `M̊` is the constant mobility coefficient
+set in the config (`M: 5.0e-21`).
+
+Numerically, the PDE is solved pseudo-spectrally (FFT in space) with a
+semi-implicit Eyre convex-splitting time scheme: the bulk chemical term is
+split into a stabilizing linear part, handled implicitly, plus the
+remaining nonlinear part, handled explicitly, using a stabilization
+constant `A ≥ max(0, −∂²G_m/∂c²)` evaluated over the composition range —
+the `Stabilization A_NB` value Step 3 prints below. This is what lets `dt`
+be chosen well above the naive explicit-scheme stability limit without the
+scheme blowing up, at the cost of needing `dt` small enough relative to
+`dt_stable` that individual field values stay physical (see the
+`dt_stable` vs. `dt` discussion in Step 3, and the common-failure-mode
+table at the end of this page).
+
+This binary case is the `N = 2` instance of the general `N`-component
+solver — see the
+[`solve_cahn_hilliard()` docstring](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/src/phasefoundry/phasefield/solver.py#L1-L40)
+for the full multicomponent mobility-matrix form used in the
+[ternary tutorial](tutorial_2d_ternary_elastic.md).
+
 ## Prerequisites
 
 ```bash
@@ -25,6 +72,9 @@ cd PhaseFoundry
 pip install -e .
 pf-simulate --help   # should print usage, not an error
 ```
+
+See [Installation](installation.md) for the full dependency list, optional
+extras (`python-ternary`, `cupy`), and troubleshooting.
 
 ## The pipeline, conceptually
 
@@ -47,6 +97,75 @@ surrogate queries, zero direct CALPHAD calls.
 
 All of this is driven by one YAML config. We'll use the canonical example,
 `configs/nb_v_chem_c50.yaml` (`c50` = mean composition x_Nb = 0.50).
+
+---
+
+## The config file
+
+Full contents of `configs/nb_v_chem_c50.yaml`:
+
+```yaml
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200
+  temperatures_C:    [500]
+
+simulation:
+  temperature_C: 500
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+  kappa:         1.0e-12
+  M:             5.0e-21
+  c0:            0.50              # mean x_NB (independent field; x_V = 1 - x_NB)
+  noise:         0.01
+  seed:          42
+  dt:            1.0e-2
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       100000
+  save_every:    10000
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV
+  run_name:      auto
+```
+
+**Where paths resolve from — two different rules:**
+
+1. **The `--config` argument itself** (`configs/nb_v_chem_c50.yaml` on the
+   command line) is resolved relative to **your current working directory**
+   when you run the command. Every command in this tutorial assumes you're
+   sitting at the repo root — that's why they all look like
+   `pf-generate --config configs/....yaml` rather than an absolute path.
+
+2. **Every path *inside* the YAML** (`db_path`, `data_dir`, `results_dir` —
+   anything in the `system:` or `output:` sections that looks like a path)
+   is resolved relative to the **repository root**, not your current working
+   directory and not the config file's own location. This happens in
+   [`resolve_paths()`](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/src/phasefoundry/config.py#L200) (`src/phasefoundry/config.py:200`), which each
+   workflow script calls after computing
+   `_ROOT = Path(__file__).resolve().parents[2]` — i.e. "two directories up
+   from `workflows/<step>/run.py`" — so it's anchored to the repo's
+   structure, not to whatever directory you happened to launch the command
+   from. That's why `db_path: data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb`
+   above becomes the absolute path you see printed in Step 1's config dump
+   below, even if you'd run the same command from a different directory
+   with `--config /some/other/path/nb_v_chem_c50.yaml`.
+
+In practice this means: write every path inside a config relative to the
+repo root (as the existing configs do), and run `pf-*` commands from the
+repo root so the `--config` argument itself resolves correctly too.
 
 ---
 
@@ -235,7 +354,7 @@ actually inside the Step 2 spinodal dome.
 
 ## Where to go next
 
-- **Ternary + elastic coupling** — see Mode 3 in the main [README](../README.md#mode-3--ternary-elasto-chemical-2d) for coherency-strain-coupled spinodal decomposition in Nb-Hf-V.
+- **Ternary + elastic coupling** — see the [2D ternary elasto-chemical tutorial](tutorial_2d_ternary_elastic.md) (or Mode 3 in the main [README](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/README.md#mode-3--ternary-elasto-chemical-2d)) for coherency-strain-coupled spinodal decomposition in Nb-Hf-V.
 - **Quaternary systems** — Mode 4 in the README, Hf-Nb-Ti-V.
 - **Checking surrogate accuracy** — `pf-validate` compares the `fd`/`jansson`/`hybrid` derivative methods against raw CALPHAD data for your system.
 - **Enabling structured logging** — add a `logging:` block to your config (see `configs/nb_v_pipeline_test.yaml`) for timing records, config/TDB fingerprinting, and an automatic free-energy monotonicity check.

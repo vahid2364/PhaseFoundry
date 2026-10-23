@@ -30,7 +30,9 @@ theme:
 
 nav:
   - Home: index.md
+  - Installation: installation.md
   - Tutorial — 2D Binary Walkthrough: tutorial_2d_binary.md
+  - Tutorial — 2D Ternary Elasto-Chemical: tutorial_2d_ternary_elastic.md
 
 markdown_extensions:
   - admonition
