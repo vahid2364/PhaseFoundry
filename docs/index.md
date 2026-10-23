@@ -12,7 +12,7 @@
 
 ## Start here
 
-**New to PhaseFoundry?** Start with [Installation](installation.md), then walk through the [2D binary tutorial](tutorial_2d_binary.md) — a complete, real-output walkthrough of the pipeline on Nb-V spinodal decomposition, start to finish in about two minutes. Then see the [2D ternary elasto-chemical tutorial](tutorial_2d_ternary_elastic.md) for coherency-strain-coupled decomposition in Nb-Hf-V.
+**New to PhaseFoundry?** Start with [Installation](installation.md). If you want the thermodynamics first, see [binodal vs. spinodal boundaries at 3 temperatures](tutorial_binodal_spinodal_3T.md) (no simulation, just the CALPHAD boundary calculation). Then walk through the [2D binary tutorial](tutorial_2d_binary.md) — a complete, real-output walkthrough of the full pipeline on Nb-V spinodal decomposition, start to finish in about two minutes — followed by the [2D ternary elasto-chemical tutorial](tutorial_2d_ternary_elastic.md) for coherency-strain-coupled decomposition in Nb-Hf-V.
 
 ## Pipeline
 

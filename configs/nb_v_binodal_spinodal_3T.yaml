@@ -1,0 +1,50 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-V Binary — Binodal/Spinodal Boundary Calculation at 3 Temperatures
+# ─────────────────────────────────────────────────────────────────────────────
+# Thermodynamics-only: no phase-field simulation is run from this config.
+# Computes binodal (common-tangent) and spinodal (d^2G/dx^2=0) boundaries at
+# three temperatures spanning deep-in-the-gap, near-critical, and
+# above-critical behavior for Nb-V BCC_A2.
+#
+# Thermodynamic data (HDF5 tables) are shared with the other NbV v2 configs —
+# data_dir already has tables cached at several more temperatures than the
+# three configured below, so Step 2's phase diagram reflects all of them.
+#
+# Run steps in order:
+#   python workflows/01_generate_thermo_data/run.py --config configs/nb_v_binodal_spinodal_3T.yaml
+#   python workflows/02_fit_surrogate/run.py         --config configs/nb_v_binodal_spinodal_3T.yaml
+
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+thermo:
+  composition_ranges:
+    NB: [0.001, 0.999]
+  n_points:          200
+  temperatures_C:    [500, 900, 1200]   # deep in gap / near T_c / above T_c
+
+simulation:
+  temperature_C: 500   # only used for output-folder naming; no simulation is run
+  dimensions:    2
+  N:             128
+  Lx:            1.0e-6
+  kappa:         1.0e-12
+  M:             5.0e-21
+  c0:            0.50
+  noise:         0.01
+  seed:          42
+  dt:            1.0e-2
+  derivative_method: jansson
+  use_gpu:           false
+  adaptive_dt:       false
+  n_steps:       100000
+  save_every:    10000
+
+output:
+  data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbV
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV
+  run_name:      auto
