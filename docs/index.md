@@ -55,6 +55,14 @@
 
     [:octicons-arrow-right-24: Run your first simulation](tutorial_2d_binary.md)
 
+-   :material-matrix:{ .lg .middle } **Hessian stability analysis**
+
+    ---
+
+    The eigenvalue API behind every spinodal/stability number on this site, validated against finite differences.
+
+    [:octicons-arrow-right-24: See where the numbers come from](tutorial_hessian_stability_binary.md)
+
 -   :material-cube-scan:{ .lg .middle } **2D ternary elasto-chemical**
 
     ---

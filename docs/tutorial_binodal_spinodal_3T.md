@@ -346,5 +346,6 @@ a different assessment could place `T_c` elsewhere.
 ## Where to go next
 
 - **See the spinodal region actually decompose** — the [2D binary tutorial](tutorial_2d_binary.md) runs a full Cahn-Hilliard simulation at 500 °C, inside the spinodal window computed here.
+- **The eigenvalue API underneath `d²G/dx²=0`** — the [Hessian stability analysis tutorial](tutorial_hessian_stability_binary.md) covers `GmInterpolant.d2g()`/`.min_eigenvalue()` directly, validated against finite differences, and connects the eigenvalue at your `c0` to the solver's `δ`, `λ*`, and `dt_stable`.
 - **Ternary boundaries** — for 2+ independent fields there's no single `d²G/dx²=0` crossing; the [ternary tutorial](tutorial_2d_ternary_elastic.md)'s Step 2 spinodal map instead scans the composition simplex and tests the sign of the Hessian's minimum eigenvalue at each point (`GmInterpolant.min_eigenvalue()`), and `compute_ternary_phase_regions()` in `src/phasefoundry/thermodynamics/spinodal.py` provides a related region-classification approach for ternary systems.
 - **Recommended phase-field parameters from this curvature** — `recommend_pfm_params()` in the same module takes the `G_m` spline fit (not the boundary dicts above) and derives suggested `kappa`/`dt`/`Lx`/`N` starting points for Step 3 directly from `d²G/dx²` at your chosen `c0`.

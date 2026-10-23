@@ -355,6 +355,7 @@ actually inside the Step 2 spinodal dome.
 ## Where to go next
 
 - **Why x_V = 0.08–0.65 is the spinodal window at 500 °C** — see the [binodal vs. spinodal tutorial](tutorial_binodal_spinodal_3T.md) for how that boundary is actually computed (common tangent vs. `d²G/dx²=0`), compared across three temperatures.
+- **Where `H_NBNB`, `δ`, `λ*`, and `dt_stable` above actually come from** — the [Hessian stability analysis tutorial](tutorial_hessian_stability_binary.md) derives every one of them from the same `GmInterpolant` call, validated against finite differences.
 - **Ternary + elastic coupling** — see the [2D ternary elasto-chemical tutorial](tutorial_2d_ternary_elastic.md) (or Mode 3 in the main [README](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/README.md#mode-3--ternary-elasto-chemical-2d)) for coherency-strain-coupled spinodal decomposition in Nb-Hf-V.
 - **Quaternary systems** — Mode 4 in the README, Hf-Nb-Ti-V.
 - **Checking surrogate accuracy** — `pf-validate` compares the `fd`/`jansson`/`hybrid` derivative methods against raw CALPHAD data for your system.
