@@ -52,3 +52,6 @@ pipelines/output/
 
 # ── Paper drafts / manuscripts (not part of the code package) ─────────────────
 paper/
+
+# ── Copyrighted reference literature (publisher-typeset, not OA) ──────────────
+literature/Spinodal-modulated solid solution delivers a strong and ductile refractory high-entropy alloy.pdf
