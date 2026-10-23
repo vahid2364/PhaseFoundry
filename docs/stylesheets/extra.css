@@ -1,0 +1,269 @@
+/* PhaseFoundry docs — homepage / shared visual enhancements
+   Built on Material for MkDocs' own CSS custom properties so everything
+   adapts automatically between the light and dark palettes. */
+
+/* ── Hero ────────────────────────────────────────────────────────────── */
+
+.pf-hero {
+  text-align: center;
+  padding: 2.75rem 1.75rem 2.25rem;
+  margin: 0.2rem 0 2rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg,
+    var(--md-primary-fg-color) 0%,
+    var(--md-primary-fg-color--dark) 100%);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.pf-hero .pf-kicker {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  padding: 0.3rem 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.pf-hero h1 {
+  color: #fff;
+  font-size: 2.3rem;
+  line-height: 1.2;
+  font-weight: 700;
+  margin: 0 0 0.75rem;
+}
+
+.pf-hero .pf-tagline {
+  font-size: 1.08rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.92);
+  max-width: 680px;
+  margin: 0 auto 1.6rem;
+}
+
+.pf-hero .pf-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+.pf-hero .pf-cta .md-button {
+  border-radius: 7px;
+  font-weight: 600;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.pf-hero .pf-cta .md-button--primary {
+  background: #fff;
+  color: var(--md-primary-fg-color--dark);
+  border-color: #fff;
+}
+
+.pf-hero .pf-cta .md-button--primary:hover {
+  background: rgba(255, 255, 255, 0.88);
+  transform: translateY(-1px);
+}
+
+.pf-hero .pf-cta .md-button:not(.md-button--primary) {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.75);
+}
+
+.pf-hero .pf-cta .md-button:not(.md-button--primary):hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+@media screen and (max-width: 44.9375em) {
+  .pf-hero {
+    padding: 2rem 1.25rem 1.75rem;
+  }
+
+  .pf-hero h1 {
+    font-size: 1.9rem;
+    word-break: keep-all;
+    overflow-wrap: normal;
+  }
+
+  .pf-hero .pf-tagline {
+    font-size: 0.98rem;
+  }
+}
+
+/* ── Stat pills ──────────────────────────────────────────────────────── */
+
+.pf-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: center;
+  margin: 0 0 2.25rem;
+}
+
+.pf-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--md-default-fg-color--light);
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 999px;
+  padding: 0.4rem 0.95rem;
+}
+
+.pf-stat .twemoji {
+  color: var(--md-primary-fg-color);
+}
+
+/* ── Featured figure frame ──────────────────────────────────────────── */
+
+.pf-figure {
+  margin: 0 0 2.25rem;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+
+.pf-figure img {
+  display: block;
+  width: 100%;
+}
+
+.pf-figure figcaption {
+  padding: 0.85rem 1.1rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--md-default-fg-color--light);
+  background: var(--md-code-bg-color);
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* ── Section headings with a small accent rule ──────────────────────── */
+
+.md-typeset h2 {
+  margin-top: 2.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--md-default-fg-color--lightest);
+}
+
+/* ── Grid cards: tighten up Material's defaults a touch ─────────────── */
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid.cards > ol > li {
+  border-radius: 10px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .grid.cards > ol > li:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  border-color: var(--md-primary-fg-color);
+}
+
+.md-typeset .grid.cards > ul > li > p:first-child {
+  margin-bottom: 0.4rem;
+}
+
+/* ── Pipeline step strip ─────────────────────────────────────────────── */
+
+.pf-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: stretch;
+  justify-content: center;
+  margin: 1.25rem 0 2.25rem;
+}
+
+.pf-pipeline .pf-step {
+  flex: 1 1 150px;
+  max-width: 190px;
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-left: 3px solid var(--md-primary-fg-color);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.pf-pipeline .pf-step.pf-step--optional {
+  border-left-style: dashed;
+  opacity: 0.85;
+}
+
+.pf-pipeline .pf-step strong {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--md-primary-fg-color);
+  margin-bottom: 0.2rem;
+}
+
+.pf-pipeline .pf-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--md-default-fg-color--lighter);
+  font-size: 1.1rem;
+}
+
+@media screen and (max-width: 76.1875em) {
+  .pf-pipeline .pf-arrow {
+    display: none;
+  }
+}
+
+/* ── Publications as a quiet card instead of raw blockquotes ───────── */
+
+.pf-pub {
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-left: 3px solid var(--md-primary-fg-color);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  margin: 0.75rem 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.pf-pub .pf-pub-status {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--md-primary-fg-color);
+}
+
+/* ── Closing CTA strip ───────────────────────────────────────────────── */
+
+.pf-closing {
+  text-align: center;
+  padding: 2rem 1.5rem;
+  margin: 2.5rem 0 1rem;
+  border-radius: 12px;
+  background: var(--md-code-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.pf-closing h2 {
+  border-bottom: none;
+  margin-top: 0;
+}
+
+.pf-closing .pf-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
