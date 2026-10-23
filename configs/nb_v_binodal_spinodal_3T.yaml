@@ -27,24 +27,17 @@ thermo:
   n_points:          200
   temperatures_C:    [500, 900, 1200]   # deep in gap / near T_c / above T_c
 
+# Only `temperature_C` is actually read by Steps 1-2 (as an output-folder
+# label) -- none of the other phase-field parameters a `simulation:` block
+# normally carries (N, kappa, M, dt, n_steps, ...) are touched by this
+# thermodynamics-only pipeline. `run_name` is set explicitly below instead
+# of "auto" specifically so that c0/kappa/M don't need to be present either
+# (the "auto" run-name builder reads them to construct a label) -- see the
+# tutorial for the full explanation.
 simulation:
-  temperature_C: 500   # only used for output-folder naming; no simulation is run
-  dimensions:    2
-  N:             128
-  Lx:            1.0e-6
-  kappa:         1.0e-12
-  M:             5.0e-21
-  c0:            0.50
-  noise:         0.01
-  seed:          42
-  dt:            1.0e-2
-  derivative_method: jansson
-  use_gpu:           false
-  adaptive_dt:       false
-  n_steps:       100000
-  save_every:    10000
+  temperature_C: 500
 
 output:
   data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbV
   results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV
-  run_name:      auto
+  run_name:      binodal_spinodal_3T

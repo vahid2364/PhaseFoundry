@@ -50,26 +50,12 @@ thermo:
   temperatures_C:    [500, 900, 1200]   # deep in gap / near T_c / above T_c
 
 simulation:
-  temperature_C: 500   # only used for output-folder naming; no simulation is run
-  dimensions:    2
-  N:             128
-  Lx:            1.0e-6
-  kappa:         1.0e-12
-  M:             5.0e-21
-  c0:            0.50
-  noise:         0.01
-  seed:          42
-  dt:            1.0e-2
-  derivative_method: jansson
-  use_gpu:           false
-  adaptive_dt:       false
-  n_steps:       100000
-  save_every:    10000
+  temperature_C: 500
 
 output:
   data_dir:      data/HfNbTiV_BCC_PhaseForge_v2/NbV
   results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV
-  run_name:      auto
+  run_name:      binodal_spinodal_3T
 ```
 
 This reuses the same `data_dir` as the [2D binary tutorial](tutorial_2d_binary.md)
@@ -77,6 +63,22 @@ This reuses the same `data_dir` as the [2D binary tutorial](tutorial_2d_binary.m
 [path-resolution explainer](tutorial_2d_binary.md#the-config-file) for how
 `db_path`/`data_dir`/`results_dir` resolve relative to the repo root
 regardless of your working directory.
+
+**Why the `simulation:` block is this short:** the other tutorials' configs
+carry a full phase-field parameter set (`N`, `kappa`, `M`, `dt`, `n_steps`,
+...) because Step 3 actually integrates the PDE. This config never calls
+Step 3, and Steps 1-2 only ever read one key out of `simulation:` —
+`temperature_C`, used purely as an output-folder label
+(`workflows/02_fit_surrogate/run.py:76,83`). Everything else in a typical
+`simulation:` block is simply unused here.
+
+The one thing to watch: `output.run_name` is set to an explicit string
+(`binodal_spinodal_3T`) rather than `auto`. `auto` triggers
+`build_run_name()` (`src/phasefoundry/config.py:126`), which *does* read
+`simulation.c0`, `simulation.kappa`, and `simulation.M` to build a
+descriptive filename — so leaving `run_name: auto` with a trimmed
+`simulation:` block would raise a `KeyError`. Set `run_name` explicitly (as
+here) for any config that skips Step 3 entirely.
 
 ---
 
