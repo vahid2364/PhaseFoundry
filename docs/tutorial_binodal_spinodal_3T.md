@@ -175,13 +175,13 @@ Saved 198 points to .../nb_v_bcc_a2_500C.h5
 Done. 3 tables in .../data/HfNbTiV_BCC_PhaseForge_v2/NbV
 ```
 
-~23 s total (~7 s/temperature at ~30 equilibria/s) on this machine. Run it
-again and you'll instead see `exists, skipping` for all three — Step 1 only
-(re)computes a temperature if its HDF5 file isn't already in `data_dir`. If
-you're following along on a fresh clone, you'll see the full computed output
-above; if you've already run the other Nb-V tutorials first, you'll see
-`skipping`, since this `data_dir` is shared across every Nb-V v2
-tutorial/config.
+!!! note "~23 s total (~7 s/temperature at ~30 equilibria/s) on this machine"
+    Run Step 1 again and you'll instead see `exists, skipping` for all
+    three — it only (re)computes a temperature if its HDF5 file isn't
+    already in `data_dir`. If you're following along on a fresh clone,
+    you'll see the full computed output above; if you've already run the
+    other Nb-V tutorials first, you'll see `skipping`, since this
+    `data_dir` is shared across every Nb-V v2 tutorial/config.
 
 ## Step 2 — fit the surrogate and compute both boundaries
 
