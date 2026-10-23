@@ -43,9 +43,14 @@ PhaseForge TDB
 - Config-driven pipeline: binary, ternary, and quaternary alloy systems with no code changes required
 - GPU acceleration via CuPy (optional) and incremental NPZ checkpointing for long runs
 
-## Publications
+## Citation
 
-- Courtney Kunselman, Doğuhan Sarıtürk, Siya Zhu, Vahid Attari, Raymundo Arróyave. *"From MLIPs to Microstructure: A High-Throughput Computational Framework to Design Spinodal Alloys in High-Dimensional Composition Spaces via Analytic Derivatives of CALPHAD Model Predictions."* Submitted to *Acta Materialia*. Uses `PhaseFoundry` for all phase-field and spinodal-stability results on Nb-Hf-Ti-V.
-- Vahid Attari, Raymundo Arróyave. *"PhaseFoundry: An Open-Source CALPHAD-Coupled Phase-Field Framework for Spinodal Microstructure Design in Multicomponent Alloys."* In preparation for *Computer Physics Communications* — the software paper describing this toolkit itself.
+If you use `PhaseFoundry` in your research, please cite the accompanying paper:
+
+> C. J. Kunselman, D. Sariturk, S. Zhu, V. Attari, R. Arróyave, *From MLIPs to Microstructure: A High-Throughput Computational Framework to Design Spinodal Alloys in High-Dimensional Composition Spaces via Analytic Derivatives of CALPHAD Model Predictions*, 2025. *(submitted to Acta Materialia; under revision)*
+
+A dedicated PhaseFoundry methods paper is also submitted:
+
+> V. Attari, R. Arróyave, *PhaseFoundry: A CALPHAD-Coupled Phase-Field Framework for Spinodal Microstructure Design in Multicomponent Alloys*, 2025. *(submitted to Computer Physics Communications)*
 
 See the [README](https://github.com/vahid2364/PhaseFoundry#readme) for installation, project structure, and full CLI reference.
