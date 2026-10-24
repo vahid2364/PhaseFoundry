@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-V Binary — CALPHAD Tie-Line at x_Nb = 0.50
+# ─────────────────────────────────────────────────────────────────────────────
+# For pf-tieline only — a direct pycalphad.equilibrium() tie-line endpoint
+# calculation, independent of the HDF5-table-based binodal/spinodal methods
+# used elsewhere on this site. No Step 1 table is needed; pf-tieline reads
+# the TDB directly.
+#
+# pf-tieline requires `simulation.c0` to be a LIST, even for a binary system
+# ([0.50], not 0.50) -- unlike every other binary config on this site, which
+# writes c0 as a bare scalar. Passing a scalar crashes with
+# `TypeError: object of type 'float' has no len()`
+# (workflows/01c_calphad_tieline/run.py:52). See the tutorial for details.
+#
+# pf-tieline has no --set flag -- to check a different temperature, edit
+# simulation.temperature_C directly (or duplicate this file).
+#
+# Run:
+#   pf-tieline --config configs/nb_v_tieline.yaml
+
+system:
+  name:              nb_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [NB, V]
+  phase:             BCC_A2
+  reference_element: V
+
+simulation:
+  temperature_C: 500
+  c0:            [0.50]
+
+output:
+  results_dir:   results/HfNbTiV_BCC_PhaseForge_v2/NbV

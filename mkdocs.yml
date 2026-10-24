@@ -56,6 +56,7 @@ nav:
   - Installation: installation.md
   - CLI Reference: cli_reference.md
   - Tutorial — Binodal/Spinodal at 3 Temperatures: tutorial_binodal_spinodal_3T.md
+  - Tutorial — Binary Tie-Lines (3-way check): tutorial_binary_tieline.md
   - Tutorial — 2D Binary Walkthrough: tutorial_2d_binary.md
   - Tutorial — Hessian Stability Analysis (Binary): tutorial_hessian_stability_binary.md
   - Tutorial — 2D Ternary Elasto-Chemical: tutorial_2d_ternary_elastic.md

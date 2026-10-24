@@ -154,7 +154,16 @@ pf-tieline --config configs/nb_hf_v_elastic_cNb50V25Hf25.yaml
     exact composition it finds a **three-phase** equilibrium, which the
     matrix/precipitate framework can't represent at all. See the
     [tie-line and phase map tutorial](tutorial_tieline_phase_map.md) for the
-    full investigation, cross-checked against `pf-phase-map`.
+    full investigation, cross-checked against `pf-phase-map`. For the binary
+    case (a genuine two-phase tie-line, cross-checked against the
+    `binodal_boundary_binary()` methods instead), see the
+    [binary tie-line tutorial](tutorial_binary_tieline.md).
+
+!!! warning "`simulation.c0` must be a list, even for binary systems"
+    Every binary config elsewhere on this site writes `c0` as a bare scalar
+    (`c0: 0.50`). `pf-tieline` crashes on that
+    (`TypeError: object of type 'float' has no len()`) — it needs `c0: [0.50]`.
+    See the [binary tie-line tutorial](tutorial_binary_tieline.md#the-config-and-a-real-crash).
 
 ---
 

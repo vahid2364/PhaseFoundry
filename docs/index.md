@@ -47,6 +47,14 @@
 
     [:octicons-arrow-right-24: Start here if new to CALPHAD](tutorial_binodal_spinodal_3T.md)
 
+-   :material-vector-line:{ .lg .middle } **Binary tie-lines, 3 methods**
+
+    ---
+
+    `pf-tieline` vs. the hull/fsolve binodal — fsolve agrees to <0.05%, the default `hull` method is off by up to 3.5%.
+
+    [:octicons-arrow-right-24: See the discrepancy](tutorial_binary_tieline.md)
+
 -   :material-grid:{ .lg .middle } **2D binary walkthrough**
 
     ---
