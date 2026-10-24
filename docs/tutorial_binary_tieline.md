@@ -106,16 +106,22 @@ c0       : {'NB': 0.5}
 2 BCC_A2 phases found (two-phase tie-line).
 
 === Tie-line endpoints ===
-  mat: x_NB=0.9771  x_V=0.0229
-  ppt: x_NB=0.1633  x_V=0.8367
+  ppt: x_NB=0.9771  x_V=0.0229
+  mat: x_NB=0.1633  x_V=0.8367
 ```
+
+`mat`/`ppt` are assigned by phase fraction, not composition: the larger of
+the two fractions above (58.6%) is labeled `mat`, the smaller (41.4%) is
+`ppt`. This matters because it does not always correspond to which
+endpoint is richer in the reference element — see
+[Labeling convention](#labeling-convention-matrix-vs-precipitate) below.
 
 At 900 °C (`temperature_C: 900` in the same config):
 
 ```
 === Tie-line endpoints ===
-  mat: x_NB=0.8501  x_V=0.1499
-  ppt: x_NB=0.4709  x_V=0.5291
+  ppt: x_NB=0.8501  x_V=0.1499
+  mat: x_NB=0.4709  x_V=0.5291
 ```
 
 At 1200 °C — the temperature identified by the binodal/spinodal tutorial as
@@ -133,6 +139,28 @@ This is the expected result: a single stable phase, no tie-line, and no
 `c_mat`/`c_ppt` suggestion. `pf-tieline`'s direct equilibrium call agrees
 with both tabulated methods on the temperature at which the miscibility gap
 closes, despite sharing no code path with either.
+
+### Labeling convention: matrix vs. precipitate
+
+`pf-tieline` labels the two endpoints by **phase fraction**, not
+composition: the endpoint with the larger equilibrium phase fraction
+(the lever-rule weight at the given `c0`) is labeled `mat`; the smaller is
+labeled `ppt`. This matches standard usage, in which the matrix is the
+majority phase and the precipitate is the minority phase dispersed within
+it.
+
+This was not the original behavior. An earlier version of this script
+labeled the endpoints by composition instead — the reference-element-poor
+endpoint was always `mat`, regardless of which phase actually made up more
+of the alloy. At `c0 = 0.5` and 500 °C, that convention and the
+fraction-based convention disagree: the composition-poor-in-V endpoint
+(`x_Nb = 0.977`) holds only 41.4% of the alloy, while the
+richer-in-V endpoint (`x_Nb = 0.163`) holds 58.6%. Labeling by composition
+alone called the minority phase `mat`, the opposite of the usual
+convention. The fix applied here (`workflows/01c_calphad_tieline/run.py`)
+sorts by `fraction` instead, so `mat` is the majority phase at every
+composition and temperature, not only the ones where the two conventions
+happen to coincide.
 
 ---
 
@@ -189,6 +217,7 @@ rather than a qualitatively correct estimate.
 | No mechanism for `--set simulation.temperature_C=900` | `pf-tieline` does not support `--set` (confirmed in its `--help` output). The config file's `temperature_C` must be edited directly, or a separate config maintained per temperature of interest. |
 | `db_path` resolution fails when the config is not located directly under `configs/` | The same behavior is documented in the [tie-line/phase-map tutorial](tutorial_tieline_phase_map.md#common-gotchas) and the [CLI reference](cli_reference.md#pf-tieline-step-1c) — `pf-tieline` resolves `db_path` relative to the config file's own location, not the repository root. |
 | "Suggested elastic config update" section is empty | Exactly one or three-or-more stable phases were found, not exactly two — the script produces `c_mat`/`c_ppt` text only for the two-phase case. Both the single-phase case (1200 °C, above) and the three-phase case (the [Nb-Hf-V tutorial](tutorial_tieline_phase_map.md)) trigger this. |
+| `mat` composition looks like the minority phase | `mat`/`ppt` are assigned by phase fraction (majority/minority), not by composition — see [Labeling convention](#labeling-convention-matrix-vs-precipitate). If the result still looks wrong, check `phase_fraction` in the saved `tieline_calphad.yaml` directly rather than inferring it from composition. |
 
 ## Related Material
 

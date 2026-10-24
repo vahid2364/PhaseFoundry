@@ -106,10 +106,15 @@ def run_tieline(config_path: str) -> None:
               f"({len(active)}-phase equilibrium — not a simple two-phase tie-line).")
         endpoints = active
 
-    # Label matrix (V-poor) and precipitate (V-rich)
+    # Label matrix (majority phase fraction) and precipitate (minority phase
+    # fraction) — NOT by composition. Composition-based labeling (e.g.
+    # "V-poor = matrix") can disagree with which phase is actually the
+    # majority at a given parent composition: whichever endpoint the parent
+    # sits closer to receives the larger phase fraction (lever rule),
+    # independent of which endpoint is richer in the reference element.
     if len(endpoints) == 2:
-        endpoints.sort(key=lambda e: e["X"].get(ref_el, 0.0))
-        label = ["mat", "ppt"]
+        endpoints.sort(key=lambda e: e["fraction"])
+        label = ["ppt", "mat"]   # ascending fraction: minority first, majority second
     else:
         label = [f"phase_{i}" for i in range(len(endpoints))]
 

@@ -76,7 +76,8 @@ Two things worth stopping on immediately:
 2. **The "suggested elastic config update" section is empty.** The
    script only knows how to turn its result into `c_mat`/`c_ppt` text when
    exactly two phases are found (it sorts two endpoints into `mat`/`ppt` by
-   reference-element content); given three, it has nothing to suggest.
+   phase fraction — majority is `mat`, minority is `ppt`; see the
+   [binary tie-line tutorial](tutorial_binary_tieline.md#labeling-convention-matrix-vs-precipitate)); given three, it has nothing to suggest.
 
 Neither of these is a bug in the tie-line script — it's telling you
 something true and specific: **at this exact composition and temperature,
