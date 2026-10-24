@@ -186,6 +186,6 @@ V. Attari, R. Arróyave, *PhaseFoundry: A CALPHAD-Coupled Phase-Field Framework 
 [Report a bug](https://github.com/vahid2364/PhaseFoundry/issues){ .md-button }
 [Request a feature](https://github.com/vahid2364/PhaseFoundry/issues){ .md-button }
 
-See the [README](https://github.com/vahid2364/PhaseFoundry#readme) for project structure and the full CLI reference.
+See the [CLI Reference](cli_reference.md) for every `pf-*` command, or the [README](https://github.com/vahid2364/PhaseFoundry#readme) for project structure.
 
 </div>

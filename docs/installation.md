@@ -122,4 +122,4 @@ you're developing `phasefoundry` itself, not for running the pipeline.
 
 ## Next step
 
-[2D binary tutorial](tutorial_2d_binary.md) — the first full pipeline run, start to finish.
+[2D binary tutorial](tutorial_2d_binary.md) — the first full pipeline run, start to finish. Or see the [CLI Reference](cli_reference.md) for every `pf-*` command.
