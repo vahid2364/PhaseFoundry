@@ -57,7 +57,7 @@ c0       : {'NB': 0.5, 'HF': 0.25}
   BCC_A2  fraction=0.4544
   BCC_A2  fraction=0.2807
 
-3 BCC_A2 phases found (two-phase tie-line).
+3 BCC_A2 phases found (3-phase equilibrium — not a simple two-phase tie-line).
 
 === Tie-line endpoints ===
   phase_0: x_NB=0.2316  x_HF=0.7631  x_V=0.0054
@@ -69,22 +69,21 @@ c0       : {'NB': 0.5, 'HF': 0.25}
 
 Two things worth stopping on immediately:
 
-1. **Three phase instances, not two.** The script's own log line says
-   "two-phase tie-line" (that's just its default message — it was written
-   assuming the common case), but it actually found three simultaneously
-   stable `BCC_A2` compositions, with comparable phase fractions
-   (26%/45%/28%, not one dominant phase plus two numerical slivers).
+1. **Three phase instances, not two.** It actually found three
+   simultaneously stable `BCC_A2` compositions, with comparable phase
+   fractions (26%/45%/28%, not one dominant phase plus two numerical
+   slivers) — a genuine three-phase equilibrium, not an artifact.
 2. **The "suggested elastic config update" section is empty.** The
    script only knows how to turn its result into `c_mat`/`c_ppt` text when
    exactly two phases are found (it sorts two endpoints into `mat`/`ppt` by
    reference-element content); given three, it has nothing to suggest.
 
-This isn't a bug in the tie-line script — it's telling you something true
-and specific: **at this exact composition and temperature, the real
-equilibrium state isn't a simple two-phase matrix/precipitate split at
-all.** No pair of endpoints you choose from a two-phase framework can be
-"the" correct tie-line here, because the real answer has three vertices,
-not two.
+Neither of these is a bug in the tie-line script — it's telling you
+something true and specific: **at this exact composition and temperature,
+the real equilibrium state isn't a simple two-phase matrix/precipitate
+split at all.** No pair of endpoints you choose from a two-phase framework
+can be "the" correct tie-line here, because the real answer has three
+vertices, not two.
 
 ---
 

@@ -98,8 +98,12 @@ def run_tieline(config_path: str) -> None:
         print("Tip: check if the temperature is above the miscibility gap.")
         # Still write the single endpoint so the file exists
         endpoints = active
-    else:
+    elif len(active) == 2:
         print(f"\n{len(active)} BCC_A2 phases found (two-phase tie-line).")
+        endpoints = active
+    else:
+        print(f"\n{len(active)} BCC_A2 phases found "
+              f"({len(active)}-phase equilibrium — not a simple two-phase tie-line).")
         endpoints = active
 
     # Label matrix (V-poor) and precipitate (V-rich)
