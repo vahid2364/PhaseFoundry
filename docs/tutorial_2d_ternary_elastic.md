@@ -211,10 +211,12 @@ in Step 3's final microstructure below.
 > placeholder tie-line endpoints, not a CALPHAD-computed tie-line for this
 > parent composition — the config comments note they don't actually
 > mass-balance against Nb50Hf25V25 (this is the same issue Reviewer 4 caught
-> in the Kunselman paper's Table 6). Run
-> `workflows/01c_calphad_tieline/run.py` or inspect the ternary phase map
-> from `workflows/01d_phase_map` before trusting these quantitatively — for
-> this tutorial they're good enough to demonstrate the mechanism.
+> in the Kunselman paper's Table 6). For this tutorial they're good enough
+> to demonstrate the mechanism — but running the actual fix
+> (`pf-tieline`) turns up something bigger than an imprecise number: see the
+> [tie-line and phase map tutorial](tutorial_tieline_phase_map.md), which
+> finds this exact composition sits inside a three-phase field at 500 °C,
+> not a two-phase one.
 
 ---
 
@@ -377,6 +379,6 @@ of independent fields.
 ## Where to go next
 
 - **Quaternary systems** — Mode 4 in the [README](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/README.md#mode-4--quaternary-elasto-chemical-2d), Hf-Nb-Ti-V, 3 independent fields.
-- **Refining the tie-line** — run `workflows/01c_calphad_tieline/run.py` (or inspect the Step 1d ternary phase map) to replace the placeholder `c_mat`/`c_ppt` endpoints used here with a CALPHAD-computed tie-line that actually mass-balances against Nb50Hf25V25.
+- **Refining the tie-line** — the [tie-line and phase map tutorial](tutorial_tieline_phase_map.md) runs `pf-tieline` and `pf-phase-map` on exactly this composition and finds why a simple two-endpoint `c_mat`/`c_ppt` replacement isn't actually the fix here.
 - **Fixing the resolution/stability issues flagged above** — reduce `dt` toward `dt_stable`, or increase `kappa[0]` toward the solver's own suggested minimum (printed alongside the `δ_NB` warning) to resolve the Nb interface on this grid.
 - **Checking surrogate accuracy** — `pf-validate` compares `fd`/`jansson`/`hybrid` derivative methods against raw CALPHAD data, same as the binary tutorial.

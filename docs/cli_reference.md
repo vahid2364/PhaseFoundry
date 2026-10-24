@@ -145,13 +145,16 @@ options:
 pf-tieline --config configs/nb_hf_v_elastic_cNb50V25Hf25.yaml
 ```
 
-!!! note "This is the fix for a caveat flagged elsewhere on this site"
+!!! note "This is the fix for a caveat flagged elsewhere on this site — with a twist"
     The [ternary tutorial](tutorial_2d_ternary_elastic.md) and the
     `nb_hf_v_elastic_cNb50V25Hf25.yaml` config itself both flag that the
     `c_mat`/`c_ppt` endpoints used there are placeholder estimates that
-    don't actually mass-balance against the parent composition. `pf-tieline`
-    is the tool that replaces them with a real CALPHAD-computed tie-line —
-    not yet run as part of any tutorial on this site.
+    don't actually mass-balance against the parent composition. Running
+    `pf-tieline` to fix it doesn't just give more precise numbers — at this
+    exact composition it finds a **three-phase** equilibrium, which the
+    matrix/precipitate framework can't represent at all. See the
+    [tie-line and phase map tutorial](tutorial_tieline_phase_map.md) for the
+    full investigation, cross-checked against `pf-phase-map`.
 
 ---
 
@@ -176,13 +179,17 @@ options:
 ```
 
 ```bash
-pf-phase-map --config configs/nb_hf_v.yaml
+pf-phase-map --config configs/nb_hf_v_elastic_cNb50V25Hf25.yaml
 ```
 
 Binary systems don't produce a phase map here — this is for 3+ components.
 `python-ternary` is an optional dependency; see
 [Installation](installation.md#optional-dependencies) if this errors with
 `ImportError: ternary`.
+
+See the [tie-line and phase map tutorial](tutorial_tieline_phase_map.md) for
+real output — including a three-phase region most two-phase mental models
+of this kind of system wouldn't expect.
 
 ---
 

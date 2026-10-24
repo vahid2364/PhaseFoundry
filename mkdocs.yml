@@ -59,6 +59,7 @@ nav:
   - Tutorial — 2D Binary Walkthrough: tutorial_2d_binary.md
   - Tutorial — Hessian Stability Analysis (Binary): tutorial_hessian_stability_binary.md
   - Tutorial — 2D Ternary Elasto-Chemical: tutorial_2d_ternary_elastic.md
+  - Tutorial — Tie-Lines & Phase Maps (Ternary): tutorial_tieline_phase_map.md
 
 markdown_extensions:
   - attr_list

@@ -71,6 +71,14 @@
 
     [:octicons-arrow-right-24: Add elastic coupling](tutorial_2d_ternary_elastic.md)
 
+-   :material-triangle-outline:{ .lg .middle } **Tie-lines & phase maps**
+
+    ---
+
+    `pf-tieline` finds a 3-phase equilibrium where the config assumed 2 — cross-checked against `pf-phase-map`.
+
+    [:octicons-arrow-right-24: See the real phase diagram](tutorial_tieline_phase_map.md)
+
 </div>
 
 ## Pipeline
