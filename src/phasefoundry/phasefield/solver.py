@@ -35,7 +35,7 @@ solve_cahn_hilliard_binary() scheme.
 
 Stability dt
 ------------
-    dt_stable = 0.4 · dx² / ( M̊_max · |f''|_max )
+    dt_stable = 0.3 · dx² / ( M̊_max · |f''|_max )
 
 where M̊_max is the largest diagonal entry and |f''|_max is the maximum
 absolute Hessian eigenvalue over a coarse composition scan.
@@ -191,6 +191,12 @@ def _hessian_scan(
 
 # ── stable time-step ──────────────────────────────────────────────────────────
 
+# Single source of truth for the default CFL safety factor, so the value
+# actually used by stable_dt() and the value reported in sim_params.txt
+# (via _write_params()) can't silently drift apart again.
+DT_STABLE_SAFETY_DEFAULT = 0.3
+
+
 def stable_dt(
     M_diag:       np.ndarray | float,
     dx:           float,
@@ -198,7 +204,7 @@ def stable_dt(
     c0:           np.ndarray | None = None,
     c0_window:    float = 0.3,
     n_scan:       int   = 20,
-    safety:       float = 0.3,
+    safety:       float = DT_STABLE_SAFETY_DEFAULT,
 ) -> float:
     """
     CFL-style stable time step for the semi-implicit CH scheme.
@@ -1030,6 +1036,7 @@ def _write_params(
     dt_changes:   int   = 0,
     steps_actual: int   = 0,
     ndim:         int   = 2,
+    dt_safety:    float = DT_STABLE_SAFETY_DEFAULT,
 ) -> None:
     N_ind   = interp.N_ind
     t_total = dt * n_steps
@@ -1128,7 +1135,7 @@ def _write_params(
     lines += [
         "",
         "  ── Time integration ────────────────────────────────",
-        f"  Stable dt (safety=0.4) dt_stable= {dt_stable:.4e} s",
+        f"  Stable dt (safety={dt_safety:g}) dt_stable= {dt_stable:.4e} s",
         f"  Time step used       dt       = {dt:.4e} s",
         f"  Steps                n_steps  = {n_steps}  "
         f"({'actual: ' + str(steps_actual) if adaptive_dt else 'fixed'})",
