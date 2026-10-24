@@ -15,8 +15,8 @@ that imports the corresponding `workflows/<step>/run.py` and calls its
 `main()` — nothing more. The indirection exists only because workflow
 directory names start with digits (`01_generate_thermo_data`, ...) and
 can't be imported as normal Python packages. All `--help` text, output
-paths, and behavior below came from actually running each command on this
-machine.
+paths, and behavior below came from actually running each command against
+the installed package.
 
 ## Common flags
 
