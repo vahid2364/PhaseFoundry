@@ -74,6 +74,12 @@ markdown_extensions:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
 
+extra:
+  social:
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/in/vahid-attari-0851a926/
+      name: Vahid Attari on LinkedIn
+
 extra_css:
   - stylesheets/extra.css
 
