@@ -1,5 +1,23 @@
 # Tutorial: binary tie-lines (Nb-V) — three methods, one answer?
 
+A tie-line is the pair of compositions connected by a common tangent to the
+molar Gibbs energy curve — the two phases a homogeneous alloy actually
+splits into at equilibrium, found where every component's chemical
+potential matches on both sides. In a binary system it's the simplest
+possible case: exactly two endpoints, one tangent line, a result you can
+read straight off a `G_m(x)` plot. That simplicity is exactly what makes
+the binary case the right place to validate a tie-line-finding *method*
+before trusting it on a ternary or quaternary system, where the same check
+has no simple visual equivalent.
+
+This matters because every binodal boundary reported elsewhere on this
+site was computed by an approximate method operating on a finite, tabulated
+`G_m(x)` grid, not by calling CALPHAD's equilibrium solver directly. That's
+a reasonable thing to do for speed, but it's an assumption worth checking
+against an authoritative, independent computation before relying on those
+numbers to better than a rough estimate — which is exactly what this
+tutorial does.
+
 The [binodal/spinodal tutorial](tutorial_binodal_spinodal_3T.md) computed
 the Nb-V binodal at 500 °C, 900 °C, and 1200 °C two different ways —
 `method="hull"` and `method="fsolve"` — both operating on the same
