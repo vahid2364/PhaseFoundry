@@ -207,6 +207,33 @@ presented here demonstrate a consistent accuracy gap between them, relevant
 whenever the binodal is required to better than roughly 1-3% precision
 rather than a qualitatively correct estimate.
 
+### Computation time
+
+Accuracy is only half the comparison — the following measures actual
+computation time for each method, at 500 °C, on this machine (mean of 20
+calls per method, excluding one-time warm-up):
+
+| Method | What is measured | Time |
+|---|---|---|
+| `hull` | One call, Step 1 table already loaded in memory | 3.3 ms |
+| `fsolve` | One call, Step 1 table already loaded in memory | 1.8 ms |
+| `pycalphad.equilibrium()` (what `pf-tieline` calls internally) | One call, TDB already loaded in memory | 3.3 ms |
+| `pf-tieline` (full CLI invocation) | Cold start: Python/`pycalphad` import, TDB parse, one equilibrium call | ~1.1 s |
+
+The first three rows are, within measurement noise, a three-way tie —
+`fsolve` is not meaningfully faster than `hull`, and the raw
+`pycalphad.equilibrium()` call `pf-tieline` depends on costs about the same
+as either tabulated method, once the relevant data is already in memory.
+The ~1.1 s for a full `pf-tieline` invocation is not the cost of superior
+accuracy; it is one-time process startup (importing `pycalphad` and parsing
+the TDB file, the latter measured separately at ~41 ms) that `hull`/`fsolve`
+do not pay in this comparison, since the Step 1 table they operate on was
+already generated and cached by an earlier, separate `pf-generate` run.
+Calling `pycalphad.equilibrium()` repeatedly from a single Python session
+with one `Database` already loaded — rather than invoking the `pf-tieline`
+CLI once per temperature — would show the same near-tie the first three
+rows show.
+
 ---
 
 ## Common Gotchas
