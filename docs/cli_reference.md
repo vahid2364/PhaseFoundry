@@ -163,7 +163,7 @@ pf-tieline --config configs/nb_hf_v_elastic_cNb50V25Hf25.yaml
     Every binary config elsewhere on this site writes `c0` as a bare scalar
     (`c0: 0.50`). `pf-tieline` crashes on that
     (`TypeError: object of type 'float' has no len()`) — it needs `c0: [0.50]`.
-    See the [binary tie-line tutorial](tutorial_binary_tieline.md#the-config-and-a-real-crash).
+    See the [binary tie-line tutorial](tutorial_binary_tieline.md#configuration-requirements).
 
 ---
 
