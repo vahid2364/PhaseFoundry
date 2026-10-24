@@ -1,12 +1,25 @@
 # Tutorial: tie-lines and phase maps (ternary Nb-Hf-V)
 
-The [ternary elasto-chemical tutorial](tutorial_2d_ternary_elastic.md) and
-its config file both flag the same caveat: the `c_mat`/`c_ppt` endpoints
-used for the elastic eigenstrain model are "placeholder estimates... that
-do not actually mass-balance against the Nb50Hf25V25 parent composition,"
-and point at `pf-tieline` as the tool to fix it. This tutorial runs that
-tool for real — and the actual CALPHAD answer turns out to be more
-interesting than "the placeholder numbers were just imprecise."
+A two-phase equilibrium in a multicomponent alloy is defined by a
+**tie-line**: the pair of compositions at which every component's chemical
+potential is equal between the two phases. It's the quantity that actually
+answers "if this alloy splits into two phases, what are they made of?" —
+and it's not something you can guess or estimate by eye in a ternary or
+higher-order system, because it depends on the full shape of the
+multicomponent Gibbs energy surface, not just the overall composition.
+
+That matters here specifically because PhaseFoundry's elasto-chemical model
+needs a real tie-line as input, not a free parameter: `c_mat`/`c_ppt` set
+the two reference compositions the Vegard eigenstrain model measures
+coherency strain between, so if they don't correspond to an actual
+equilibrium, the elastic driving force computed from them doesn't
+correspond to anything physical either. `pf-tieline` exists to close
+exactly that gap — it calls `pycalphad`'s equilibrium solver directly, at
+your exact parent composition and temperature, and reports the real
+phase split instead of a hand-picked estimate. This tutorial runs it for
+real, alongside `pf-phase-map` for a wider composition-space view, and the
+result turns out to be more interesting than simply replacing an imprecise
+placeholder with a precise number.
 
 ## What these two commands actually compute
 
