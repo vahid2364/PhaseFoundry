@@ -10,16 +10,13 @@ the binary case the right place to validate a tie-line-finding *method*
 before trusting it on a ternary or quaternary system, where the same check
 has no simple visual equivalent.
 
+<figure class="pf-figure" markdown>
 ![What a tie-line is: the common tangent connecting matrix and precipitate on the Nb-V G_m(x) curve at 500 C](images/tutorial_binary_tieline/00_tieline_concept.png)
+<figcaption markdown>**The tie-line, drawn on the real curve.** `pf-tieline`'s actual result for Nb-V at 500 °C, plotted on the CALPHAD `G_m(x)` curve it was computed from. The red line is the common tangent: it touches the curve at exactly the matrix and precipitate compositions and lies on or below it everywhere in between — the gap between curve and line is the free energy a homogeneous alloy at any intermediate composition gives up by *not* phase-separating.</figcaption>
+</figure>
 
-This is the real `pf-tieline` result for Nb-V at 500 °C, drawn on the
-actual CALPHAD `G_m(x)` curve. The straight red line is the common
-tangent — it touches the curve at exactly the matrix and precipitate
-compositions and lies on or below it everywhere in between (verified
-numerically, not just by eye: `G_m(x) − tie-line(x) ≥ 0` across the whole
-two-phase window). That gap between the curve and the line is the free
-energy a homogeneous alloy at any intermediate composition gives up by
-*not* splitting into these two phases — the thermodynamic driving force
+Verified numerically, not just by eye: `G_m(x) − tie-line(x) ≥ 0` across
+the entire two-phase window. That gap is the thermodynamic driving force
 for phase separation in the first place.
 
 This matters because every binodal boundary reported elsewhere on this
