@@ -1,14 +1,24 @@
 site_name: PhaseFoundry
 site_description: CALPHAD-coupled phase-field modeling toolkit
 site_url: https://vahid2364.github.io/PhaseFoundry/
+site_author: Vahid Attari
 repo_url: https://github.com/vahid2364/PhaseFoundry
 repo_name: vahid2364/PhaseFoundry
 edit_uri: edit/develop-new/docs/
+copyright: "&copy; 2026 Vahid Attari"
 
 docs_dir: docs
 
+plugins:
+  - search
+  - social
+  - git-revision-date-localized:
+      type: date
+      fallback_to_build_date: true
+
 theme:
   name: material
+  favicon: assets/images/favicon.png
   icon:
     repo: fontawesome/brands/github
   palette:
