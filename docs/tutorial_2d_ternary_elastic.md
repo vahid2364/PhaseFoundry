@@ -1,44 +1,44 @@
 # Tutorial: elasto-chemical spinodal decomposition (ternary Nb-Hf-V)
 
 This is the natural second tutorial after the [2D binary walkthrough](tutorial_2d_binary.md):
-same pipeline, but now in a ternary system (Nb-Hf-V) with **coherency-strain
-coupling turned on** — the capability that actually distinguishes this toolkit
-from a hand-fit double-well phase-field model. Composition-dependent elastic
-constants (from SQS/MLIP calculations) and a tensorial Vegard eigenstrain feed
-a spectral micromechanics solver that couples back into the Cahn-Hilliard
-dynamics every few time steps.
+the same pipeline, now applied to a ternary system (Nb-Hf-V) with
+**coherency-strain coupling enabled** — the capability that distinguishes
+this toolkit from a hand-fit double-well phase-field model.
+Composition-dependent elastic constants (from SQS/MLIP calculations) and a
+tensorial Vegard eigenstrain feed a spectral micromechanics solver that
+couples back into the Cahn-Hilliard dynamics every few time steps.
 
-Every command and number below was actually run on this machine; the figures
-are real output. Unlike the binary tutorial, this one isn't a 2-minute run —
-the full production configuration takes **about 2 hours** on CPU (see
-[Step 3](#step-3-run-the-simulation) for why, and for a cheaper way to check
-things first).
+Every command and number below was actually run on this machine; the
+figures are real output. Unlike the binary tutorial, this is not a
+2-minute run — the full production configuration takes **about 2 hours**
+on CPU (see [Step 3](#step-3-run-the-simulation) for why, and for a cheaper
+way to verify the pipeline first).
 
 ---
 
-## What you'll build
+## What is built
 
 A 2D Cahn-Hilliard simulation of Nb-Hf-V (x_Nb = 0.50, x_Hf = 0.25, x_V = 0.25)
-at 500 °C, where the chemical driving force comes from the exact Jansson
+at 500 °C, in which the chemical driving force comes from the exact Jansson
 derivatives of the CALPHAD free-energy surface (as in the binary tutorial),
-*and* the interfaces are additionally driven/resisted by coherency elastic
-strain energy from a composition-dependent cubic stiffness tensor and Vegard
-eigenstrain.
+*and* the interfaces are additionally driven and resisted by coherency
+elastic strain energy from a composition-dependent cubic stiffness tensor
+and Vegard eigenstrain.
 
 ## Prerequisites
 
 Same as the [binary tutorial](tutorial_2d_binary.md#prerequisites) — see
-[Installation](installation.md) if you haven't already done `pip install -e .`.
-This tutorial additionally needs `python-ternary` installed if you want to
-regenerate the Step 2 spinodal-map figure yourself (see
+[Installation](installation.md) if `pip install -e .` has not already been
+run. This tutorial additionally requires `python-ternary` to regenerate the
+Step 2 spinodal-map figure (see
 [Optional dependencies](installation.md#optional-dependencies)).
 
 ---
 
 ## The config file
 
-Full contents of `configs/nb_hf_v_elastic_cNb50V25Hf25.yaml` (this is the
-exact "Mode 3" example in the main [README](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/README.md#mode-3--ternary-elasto-chemical-2d)):
+Full contents of `configs/nb_hf_v_elastic_cNb50V25Hf25.yaml` (the exact
+"Mode 3" example in the main [README](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/README.md#mode-3--ternary-elasto-chemical-2d)):
 
 ```yaml
 system:
@@ -103,32 +103,34 @@ output:
   run_name:      auto
 ```
 
-**Where paths resolve from** (same two rules as the binary tutorial, repeated
-here because it matters more with the extra `elastic_csv` path):
+**Where paths resolve from** (the same two rules as the binary tutorial,
+repeated here since the extra `elastic_csv` path makes them more
+consequential):
 
-1. The `--config configs/....yaml` argument on the command line is resolved
-   relative to **your current working directory** — run these commands from
-   the repo root.
+1. The `--config configs/....yaml` argument on the command line is
+   resolved relative to the **current working directory** — these commands
+   should be run from the repository root.
 2. Every path *inside* the YAML — `db_path`, `data_dir`, `results_dir`, and
    (for this config specifically) `elastic.elastic_csv` — is resolved
-   relative to the **repository root**, regardless of where you ran the
-   command from. `db_path: data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb`
+   relative to the **repository root**, regardless of the directory the
+   command was run from. `db_path: data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb`
    becomes `<repo_root>/data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb`, and
    `elastic_csv: data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv`
    becomes `<repo_root>/data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv`.
-   This happens via `resolve_paths()` for the `system:`/`output:` sections
-   (`src/phasefoundry/config.py:200`), and via the same `_ROOT`-relative join
-   applied explicitly to `elastic_csv` in
-   `workflows/01b_lookup_elastic/run.py:272-273`. `_ROOT` itself is computed
-   from `Path(__file__).resolve().parents[2]` inside each workflow script —
-   i.e. it's anchored to the repo's own file layout, not to `os.getcwd()`.
+   This occurs via `resolve_paths()` for the `system:`/`output:` sections
+   (`src/phasefoundry/config.py:200`), and via the same `_ROOT`-relative
+   join applied explicitly to `elastic_csv` in
+   `workflows/01b_lookup_elastic/run.py:272-273`. `_ROOT` itself is
+   computed from `Path(__file__).resolve().parents[2]` inside each
+   workflow script — anchored to the repository's own file layout, not to
+   `os.getcwd()`.
 
-So: write every path in a config relative to the repo root, and run `pf-*`
-from the repo root.
+In practice: write every path in a config relative to the repository root,
+and run `pf-*` commands from the repository root.
 
 ---
 
-## The pipeline (one extra step vs. the binary case)
+## The pipeline (one extra step relative to the binary case)
 
 ```
 PhaseForge TDB
@@ -139,9 +141,9 @@ PhaseForge TDB
    └─ Step 4   ─  simulation output → post-processing and figures
 ```
 
-Step 1b is the only addition relative to the binary pipeline: it reads a CSV
-of SQS/MLIP-computed elastic constants, interpolates C₁₁/C₁₂/C₄₄ and the
-lattice parameter at the matrix and precipitate compositions you specify,
+Step 1b is the only addition relative to the binary pipeline: it reads a
+CSV of SQS/MLIP-computed elastic constants, interpolates C₁₁/C₁₂/C₄₄ and
+the lattice parameter at the specified matrix and precipitate compositions,
 runs a Born-stability check, and derives the tensorial Vegard eigenstrain.
 Step 3 then reads that output (`elastic_params.yaml`) automatically.
 
@@ -154,11 +156,11 @@ pf-generate --config configs/nb_hf_v_elastic_cNb50V25Hf25.yaml
 ```
 
 This system's thermodynamic tables were already cached from an earlier run
-(the README notes Step 1 output is shared across configs for the same TDB
-and composition space), so this printed `500.0 °C → exists, skipping` and
-finished in under 4 seconds. On a cold cache, expect the same per-temperature
-`pycalphad` equilibrium cost as the binary tutorial, just on a 20×20 grid
-instead of a 1D sweep.
+(the README notes that Step 1 output is shared across configs for the same
+TDB and composition space), so this printed `500.0 °C → exists, skipping`
+and finished in under 4 seconds. On a cold cache, the per-temperature
+`pycalphad` equilibrium cost matches the binary tutorial, on a 20×20 grid
+rather than a 1D sweep.
 
 ---
 
@@ -168,13 +170,13 @@ instead of a 1D sweep.
 python workflows/01b_lookup_elastic/run.py --config configs/nb_hf_v_elastic_cNb50V25Hf25.yaml
 ```
 
-**What it does:** interpolates the SQS/MLIP elastic-constants CSV (1771 rows,
-filtered to 231 rows in the Nb-Hf-V subspace) at the matrix composition
-(Nb70-Hf10-V20) and precipitate composition (Nb15-Hf35-V50) you specified
-under `elastic.c_mat`/`elastic.c_ppt`, checks Born mechanical-stability
-criteria, and derives the Vegard eigenstrain tensor.
+**What it does:** interpolates the SQS/MLIP elastic-constants CSV (1771
+rows, filtered to 231 rows in the Nb-Hf-V subspace) at the matrix
+composition (Nb70-Hf10-V20) and precipitate composition (Nb15-Hf35-V50)
+specified under `elastic.c_mat`/`elastic.c_ppt`, checks Born
+mechanical-stability criteria, and derives the Vegard eigenstrain tensor.
 
-**Actual output:**
+**Output:**
 
 ```
 Born stability check:
@@ -200,23 +202,23 @@ Zener anisotropy:
   A_Z < 1 → diamond morphology expected (⟨100⟩ corners)
 ```
 
-Both endpoint compositions pass every Born stability check, so the stiffness
-tensors used downstream are at least mechanically well-posed. The matrix
-phase's Zener anisotropy ratio A_Z = 0.368 is well below 1 — this predicts
-elastically-driven microstructures elongated along ⟨100⟩-type directions
-rather than isotropic circular precipitates, which is exactly what shows up
-in Step 3's final microstructure below.
+Both endpoint compositions pass every Born stability check, confirming the
+stiffness tensors used downstream are at least mechanically well-posed. The
+matrix phase's Zener anisotropy ratio A_Z = 0.368 is well below 1,
+predicting elastically-driven microstructures elongated along ⟨100⟩-type
+directions rather than isotropic circular precipitates — consistent with
+Step 3's final microstructure below.
 
 > **Caveat already flagged in the config itself:** `c_mat`/`c_ppt` here are
 > placeholder tie-line endpoints, not a CALPHAD-computed tie-line for this
-> parent composition — the config comments note they don't actually
-> mass-balance against Nb50Hf25V25 (this is the same issue Reviewer 4 caught
-> in the Kunselman paper's Table 6). For this tutorial they're good enough
-> to demonstrate the mechanism — but running the actual fix
-> (`pf-tieline`) turns up something bigger than an imprecise number: see the
-> [tie-line and phase map tutorial](tutorial_tieline_phase_map.md), which
-> finds this exact composition sits inside a three-phase field at 500 °C,
-> not a two-phase one.
+> parent composition — the config comments note they do not actually
+> mass-balance against Nb50Hf25V25 (the same issue Reviewer 4 identified in
+> the Kunselman paper's Table 6). For this tutorial these values are
+> sufficient to demonstrate the mechanism — but running the actual fix
+> (`pf-tieline`) reveals something more significant than an imprecise
+> number: see the [tie-line and phase map tutorial](tutorial_tieline_phase_map.md),
+> which finds that this exact composition sits inside a three-phase field
+> at 500 °C, not a two-phase one.
 
 ---
 
@@ -231,11 +233,11 @@ among other figures.
 
 ![Spinodal map at 500 °C](images/tutorial_2d_ternary_elastic/01_spinodal_map.png)
 
-Almost the entire sampled (x_Nb, x_Hf) window at 500 °C is spinodally
+Nearly the entire sampled (x_Nb, x_Hf) window at 500 °C is spinodally
 unstable (red); the handful of scattered stable (blue) points are isolated
-and likely numerical noise near the sampling resolution rather than a real
-stable pocket. Our chosen composition, (x_Nb, x_Hf) = (0.50, 0.25), sits well
-inside the unstable region.
+and likely numerical noise near the sampling resolution rather than a
+genuine stable pocket. The chosen composition, (x_Nb, x_Hf) = (0.50, 0.25),
+sits well inside the unstable region.
 
 ---
 
@@ -250,20 +252,20 @@ spectral elasticity solver re-solved every 10 steps (60,000 elasticity
 solves, each an iterative Lippmann-Schwinger FFT scheme up to 500
 iterations). On this machine (NumPy/CPU FFT backend, no GPU): **7662 s
 (~2h08m) wall time.** A 2000-step timing probe beforehand ran at ~206
-steps/s, which is what the ~2 h estimate for the full 600,000-step run was
-based on before committing to it.
+steps/s, which is the basis for the ~2 h estimate for the full
+600,000-step run.
 
-**If you just want to see the mechanism work, not reproduce the production
-run:** override step count on the command line and it finishes in seconds —
+**To verify the mechanism without reproducing the full production run:**
+override the step count on the command line, which finishes in seconds —
 
 ```bash
 pf-simulate --config configs/nb_hf_v_elastic_cNb50V25Hf25.yaml \
   --set simulation.n_steps=2000 simulation.save_every=1000
 ```
 
-(2000 steps = 100 s physical time here, at ~10 s wall time — enough to
+(2000 steps = 100 s physical time here, at ~10 s wall time — sufficient to
 confirm the pipeline runs end-to-end and inspect the printed diagnostics
-below, but not long enough to see real decomposition; see the Hessian
+below, but not long enough to show real decomposition; see the Hessian
 eigenvalues and the dt_stable/interface-resolution notes below for why.)
 
 **Diagnostics worth reading before trusting any run** (from `sim_params.txt`,
@@ -277,39 +279,41 @@ Hessian at c0 (J/mol):
 Interface width    δ_NB = 4.028e-09 m (0.52 × dx)  ⚠  δ < dx — UNRESOLVED!
 Interface width    δ_HF = 1.066e-08 m (1.36 × dx)
 
-Stable dt (safety=0.4) dt_stable = 5.8104e-04 s
+Stable dt (safety=0.3) dt_stable = 5.8104e-04 s
 Time step used                dt = 5.0000e-02 s   (86× larger than dt_stable)
 ```
 
-Three things to notice, in order of how much they should worry you:
+Three items are worth noting, in order of significance:
 
-1. **One negative, one positive eigenvalue** (-61644 vs. +3574 J/mol) is the
-   expected signature of a genuine spinodal instability in a 2-independent-field
-   system — only one composition direction is locally unstable, consistent
-   with the Step 2 map above.
+1. **One negative, one positive eigenvalue** (-61644 vs. +3574 J/mol) is
+   the expected signature of a genuine spinodal instability in a
+   2-independent-field system — only one composition direction is locally
+   unstable, consistent with the Step 2 map above.
 2. **`δ_NB` is unresolved** — the Nb field's natural interface width (from
    the Hessian curvature) is *smaller than one grid cell*. The grid
-   (128×128 over `Lx = 1 μm`) cannot actually resolve that interface; the
-   simulation effectively runs with an artificially widened Nb interface
-   rather than the physical one. `δ_HF` is marginally resolved (1.36×dx).
-3. **`dt` is 86× larger than `dt_stable`** — same situation flagged in the
-   binary tutorial's failure-mode table, but here it's not hypothetical: see
-   below.
+   (128×128 over `Lx = 1 μm`) cannot resolve that interface; the simulation
+   effectively runs with an artificially widened Nb interface rather than
+   the physical one. `δ_HF` is marginally resolved (1.36×dx).
+3. **`dt` is 86× larger than `dt_stable`** — the same situation flagged in
+   the binary tutorial's failure-mode table, here not hypothetical, as
+   shown below.
 
-These aren't things I'm fixing in this tutorial — they're exactly the kind
-of run-time diagnostics this logging exists to surface, and this ternary
-elastic config (taken as-is from the README) is a real example of hitting
-them, not a contrived one.
+None of these are corrected within this tutorial — they illustrate exactly
+the kind of run-time diagnostics this logging is designed to surface, and
+this ternary elastic config (taken as-is from the README) is a real
+example of encountering them, not a constructed one.
 
 ---
 
 ### What actually happened over the run
 
-Three snapshots, from `free_energy_log.txt` and the saved composition fields:
+Three snapshots, from `free_energy_log.txt` and the saved composition
+fields:
 
 ![Initial state](images/tutorial_2d_ternary_elastic/02_initial_noise.png)
 
-t = 0: near-uniform noise around (x_Nb, x_Hf, x_V) = (0.50, 0.25, 0.25), as expected.
+t = 0: near-uniform noise around (x_Nb, x_Hf, x_V) = (0.50, 0.25, 0.25), as
+expected.
 
 ![Early interconnected spinodal pattern](images/tutorial_2d_ternary_elastic/03_interconnected_spinodal_t5000s.png)
 
@@ -319,42 +323,44 @@ textbook early/mid-stage spinodal decomposition, still largely isotropic.
 ![Final microstructure](images/tutorial_2d_ternary_elastic/04_final_microstructure_t30000s.png)
 
 t = 30,000 s (step 600,000, the end of the run): the pattern has coarsened
-into elongated, diagonally-oriented rafts rather than staying isotropic. This
-is the elastic anisotropy from Step 1b showing up directly in the
+into elongated, diagonally oriented rafts rather than remaining isotropic.
+This is the elastic anisotropy from Step 1b appearing directly in the
 microstructure — A_Z = 0.368 (≠ 1) predicts exactly this kind of
-directionally-elongated coarsening instead of the circular/isotropic
+directionally elongated coarsening in place of the circular, isotropic
 droplets seen in the chemical-only binary tutorial.
 
 ![Composition evolution](images/tutorial_2d_ternary_elastic/05_composition_evolution.png)
 
-x_Nb and x_Hf both separate steadily and don't plateau by t = 30,000 s — Hf
-in particular is still narrowing toward its matrix/precipitate endpoints
-(min 0.019, consistent with the low end of the Step 1b precipitate estimate
-of 0.35... up to a max of 0.456, i.e. still evolving, not yet converged to
-the nominal c_ppt/c_mat endpoints).
+x_Nb and x_Hf both separate steadily and have not plateaued by t = 30,000 s
+— Hf in particular is still narrowing toward its matrix/precipitate
+endpoints (minimum 0.019, consistent with the low end of the Step 1b
+precipitate estimate of 0.35, up to a maximum of 0.456), indicating the
+fields are still evolving rather than converged to the nominal
+`c_ppt`/`c_mat` endpoints.
 
-**The honest caveat:** the right-hand panel (x_V, the dependent field,
-x_V = 1 - x_Nb - x_Hf) goes **outside [0, 1]** — down to -0.21 by the final
-step. x_Nb and x_Hf (the two fields actually integrated by the solver) never
-individually violate [0, 1], but their combination does. This lines up with
-point 3 above (`dt` 86× larger than `dt_stable`): the Eyre scheme's
-unconditional energy-stability guarantee keeps the simulation from blowing
-up, but it does not bound the value of either field pointwise, let alone
-their derived combination. Consistent with this, `free_energy_log.txt` shows
-`F_total` decreasing monotonically through t = 25,000 s and then ticking
-*up* slightly by t = 30,000 s (-3.3156×10⁴ → -3.3136×10⁴ J/mol) — a small
-but real sign of the same underlying stress, not numerical noise in the
-logger. None of this invalidates the qualitative microstructure (the
-anisotropic coarsening story above is robust), but a quantitative reading of
-the late-time x_V values, or of the run past t ≈ 25,000 s, should not be
-taken at face value without reducing `dt` first.
+**An honest caveat:** the right-hand panel (x_V, the dependent field,
+x_V = 1 - x_Nb - x_Hf) falls **outside [0, 1]** — down to -0.21 by the
+final step. x_Nb and x_Hf (the two fields actually integrated by the
+solver) never individually violate [0, 1], but their combination does.
+This is consistent with point 3 above (`dt` 86× larger than `dt_stable`):
+the Eyre scheme's unconditional energy-stability guarantee keeps the
+simulation from diverging, but does not bound the value of either field
+pointwise, let alone their derived combination. Consistent with this,
+`free_energy_log.txt` shows `F_total` decreasing monotonically through
+t = 25,000 s and then increasing slightly by t = 30,000 s
+(-3.3156×10⁴ → -3.3136×10⁴ J/mol) — a small but real indication of the
+same underlying issue, not numerical noise in the logger. This does not
+invalidate the qualitative microstructure (the anisotropic coarsening
+result above is robust), but a quantitative reading of the late-time x_V
+values, or of the run past t ≈ 25,000 s, should not be taken at face value
+without reducing `dt` first.
 
 ![Free energy evolution](images/tutorial_2d_ternary_elastic/06_free_energy_history.png)
 
-(Log scale: `F_gradient`, the interfacial term, is the only one that moves
-visibly on this scale — `F_total` and `F_bulk` are dominated by the bulk
-chemical term and the slight late-run uptick described above doesn't read
-visually at this scale.)
+(Log scale: `F_gradient`, the interfacial term, is the only quantity that
+moves visibly on this scale — `F_total` and `F_bulk` are dominated by the
+bulk chemical term, and the slight late-run increase described above does
+not register visually at this scale.)
 
 ---
 
@@ -371,14 +377,14 @@ microstructure figure directly from the saved `fields.npz`:
 
 Same figure style as the binary tutorial's Step 4 — a main panel with a
 cropped inset of a complementary field — generated here with no additional
-code for the ternary case; `plot_microstructure_from_npz` handles any number
-of independent fields.
+code for the ternary case; `plot_microstructure_from_npz` handles any
+number of independent fields.
 
 ---
 
-## Where to go next
+## Related material
 
 - **Quaternary systems** — Mode 4 in the [README](https://github.com/vahid2364/PhaseFoundry/blob/develop-new/README.md#mode-4--quaternary-elasto-chemical-2d), Hf-Nb-Ti-V, 3 independent fields.
-- **Refining the tie-line** — the [tie-line and phase map tutorial](tutorial_tieline_phase_map.md) runs `pf-tieline` and `pf-phase-map` on exactly this composition and finds why a simple two-endpoint `c_mat`/`c_ppt` replacement isn't actually the fix here.
-- **Fixing the resolution/stability issues flagged above** — reduce `dt` toward `dt_stable`, or increase `kappa[0]` toward the solver's own suggested minimum (printed alongside the `δ_NB` warning) to resolve the Nb interface on this grid.
-- **Checking surrogate accuracy** — `pf-validate` compares `fd`/`jansson`/`hybrid` derivative methods against raw CALPHAD data, same as the binary tutorial.
+- **Refining the tie-line** — the [tie-line and phase map tutorial](tutorial_tieline_phase_map.md) runs `pf-tieline` and `pf-phase-map` on exactly this composition and shows why a simple two-endpoint `c_mat`/`c_ppt` replacement is not actually the correct fix here.
+- **Addressing the resolution/stability issues noted above** — reducing `dt` toward `dt_stable`, or increasing `kappa[0]` toward the solver's own suggested minimum (printed alongside the `δ_NB` warning), resolves the Nb interface on this grid.
+- **Checking surrogate accuracy** — `pf-validate` compares `fd`/`jansson`/`hybrid` derivative methods against raw CALPHAD data, as in the binary tutorial.
