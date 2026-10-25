@@ -28,6 +28,34 @@ $$
 H_{NbNb}(x) = \frac{\partial^2 G_m}{\partial x_{Nb}^2}
 $$
 
+### Why H has one entry, not four
+
+A binary composition has two mole fractions, `x_Nb` and `x_V`, but only one
+of them is independent — the constraint `x_Nb + x_V = 1` removes a degree
+of freedom. PhaseFoundry makes this explicit by designating `V` the
+*reference* (dependent) element throughout this page's configs
+(`reference_element: "V"`), leaving a single independent field, `x_Nb`
+(`N_ind = 1`). `GmInterpolant.d2g()` does not compute a raw, unconstrained
+`∂²G_m/∂x_Nb∂x_V`; it computes the Gibbs-Duhem-reduced form directly,
+exactly as documented in `interpolant.py`:
+
+$$
+H_{NbNb} = \frac{\partial \mathrm{MU}_{Nb}}{\partial x_{Nb}} - \frac{\partial \mathrm{MU}_{V}}{\partial x_{Nb}}
+$$
+
+where \(\mathrm{MU}_{Nb}\) and \(\mathrm{MU}_{V}\) are `pycalphad`'s raw
+per-element chemical potentials at equilibrium (not the Gibbs-Duhem-reduced
+\(\mu_{Nb} = \mathrm{MU}_{Nb} - \mathrm{MU}_{V}\) defined above). This
+single scalar is already the complete, physically meaningful Hessian for
+this system, not one entry of an unreported 2×2 matrix — the other three
+entries a naive unconstrained treatment might suggest are not independent
+information; they are already folded into this term by the constraint
+itself. A genuine multi-entry Hessian, with real off-diagonal terms,
+appears only once a system has two or more independent composition fields
+(ternary and above) — see the
+[Hessian stability tutorial's note on `N_ind ≥ 2`](tutorial_hessian_stability_binary.md#the-hessian-api-and-what-it-reduces-to-for-binary)
+for where that extra structure actually starts to matter.
+
 ### Method 1: Jansson derivatives
 
 `derivative_method="jansson"` evaluates `μ` and `H` via `pycalphad`'s exact
