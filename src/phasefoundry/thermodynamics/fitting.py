@@ -46,136 +46,8 @@ from pathlib import Path
 
 import h5py
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import PolynomialFeatures
 
 from .storage import load_table
-
-
-# ── core fitting ──────────────────────────────────────────────────────────────
-
-def fit_delta_mu(
-    table_paths: list[str | Path],
-    reference_element: str,
-    poly_degree: int = 4,
-    temperatures_K: list[float] | None = None,
-) -> list[dict]:
-    """
-    Fit Δμ_i = μ_i − μ_ref as a polynomial in composition at each temperature.
-
-    Parameters
-    ----------
-    table_paths : list of str or Path
-        HDF5 tables (one per temperature) from generate_table().
-        Must contain 'MU' datasets.
-    reference_element : str
-        Reference element for the exchange potential, e.g. 'V'.
-    poly_degree : int
-        Polynomial degree. Default 4.
-    temperatures_K : list of float, optional
-        Override temperatures (K). If None, read from file metadata.
-
-    Returns
-    -------
-    list of dict, one per temperature, each containing:
-        'temperature_K'     float
-        'temperature_C'     float
-        'elements'          list[str]   all elements
-        'x_variables'       list[str]   independent composition variables
-        'reference_element' str
-        'poly_degree'       int
-        'models'            dict[str, dict]  one entry per fitted element:
-            'coefficients'      np.ndarray  (n_features,)
-            'intercept'         float
-            'feature_powers'    np.ndarray  (n_features, n_vars)  int
-            'rmse'              float   J/mol
-            'r2'                float
-            'n_points'          int
-    """
-    results = []
-
-    for i, path in enumerate(table_paths):
-        data = load_table(path)
-        elements = data["elements"]
-
-        if reference_element not in elements:
-            raise ValueError(
-                f"reference_element '{reference_element}' not in elements {elements}"
-            )
-        if "MU" not in data:
-            raise KeyError(f"'MU' not stored in {path}. Re-generate with quantities=('MU',...)")
-
-        T_K = (
-            temperatures_K[i]
-            if temperatures_K is not None
-            else float(data["metadata"]["temperature"])
-        )
-        T_C = T_K - 273.15
-
-        # Independent composition variables = all except reference
-        x_vars = [el for el in elements if el != reference_element]
-        col_indices = [elements.index(el) for el in x_vars]
-
-        X = data["compositions"][:, col_indices]     # (n_pts, n_vars)
-        mu_ref = data["MU"][reference_element]        # (n_pts,)
-
-        # Build polynomial features (shared transformer for all elements)
-        poly = PolynomialFeatures(degree=poly_degree, include_bias=True)
-        X_poly = poly.fit_transform(X)
-        feature_powers = poly.powers_.astype(np.int32)  # (n_features, n_vars)
-
-        models = {}
-        fitted_elements = [el for el in elements if el != reference_element]
-
-        for el in fitted_elements:
-            delta_mu = data["MU"][el] - mu_ref       # Δμ_i = μ_i − μ_ref
-
-            valid = np.isfinite(delta_mu)
-            reg = LinearRegression(fit_intercept=False)  # bias included in poly features
-            reg.fit(X_poly[valid], delta_mu[valid])
-
-            y_pred = reg.predict(X_poly[valid])
-            rmse = float(np.sqrt(mean_squared_error(delta_mu[valid], y_pred)))
-            r2   = float(r2_score(delta_mu[valid], y_pred))
-
-            # Coefficients align 1-to-1 with feature_powers rows
-            coeffs = reg.coef_.copy()
-            intercept = 0.0  # absorbed into bias term (first feature = 1^0)
-
-            # Human-readable description of the leading terms
-            desc = _describe_poly(el, reference_element, x_vars,
-                                  coeffs, feature_powers, poly_degree)
-
-            models[el] = {
-                "coefficients":   coeffs,
-                "intercept":      intercept,
-                "feature_powers": feature_powers,
-                "rmse":           rmse,
-                "r2":             r2,
-                "n_points":       int(valid.sum()),
-                "description":    desc,
-            }
-
-        results.append({
-            "temperature_K":     T_K,
-            "temperature_C":     T_C,
-            "elements":          elements,
-            "x_variables":       x_vars,
-            "reference_element": reference_element,
-            "poly_degree":       poly_degree,
-            "models":            models,
-        })
-
-        print(
-            f"T = {T_K:.1f} K ({T_C:.1f} °C)  |  "
-            + "  ".join(
-                f"Δμ_{el}: RMSE={m['rmse']:.1f} J/mol  R²={m['r2']:.4f}"
-                for el, m in models.items()
-            )
-        )
-
-    return results
 
 
 # ── spline surrogate ──────────────────────────────────────────────────────────
@@ -412,7 +284,8 @@ def save_fits(
     Parameters
     ----------
     fit_results : list of dict
-        Output of fit_delta_mu().
+        One entry per temperature; see the module docstring for the
+        expected 'models' structure (coefficients, feature_powers, etc.).
     output_path : str or Path
         Output HDF5 file path.
     source_db : str
@@ -571,29 +444,3 @@ def eval_delta_mu(
 
         results[el] = terms @ coeffs + m["intercept"]
     return results
-
-
-# ── helper ────────────────────────────────────────────────────────────────────
-
-def _describe_poly(
-    el: str,
-    ref: str,
-    x_vars: list[str],
-    coeffs: np.ndarray,
-    powers: np.ndarray,
-    degree: int,
-    n_terms: int = 5,
-) -> str:
-    """Build a short human-readable polynomial description."""
-    # Sort by absolute coefficient magnitude, show top n_terms
-    order = np.argsort(-np.abs(coeffs))
-    terms = []
-    for k in order[:n_terms]:
-        c = coeffs[k]
-        pw = powers[k]
-        var_str = "·".join(
-            (f"x_{x_vars[j]}^{pw[j]}" if pw[j] > 1 else f"x_{x_vars[j]}")
-            for j in range(len(x_vars)) if pw[j] > 0
-        ) or "1"
-        terms.append(f"{c:+.2e}·{var_str}")
-    return f"Δμ_{el} - μ_{ref}  ≈  " + " ".join(terms) + "  + ..."
