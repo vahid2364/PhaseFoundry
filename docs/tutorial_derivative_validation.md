@@ -1,8 +1,9 @@
 # Tutorial: validating derivatives against finite differences (binary Nb-V)
 
 Every result on this site depends on two derivatives of the molar Gibbs
-energy: the chemical potential `μ_i = ∂G_m/∂x_i` and the Hessian
-`H_ij = ∂²G_m/∂x_i∂x_j`. They set the driving force and stability criterion
+energy: the chemical potential \(\mu_i = \partial G_m/\partial x_i\) and the
+Hessian \(H_{ij} = \partial^2 G_m/\partial x_i \partial x_j\). They set the
+driving force and stability criterion
 for every spinodal boundary, every solver stabilization constant, and every
 interface-width estimate used elsewhere on this site. This page validates
 the two ways PhaseFoundry computes them — analytic (Jansson) derivatives
@@ -21,10 +22,11 @@ For the binary system used throughout this page (Nb-V, BCC_A2), `x_Nb` is
 the single independent composition variable. Two quantities are computed
 two different ways:
 
-```
-μ_Nb(x) = ∂G_m/∂x_Nb
-H_NbNb(x) = ∂²G_m/∂x_Nb²
-```
+$$
+\mu_{Nb}(x) = \frac{\partial G_m}{\partial x_{Nb}}
+\qquad
+H_{NbNb}(x) = \frac{\partial^2 G_m}{\partial x_{Nb}^2}
+$$
 
 ### Method 1: Jansson derivatives
 
@@ -47,18 +49,25 @@ produced `G_m` itself.
 produced by Step 1, using the formulas implemented in
 `src/phasefoundry/thermodynamics/interpolant.py`:
 
-```
-μ_i      = ( G_m(x + ε·êᵢ) − G_m(x − ε·êᵢ) ) / (2ε)                    central difference
+$$
+\mu_i = \frac{G_m(x+\epsilon\,\hat e_i) - G_m(x-\epsilon\,\hat e_i)}{2\epsilon}
+\qquad \text{(central difference)}
+$$
 
-H_ii     = ( G_m(x + ε·êᵢ) − 2·G_m(x) + G_m(x − ε·êᵢ) ) / ε²           central second difference
+$$
+H_{ii} = \frac{G_m(x+\epsilon\,\hat e_i) - 2\,G_m(x) + G_m(x-\epsilon\,\hat e_i)}{\epsilon^2}
+\qquad \text{(central second difference)}
+$$
 
-H_ij     = ( G_m(x+ε·êᵢ+ε·êⱼ) − G_m(x+ε·êᵢ−ε·êⱼ)
-           − G_m(x−ε·êᵢ+ε·êⱼ) + G_m(x−ε·êᵢ−ε·êⱼ) ) / (4ε²)            mixed partial (i ≠ j, ternary+)
-```
+$$
+H_{ij} = \frac{G_m(x+\epsilon\hat e_i+\epsilon\hat e_j) - G_m(x+\epsilon\hat e_i-\epsilon\hat e_j)
+             - G_m(x-\epsilon\hat e_i+\epsilon\hat e_j) + G_m(x-\epsilon\hat e_i-\epsilon\hat e_j)}{4\epsilon^2}
+\qquad \text{(mixed partial, } i \neq j\text{, ternary and above)}
+$$
 
-with step size `ε` set by `fd_eps` (default `1e-4`). For the binary case
-used here, only the `H_ii` formula applies — there is no second independent
-field for a mixed partial to involve.
+with step size \(\epsilon\) set by `fd_eps` (default `1e-4`). For the binary
+case used here, only the \(H_{ii}\) formula applies — there is no second
+independent field for a mixed partial to involve.
 
 ### Why these do not agree exactly
 
@@ -66,14 +75,14 @@ Central finite differences carry two competing error sources, and this is
 true for any finite-difference scheme, not specific to this codebase:
 
 - **Truncation error**, from the Taylor-series terms the finite-difference
-  stencil does not capture, which shrinks as `ε → 0` (as `O(ε²)` for the
-  central-difference formulas above).
+  stencil does not capture, which shrinks as \(\epsilon \to 0\) (as
+  \(O(\epsilon^2)\) for the central-difference formulas above).
 - **Floating-point cancellation error**, from subtracting two nearly equal
-  floating-point numbers, which *grows* as `ε → 0` (as `O(ε_machine/ε)`),
-  since the numerator's relative precision degrades as the two evaluated
-  points move closer together.
+  floating-point numbers, which *grows* as \(\epsilon \to 0\) (as
+  \(O(\epsilon_{\text{machine}}/\epsilon)\)), since the numerator's relative
+  precision degrades as the two evaluated points move closer together.
 
-These two effects push in opposite directions as `ε` changes, producing a
+These two effects push in opposite directions as \(\epsilon\) changes, producing a
 U-shaped total-error curve with a minimum at some intermediate step size —
 demonstrated directly, below.
 
@@ -165,17 +174,18 @@ either implementation.
 
 The `fd_eps` step size is a free parameter, and the truncation-vs-cancellation
 trade-off described above means there is an optimal value, not a
-"smaller is always better" relationship. Sweeping `fd_eps` from `10⁻¹` to
-`10⁻⁸` at `x_Nb = 0.5`, 500 °C, and comparing each resulting FD value
-against the (step-size-independent) Jansson value:
+"smaller is always better" relationship. Sweeping `fd_eps` from
+\(10^{-1}\) to \(10^{-8}\) at `x_Nb = 0.5`, 500 °C, and comparing each
+resulting FD value against the (step-size-independent) Jansson value:
 
 ![FD step-size sweep: relative error vs fd_eps, mu and H, log-log](images/tutorial_derivative_validation/03_fd_stepsize_sweep.png)
 
-Both panels show the predicted U-shape: error decreases as `ε` shrinks from
-`10⁻¹`, reaches a minimum near `ε ≈ 4×10⁻⁶`, and increases again as `ε`
-shrinks further and floating-point cancellation dominates. The minimum
-achievable error is far smaller for `μ` (~10⁻⁷%, a first derivative via a
-single central difference) than for `H` (~3×10⁻⁴%, a second derivative,
+Both panels show the predicted U-shape: error decreases as \(\epsilon\)
+shrinks from \(10^{-1}\), reaches a minimum near \(\epsilon \approx
+4\times10^{-6}\), and increases again as \(\epsilon\) shrinks further and
+floating-point cancellation dominates. The minimum achievable error is far
+smaller for `μ` (~\(10^{-7}\)%, a first derivative via a single central
+difference) than for `H` (~\(3\times10^{-4}\)%, a second derivative,
 which amplifies cancellation error further) — expected, since each
 additional order of differentiation degrades the achievable floating-point
 precision.
@@ -187,7 +197,7 @@ below any scale that matters for this site's tutorials. A smaller default
 would reduce truncation error further at this composition, at the cost of
 being closer to the cancellation-dominated regime for compositions or
 temperatures where `G_m` is smoother (smaller second derivatives), where
-the optimal `ε` shifts. `1e-4` is a reasonable general-purpose default
+the optimal \(\epsilon\) shifts. `1e-4` is a reasonable general-purpose default
 precisely because it avoids being too close to either failure mode across
 a range of conditions, not because it is optimal at any single point.
 
