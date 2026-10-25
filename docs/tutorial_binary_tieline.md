@@ -1,4 +1,4 @@
-# Tutorial: Binary Tie-Lines (Nb-V) — A Three-Method Comparison
+# Tutorial: binary tie-lines (Nb-V) — a three-method comparison
 
 A tie-line is the pair of compositions connected by a common tangent to the
 molar Gibbs energy curve: the two phases a homogeneous alloy forms at
@@ -36,7 +36,7 @@ produces a three-way cross-check against an independent, more direct
 computation, and reveals a small but systematic difference in the method
 used by default throughout this site.
 
-## Three Methods, Defined
+## Three methods, defined
 
 - **`hull`** — the lower convex hull of the tabulated `G_m(x)` curve (200
   composition points). This is the default `binodal_boundary_binary()`
@@ -56,7 +56,7 @@ approximation to ground truth here, since its result is not limited by the
 
 ---
 
-## Configuration Requirements
+## Configuration requirements
 
 `pf-tieline` requires `simulation.c0` to be specified as a **list**, even
 for a binary system:
@@ -85,7 +85,7 @@ to be wrapped in a list first.
 
 ---
 
-## Results at Three Temperatures
+## Results at three temperatures
 
 `pf-tieline` provides no `--set` flag and reads one temperature per run. A
 different temperature requires editing `simulation.temperature_C` directly
@@ -236,17 +236,17 @@ rows show.
 
 ---
 
-## Common Gotchas
+## Common gotchas
 
 | Symptom | Likely cause |
 |---|---|
-| `TypeError: object of type 'float' has no len()` | `simulation.c0` is a scalar, not a list — `pf-tieline` requires a list even for binary systems. See [Configuration Requirements](#configuration-requirements). |
+| `TypeError: object of type 'float' has no len()` | `simulation.c0` is a scalar, not a list — `pf-tieline` requires a list even for binary systems. See [Configuration requirements](#configuration-requirements). |
 | No mechanism for `--set simulation.temperature_C=900` | `pf-tieline` does not support `--set` (confirmed in its `--help` output). The config file's `temperature_C` must be edited directly, or a separate config maintained per temperature of interest. |
 | `db_path` resolution fails when the config is not located directly under `configs/` | The same behavior is documented in the [tie-line/phase-map tutorial](tutorial_tieline_phase_map.md#common-gotchas) and the [CLI reference](cli_reference.md#pf-tieline-step-1c) — `pf-tieline` resolves `db_path` relative to the config file's own location, not the repository root. |
 | "Suggested elastic config update" section is empty | Exactly one or three-or-more stable phases were found, not exactly two — the script produces `c_mat`/`c_ppt` text only for the two-phase case. Both the single-phase case (1200 °C, above) and the three-phase case (the [Nb-Hf-V tutorial](tutorial_tieline_phase_map.md)) trigger this. |
 | `mat` composition looks like the minority phase | `mat`/`ppt` are assigned by phase fraction (majority/minority), not by composition — see [Labeling convention](#labeling-convention-matrix-vs-precipitate). If the result still looks wrong, check `phase_fraction` in the saved `tieline_calphad.yaml` directly rather than inferring it from composition. |
 
-## Related Material
+## Related material
 
 - **The same cross-check for a ternary system, with a different outcome** — the [tie-line/phase-map tutorial](tutorial_tieline_phase_map.md) applies this comparison to Nb-Hf-V and identifies a genuine three-phase equilibrium rather than a numerically shifted two-phase one.
 - **The origin of the `hull`/`fsolve` methods** — the [binodal/spinodal tutorial](tutorial_binodal_spinodal_3T.md) introduces the `binodal_boundary_binary()` API used to compute these values.
