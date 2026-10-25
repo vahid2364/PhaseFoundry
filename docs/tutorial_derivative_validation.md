@@ -66,10 +66,15 @@ variables, propagated through the sublattice site-fraction degrees of
 freedom at the solved equilibrium point. This technique is named for B.
 Jansson's 1984 doctoral thesis at KTH (*Computer Analysis of Phase
 Diagrams*), which introduced it for CALPHAD assessment software, and is
-standard practice in modern CALPHAD tools. No composition perturbation or
-re-solving of the equilibrium is required — each derivative is evaluated
-exactly, at the composition requested, from the same calculation that
-produced `G_m` itself.
+standard practice in modern CALPHAD tools. Courtney Kunselman and
+coauthors describe this class of analytically differentiable
+phase-stability metrics, including the chemical-potential and Hessian
+derivatives used throughout this page, in
+[*Analytically differentiable metrics for phase stability*](https://www.sciencedirect.com/science/article/abs/pii/S0364591624000476)
+(*Calphad* 86, 102705, 2024). No composition perturbation or re-solving of
+the equilibrium is required — each derivative is evaluated exactly, at the
+composition requested, from the same calculation that produced `G_m`
+itself.
 
 ### Method 2: finite differences
 
