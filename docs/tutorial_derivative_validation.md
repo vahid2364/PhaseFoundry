@@ -128,6 +128,14 @@ pf-validate --config configs/nb_v_chem_c50.yaml
 ```
 
 ```
+Residuals computed over x_NB in [0.0010, 0.9990] (200 raw CALPHAD grid points, 500 °C)
+
+Method      median |Δμ|/|μ|       P90       max   median |ΔH|/|H|       P90       max
+fd                 0.0000%   0.0002%  60.2682%           0.0128%   0.3844%  4877.9867%
+jansson            0.0000%   0.0000%   0.0000%           0.0000%   0.0000%   0.0000%
+hybrid             0.0000%   0.0000%   0.0000%           0.0128%   0.3844%  4877.9867%
+
+For reference, absolute RMSE over this same full range (dominated by divergence near the pure-element edges — the median/P90 figures above are the representative accuracy numbers, not these):
 Method          RMSE G_m        RMSE μ        RMSE H  J/mol
 fd                   0.0        1452.5    23846737.7
 jansson              0.0           0.0           0.0
@@ -139,19 +147,21 @@ hybrid               0.0           0.0    23846737.7
 This is the default `pf-validate` figure, and it demonstrates a common
 problem in validating near-identical numerical methods: the three curves
 are visually indistinguishable in every panel, including the Hessian
-panel, despite the RMSE_H value above being in the tens of millions of
-J/mol. The overlay plot cannot show what the RMSE table reports, because
+panel, despite the legacy RMSE_H value above being in the tens of millions
+of J/mol. The overlay plot cannot show what that number reports, because
 the disagreement (examined in detail below) is concentrated in a narrow
 composition region the eye cannot resolve at this scale.
 
-!!! note "Why RMSE_H reaches 23.8 million J/mol while the two methods agree almost everywhere"
-    Three factors combine to produce this number, and none of them indicate
-    a defect in either derivative method:
+!!! note "Why pf-validate reports median/P90/max relative error, not just RMSE"
+    The legacy RMSE table is still printed (for continuity), but it is no
+    longer the headline number, because three factors combine to make a
+    single RMSE value a poor summary here — none of them indicate a defect
+    in either derivative method:
 
-    1. **The RMSE is taken over the entire composition sweep**
-       (200 points, `x_V` from about 0.001 to 0.999) that `pf-validate`
-       scans by default, not over the narrower interior region any actual
-       simulation on this site uses.
+    1. **RMSE is taken over the entire composition sweep** (200 points,
+       `x_NB` from `0.0010` to `0.9990`, printed explicitly above so the
+       range is never ambiguous), not over the narrower interior region
+       any actual simulation on this site uses.
     2. **`H` itself diverges near the pure-element edges.** The ideal
        configurational-entropy term in the CALPHAD model
        (`RT · Σ y ln y`) has a second derivative that grows without bound
@@ -159,25 +169,31 @@ composition region the eye cannot resolve at this scale.
        error grows fastest exactly where the function being differenced
        is changing fastest — so the small *relative* disagreement between
        Jansson and FD becomes a large *absolute* disagreement right at
-       the edges, where `H` is already large in magnitude.
+       the edges, where `H` is already large in magnitude. At the true
+       grid edges used above (`x_NB = 0.0010`, `0.9990`), this pushes the
+       single worst-point relative error in `H` to **4877.99%** — a number
+       that would be equally if not more misleading than the RMSE it
+       replaces, if reported alone.
     3. **RMSE squares every pointwise error before averaging.** A handful
        of edge points with absolute differences of thousands to hundreds
        of thousands of J/mol dominate the mean once squared, even though
-       roughly 195 of the 200 points agree to 4-6 significant figures and
-       contribute almost nothing to the sum.
+       the overwhelming majority of the 200 points agree to 4-6
+       significant figures and contribute almost nothing to the sum.
 
-    Concretely: at `x_Nb = 0.5` — the composition every simulation
-    tutorial on this site actually uses — Jansson and FD agree to
-    `0.0001%`. By `x_Nb = 0.02` the disagreement has grown to `2.57%`,
-    and `H` itself is already of order `3 × 10⁵` J/mol there; closer to
-    the edge, both the magnitude of `H` and the relative disagreement
-    continue to grow. A few such points, squared, are enough to pull the
-    overall RMSE into the millions, while the physically relevant region
-    (anywhere a `simulation.c0` would plausibly be set) is unaffected.
+    The **median** and **90th-percentile** relative error solve this
+    without needing to choose an arbitrary composition cutoff: a statistic
+    that ignores a small minority of outlier points is, by construction,
+    insensitive to exactly how divergent those outliers are or exactly how
+    close to `x = 0`/`1` the grid happens to sample. `H`'s median relative
+    error above, `0.0128%`, and even its 90th percentile, `0.3844%`, both
+    describe the interior accuracy correctly — consistent with the direct
+    figure-level measurement at `x_Nb = 0.5` worked through below
+    (`0.000144%`) — while the **max**, `4877.99%`, remains a real but
+    unrepresentative single-point artifact, included only for completeness.
     This is the same finding the
     [Hessian stability tutorial's warning box](tutorial_hessian_stability_binary.md#validating-against-finite-differences)
-    states directly: the RMSE_H figure is misleading taken at face value,
-    not incorrect.
+    states directly: a naive full-range error summary is misleading taken
+    at face value, not incorrect.
 
 ---
 
@@ -295,6 +311,15 @@ methods:
    half correct — too small a step size produces the same failure mode
    from the opposite direction. Any claim about finite-difference accuracy
    should state or justify the step size used.
+4. **A mean-squared summary statistic (RMSE) is a poor default whenever a
+   small minority of points can diverge.** It is not uniquely a
+   finite-difference problem — any aggregate error metric computed over a
+   domain containing a genuine mathematical singularity will be dominated
+   by however close the sampling grid happens to approach it, independent
+   of how well-behaved the function is everywhere else. Median and
+   percentile statistics are insensitive to this without requiring an
+   arbitrary cutoff to exclude the problematic region; `pf-validate`
+   reports both, as shown above.
 
 ---
 
@@ -303,7 +328,8 @@ methods:
 | Symptom | Likely cause |
 |---|---|
 | Two near-identical curves plotted together show no visible difference despite a large reported error metric | Expected when the disagreement is confined to a small fraction of the domain — see the [relative-error section](#the-representation-that-actually-works-relative-error-vs-composition-log-scale) above. Check a relative-error or parity representation before concluding the error metric is wrong. |
-| `pf-validate`'s RMSE_H value looks alarmingly large | The RMSE is computed over the full composition range, including the pure-element edges where `H` itself diverges — see the [Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences) for the same finding worked through in detail. |
+| `pf-validate`'s legacy RMSE_H value looks alarmingly large | Expected — it is computed over the full composition range, including the pure-element edges where `H` itself diverges. Use the median/P90 relative error reported above it instead, which `pf-validate` now prints by default; see the [Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences) for the same finding worked through in detail. |
+| `pf-validate`'s **max** relative error (printed next to median/P90) is in the thousands of percent | Expected near the exact grid edges (`x → 0.001` or `0.999`) — see the note under [Running the validation](#running-the-validation) above. It is a real single-point artifact, not evidence the median/P90 figures are wrong. |
 | Reducing `fd_eps` makes finite-difference results *less* accurate | Past the optimal step size, floating-point cancellation error dominates over truncation error — see the [step-size sensitivity](#step-size-sensitivity) section above. |
 | `H_ij` (off-diagonal) formula needed for a ternary/quaternary system | Shown in [Mathematical foundation](#mathematical-foundation) above; exercised directly in the [Hessian stability tutorial](tutorial_hessian_stability_binary.md)'s discussion of `GmInterpolant.d2g()` for `N_ind ≥ 2`. |
 

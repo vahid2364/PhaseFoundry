@@ -367,13 +367,18 @@ options:
 pf-validate --config configs/nb_v_chem_c50.yaml
 ```
 
-The [Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences)
-runs this for real and works through why its RMSE summary table looks
-alarming at first glance (and why it isn't) — worth reading before trusting
-this command's numbers at face value. The
-[derivative validation tutorial](tutorial_derivative_validation.md) goes
-further still: parity plots, log-scale relative-error panels, and a
-step-size sensitivity sweep for the `fd_eps` parameter above.
+By default, the console output reports **median / 90th-percentile / max
+relative error** for `μ` and `H`, per method, over an explicitly stated
+composition range — not a single RMSE number. A legacy absolute-RMSE table
+(in J/mol) is still printed below it for reference, but it is dominated by
+divergence near the pure-element edges and should not be read as the
+headline accuracy figure; see the
+[derivative validation tutorial](tutorial_derivative_validation.md#running-the-validation)
+for why. The
+[Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences)
+works through the same finding for this exact config. The derivative
+validation tutorial also covers parity plots, log-scale relative-error
+panels, and a step-size sensitivity sweep for the `fd_eps` parameter above.
 
 ---
 

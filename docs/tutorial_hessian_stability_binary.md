@@ -80,19 +80,34 @@ pf-validate --config configs/nb_v_chem_c50.yaml
 ```
 
 ```
+Residuals computed over x_NB in [0.0010, 0.9990] (200 raw CALPHAD grid points, 500 °C)
+
+Method      median |Δμ|/|μ|       P90       max   median |ΔH|/|H|       P90       max
+fd                 0.0000%   0.0002%  60.2682%           0.0128%   0.3844%  4877.9867%
+jansson            0.0000%   0.0000%   0.0000%           0.0000%   0.0000%   0.0000%
+hybrid             0.0000%   0.0000%   0.0000%           0.0128%   0.3844%  4877.9867%
+
+For reference, absolute RMSE over this same full range (dominated by divergence near the pure-element edges — the median/P90 figures above are the representative accuracy numbers, not these):
 Method          RMSE G_m        RMSE μ        RMSE H  J/mol
 fd                   0.0        1452.5    23846737.7
 jansson              0.0           0.0           0.0
 hybrid               0.0           0.0    23846737.7
 ```
 
-!!! warning "The RMSE_H figure appears alarming. It is misleading, not incorrect."
+!!! warning "The legacy RMSE_H figure appears alarming. It is misleading, not incorrect."
     23.8 million J/mol suggests finite differences are badly broken. They
     are not — in the region that actually matters, they agree with the
-    analytic (Jansson) Hessian to **4 significant figures**. The RMSE above
-    is computed over the *entire* composition range (200 points,
-    x_V ∈ [0.001, 0.999]), and is dominated almost entirely by a handful of
-    points near the pure-element edges, examined below.
+    analytic (Jansson) Hessian to **4 significant figures**, consistent
+    with the `0.0128%` median relative error `pf-validate` now reports
+    above it. The RMSE is computed over the *entire* composition range
+    (200 points, x_V ∈ [0.001, 0.999], printed explicitly above), and is
+    dominated almost entirely by a handful of points near the
+    pure-element edges, examined below — the same reason the **max**
+    relative error above reaches an even more extreme `4877.99%` at the
+    single worst edge point, without that number being any more
+    representative of typical accuracy than the RMSE is. See the
+    [derivative validation tutorial](tutorial_derivative_validation.md#running-the-validation)
+    for the full reasoning behind reporting median/P90 instead of RMSE.
 
 ![CALPHAD data vs. Jansson/FD/Hybrid derivatives, with the spinodal region shaded](images/tutorial_hessian_stability_binary/01_derivative_comparison.png)
 

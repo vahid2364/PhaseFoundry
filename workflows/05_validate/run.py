@@ -426,7 +426,6 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> dict | None:
 
     # residual summary — rebuild eval grid at raw primary compositions,
     # holding secondary elements fixed at their c0 values (same as c_scan)
-    print(f"\n  {'Method':<10}  {'RMSE G_m':>12}  {'RMSE μ':>12}  {'RMSE H':>12}  J/mol")
     eval_rows = []
     for i, el in enumerate(ind_els):
         if el == primary:
@@ -435,16 +434,59 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> dict | None:
             eval_rows.append(np.full(len(x_nb_raw),
                                      float(c0_cfg[i]) if i < len(c0_cfg) else 0.1))
     x_eval = np.array(eval_rows)   # (N_ind, n_raw_pts)
+
+    # RMSE over the full raw-data range is dominated by a handful of points
+    # near the pure-element edges, where H (and to a lesser extent mu) diverge
+    # as x -> 0 or 1 — a single squared-and-averaged number there is not
+    # representative of typical accuracy. Report median/P90/max *relative*
+    # error instead: scale-invariant, and the median/P90 are insensitive to
+    # the small minority of edge (or H~0 zero-crossing) points that dominate
+    # RMSE, without needing an arbitrary composition cutoff. The legacy
+    # absolute RMSE table is kept below for reference.
+    EPS = 1e-9  # avoids literal division by zero; negligible next to real J/mol magnitudes
+    secondary_note = ""
+    if n_ind > 1:
+        fixed = ", ".join(
+            f"x_{el}={float(c0_cfg[i]) if i < len(c0_cfg) else 0.1:.3f}"
+            for i, el in enumerate(ind_els) if el != primary
+        )
+        secondary_note = f", {fixed} held fixed"
+    print(f"\n  Residuals computed over x_{primary} in "
+          f"[{x_nb_raw.min():.4f}, {x_nb_raw.max():.4f}] "
+          f"({len(x_nb_raw)} raw CALPHAD grid points, {T_C:.0f} °C{secondary_note})")
+    print(f"\n  {'Method':<10}  {'median |Δμ|/|μ|':>14}  {'P90':>8}  {'max':>8}"
+          f"  {'median |ΔH|/|H|':>16}  {'P90':>8}  {'max':>8}")
     rmse_by_method: dict[str, dict[str, float]] = {}
+    rel_err_by_method: dict[str, dict[str, float]] = {}
     for m, interp in interps.items():
         gm_c = interp.gm(x_eval).squeeze()
         mu_c = interp.mu(x_eval)[pri_idx]
         h_c  = interp.d2g(x_eval)[pri_idx, pri_idx]
+
         rmse_gm = float(np.sqrt(np.mean((gm_c - gm_raw)**2)))
         rmse_mu = float(np.sqrt(np.mean((mu_c - mu_raw)**2)))
         rmse_h  = float(np.sqrt(np.mean((h_c  - h_raw )**2)))
         rmse_by_method[m] = {"rmse_gm": rmse_gm, "rmse_mu": rmse_mu, "rmse_h": rmse_h}
-        print(f"  {m:<10}  {rmse_gm:>12.1f}  {rmse_mu:>12.1f}  {rmse_h:>12.1f}")
+
+        rel_mu = np.abs(mu_c - mu_raw) / (np.abs(mu_raw) + EPS) * 100.0
+        rel_h  = np.abs(h_c  - h_raw ) / (np.abs(h_raw ) + EPS) * 100.0
+        mu_med, mu_p90, mu_max = (float(np.median(rel_mu)), float(np.percentile(rel_mu, 90)), float(np.max(rel_mu)))
+        h_med,  h_p90,  h_max  = (float(np.median(rel_h)),  float(np.percentile(rel_h, 90)),  float(np.max(rel_h)))
+        rel_err_by_method[m] = {
+            "mu_median_pct": mu_med, "mu_p90_pct": mu_p90, "mu_max_pct": mu_max,
+            "h_median_pct":  h_med,  "h_p90_pct":  h_p90,  "h_max_pct":  h_max,
+        }
+        print(f"  {m:<10}  {mu_med:>13.4f}%  {mu_p90:>7.4f}%  {mu_max:>7.4f}%"
+              f"  {h_med:>15.4f}%  {h_p90:>7.4f}%  {h_max:>7.4f}%")
+
+    print(f"\n  For reference, absolute RMSE over this same full range "
+          f"(dominated by divergence near the pure-element edges — the "
+          f"median/P90 figures above are the representative accuracy "
+          f"numbers, not these):")
+    print(f"  {'Method':<10}  {'RMSE G_m':>12}  {'RMSE μ':>12}  {'RMSE H':>12}  J/mol")
+    for m in interps:
+        r = rmse_by_method[m]
+        print(f"  {m:<10}  {r['rmse_gm']:>12.1f}  {r['rmse_mu']:>12.1f}  {r['rmse_h']:>12.1f}")
 
     for ext in ("pdf", "png"):
         out = out_dir / f"derivative_comparison.{ext}"
@@ -453,21 +495,24 @@ def plot_derivative_comparison(cfg: dict, out_dir: Path) -> dict | None:
     plt.close(fig)
 
     # Report accuracy for whichever method the simulation step will actually
-    # use, expressed as a percentage of the raw G_m / H range (matching the
-    # RMSE-in-J/mol values already printed above, just normalized for logging).
+    # use. gm_rel_err_pct / hessian_rel_err_pct now carry the median relative
+    # error (see note above), not RMSE normalized by the raw-data range.
     sim_method = cfg.get("simulation", {}).get("derivative_method", "fd")
     if sim_method not in rmse_by_method:
         sim_method = next(iter(rmse_by_method), None)
     if sim_method is None:
         return {}
-    gm_range = float(np.ptp(gm_raw)) or 1.0
-    h_range  = float(np.ptp(h_raw)) or 1.0
     m_rmse = rmse_by_method[sim_method]
+    m_rel  = rel_err_by_method[sim_method]
     return {
-        "derivative_method":    sim_method,
-        "rmse_by_method":       rmse_by_method,
-        "gm_rel_err_pct":       round(100.0 * m_rmse["rmse_gm"] / gm_range, 4),
-        "hessian_rel_err_pct":  round(100.0 * m_rmse["rmse_h"]  / h_range,  4),
+        "derivative_method":     sim_method,
+        "composition_range":     [float(x_nb_raw.min()), float(x_nb_raw.max())],
+        "rmse_by_method":        rmse_by_method,
+        "rel_err_by_method":     rel_err_by_method,
+        "gm_rel_err_pct":        round(100.0 * m_rmse["rmse_gm"] / ((float(np.ptp(gm_raw)) or 1.0)), 4),
+        "hessian_rel_err_pct":   round(m_rel["h_median_pct"], 4),
+        "hessian_p90_rel_err_pct": round(m_rel["h_p90_pct"], 4),
+        "mu_rel_err_pct":        round(m_rel["mu_median_pct"], 4),
     }
 
 
