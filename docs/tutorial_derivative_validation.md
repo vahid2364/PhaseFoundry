@@ -139,6 +139,41 @@ J/mol. The overlay plot cannot show what the RMSE table reports, because
 the disagreement (examined in detail below) is concentrated in a narrow
 composition region the eye cannot resolve at this scale.
 
+!!! note "Why RMSE_H reaches 23.8 million J/mol while the two methods agree almost everywhere"
+    Three factors combine to produce this number, and none of them indicate
+    a defect in either derivative method:
+
+    1. **The RMSE is taken over the entire composition sweep**
+       (200 points, `x_V` from about 0.001 to 0.999) that `pf-validate`
+       scans by default, not over the narrower interior region any actual
+       simulation on this site uses.
+    2. **`H` itself diverges near the pure-element edges.** The ideal
+       configurational-entropy term in the CALPHAD model
+       (`RT · Σ y ln y`) has a second derivative that grows without bound
+       as `x → 0` or `x → 1`. A central finite difference's truncation
+       error grows fastest exactly where the function being differenced
+       is changing fastest — so the small *relative* disagreement between
+       Jansson and FD becomes a large *absolute* disagreement right at
+       the edges, where `H` is already large in magnitude.
+    3. **RMSE squares every pointwise error before averaging.** A handful
+       of edge points with absolute differences of thousands to hundreds
+       of thousands of J/mol dominate the mean once squared, even though
+       roughly 195 of the 200 points agree to 4-6 significant figures and
+       contribute almost nothing to the sum.
+
+    Concretely: at `x_Nb = 0.5` — the composition every simulation
+    tutorial on this site actually uses — Jansson and FD agree to
+    `0.0001%`. By `x_Nb = 0.02` the disagreement has grown to `2.57%`,
+    and `H` itself is already of order `3 × 10⁵` J/mol there; closer to
+    the edge, both the magnitude of `H` and the relative disagreement
+    continue to grow. A few such points, squared, are enough to pull the
+    overall RMSE into the millions, while the physically relevant region
+    (anywhere a `simulation.c0` would plausibly be set) is unaffected.
+    This is the same finding the
+    [Hessian stability tutorial's warning box](tutorial_hessian_stability_binary.md#validating-against-finite-differences)
+    states directly: the RMSE_H figure is misleading taken at face value,
+    not incorrect.
+
 ---
 
 ## A better representation: parity plots
