@@ -1,0 +1,236 @@
+# Tutorial: validating derivatives against finite differences (binary Nb-V)
+
+Every result on this site depends on two derivatives of the molar Gibbs
+energy: the chemical potential `μ_i = ∂G_m/∂x_i` and the Hessian
+`H_ij = ∂²G_m/∂x_i∂x_j`. They set the driving force and stability criterion
+for every spinodal boundary, every solver stabilization constant, and every
+interface-width estimate used elsewhere on this site. This page validates
+the two ways PhaseFoundry computes them — analytic (Jansson) derivatives
+and finite differences — against each other directly, explains the
+numerical-analysis reasoning behind where and why they agree or disagree,
+and demonstrates why the obvious way to visualize that comparison (overlay
+the two curves) usually fails, and what to use instead.
+
+---
+
+## Mathematical foundation
+
+### What is being compared
+
+For the binary system used throughout this page (Nb-V, BCC_A2), `x_Nb` is
+the single independent composition variable. Two quantities are computed
+two different ways:
+
+```
+μ_Nb(x) = ∂G_m/∂x_Nb
+H_NbNb(x) = ∂²G_m/∂x_Nb²
+```
+
+### Method 1: Jansson derivatives
+
+`derivative_method="jansson"` evaluates `μ` and `H` via `pycalphad`'s exact
+analytic derivatives of the underlying Compound Energy Formalism model —
+obtained by implicit differentiation of the equilibrium (Gibbs-energy
+minimization) condition with respect to the system-level composition
+variables, propagated through the sublattice site-fraction degrees of
+freedom at the solved equilibrium point. This technique is named for B.
+Jansson's 1984 doctoral thesis at KTH (*Computer Analysis of Phase
+Diagrams*), which introduced it for CALPHAD assessment software, and is
+standard practice in modern CALPHAD tools. No composition perturbation or
+re-solving of the equilibrium is required — each derivative is evaluated
+exactly, at the composition requested, from the same calculation that
+produced `G_m` itself.
+
+### Method 2: finite differences
+
+`derivative_method="fd"` instead differences the tabulated `G_m(x)` values
+produced by Step 1, using the formulas implemented in
+`src/phasefoundry/thermodynamics/interpolant.py`:
+
+```
+μ_i      = ( G_m(x + ε·êᵢ) − G_m(x − ε·êᵢ) ) / (2ε)                    central difference
+
+H_ii     = ( G_m(x + ε·êᵢ) − 2·G_m(x) + G_m(x − ε·êᵢ) ) / ε²           central second difference
+
+H_ij     = ( G_m(x+ε·êᵢ+ε·êⱼ) − G_m(x+ε·êᵢ−ε·êⱼ)
+           − G_m(x−ε·êᵢ+ε·êⱼ) + G_m(x−ε·êᵢ−ε·êⱼ) ) / (4ε²)            mixed partial (i ≠ j, ternary+)
+```
+
+with step size `ε` set by `fd_eps` (default `1e-4`). For the binary case
+used here, only the `H_ii` formula applies — there is no second independent
+field for a mixed partial to involve.
+
+### Why these do not agree exactly
+
+Central finite differences carry two competing error sources, and this is
+true for any finite-difference scheme, not specific to this codebase:
+
+- **Truncation error**, from the Taylor-series terms the finite-difference
+  stencil does not capture, which shrinks as `ε → 0` (as `O(ε²)` for the
+  central-difference formulas above).
+- **Floating-point cancellation error**, from subtracting two nearly equal
+  floating-point numbers, which *grows* as `ε → 0` (as `O(ε_machine/ε)`),
+  since the numerator's relative precision degrades as the two evaluated
+  points move closer together.
+
+These two effects push in opposite directions as `ε` changes, producing a
+U-shaped total-error curve with a minimum at some intermediate step size —
+demonstrated directly, below.
+
+---
+
+## Running the validation
+
+```bash
+pf-validate --config configs/nb_v_chem_c50.yaml
+```
+
+```
+Method          RMSE G_m        RMSE μ        RMSE H  J/mol
+fd                   0.0        1452.5    23846737.7
+jansson              0.0           0.0           0.0
+hybrid               0.0           0.0    23846737.7
+```
+
+![Raw pf-validate output: Jansson, FD, and hybrid curves overlaid](images/tutorial_derivative_validation/00_pf_validate_raw_comparison.png)
+
+This is the default `pf-validate` figure, and it demonstrates a common
+problem in validating near-identical numerical methods: the three curves
+are visually indistinguishable in every panel, including the Hessian
+panel, despite the RMSE_H value above being in the tens of millions of
+J/mol. The overlay plot cannot show what the RMSE table reports, because
+the disagreement (examined in detail below) is concentrated in a narrow
+composition region the eye cannot resolve at this scale.
+
+---
+
+## A better representation: parity plots
+
+Plotting one method's value directly against the other's, point by point,
+instead of both against composition, removes the shared x-axis that
+causes the overlay problem:
+
+![Parity plots: Jansson vs. finite-difference, for mu and H](images/tutorial_derivative_validation/01_parity_plots.png)
+
+Every point lies almost exactly on the `y = x` reference line — the same
+near-exact agreement the raw overlay showed, but now with a geometry that
+would make any real deviation visible as a point lifting off the diagonal,
+rather than two curves separating by a few pixels. For this particular
+comparison, even the parity plot does not show the discrepancy at normal
+scale (panel (b) also excludes the most extreme pure-element-edge points,
+where `|H|` exceeds 20,000 J/mol, purely so the near-interior data remains
+legible). A parity plot is the right tool when the two methods are
+expected to disagree by an amount visible at normal axis scale; it is not,
+by itself, sufficient when the disagreement is confined to a small
+fraction of the range and is small in absolute terms even there — the
+case here, and the reason a third representation is needed.
+
+## The representation that actually works: relative error vs. composition, log scale
+
+```python
+import numpy as np
+
+x = np.linspace(0.01, 0.99, 300).reshape(1, -1)
+mu_rel_err = np.abs(interp_fd.mu(x) - interp_j.mu(x)) / np.abs(interp_j.mu(x)) * 100
+H_rel_err  = np.abs(interp_fd.d2g(x)[0, 0] - interp_j.d2g(x)[0, 0]) / np.abs(interp_j.d2g(x)[0, 0]) * 100
+```
+
+![Relative error between Jansson and FD, mu and H, log scale](images/tutorial_derivative_validation/02_relative_error_mu_and_H.png)
+
+This is the figure that actually shows what the RMSE table reported. Both
+panels share the same shape: a broad, flat region of extremely small
+disagreement (10⁻⁴–10⁻⁵%, limited only by floating-point precision) across
+most of the composition range, rising sharply to several percent — and, at
+the very edge, double digits — as `x_Nb → 0` or `x_Nb → 1`.
+
+**Numeric summary at the composition used throughout this site's binary
+tutorials (`c0 = 0.5`):** 0.000007% for `μ`, 0.000144% for `H` — six-figure
+agreement, consistent with the RMSE table's `jansson` row reading exactly
+`0.0` (rounding) relative to itself and the small `fd` RMSE values being
+driven entirely by the edge region. **Maximum disagreement observed**
+(`x_Nb ∈ [0.01, 0.99]`): 8.1% for `μ` at `x_Nb = 0.99`, 17.1% for `H` at
+`x_Nb = 0.987`.
+
+The cause of the edge disagreement is the same effect documented in the
+[Hessian stability tutorial](tutorial_hessian_stability_binary.md#where-the-disagreement-actually-occurs):
+the ideal configurational-entropy term in the CALPHAD model diverges as
+`x → 0` or `1`, and a finite difference's truncation error grows precisely
+where the function being differenced is diverging most steeply — a genuine
+accuracy limitation of finite differences in that region, not a flaw in
+either implementation.
+
+---
+
+## Step-size sensitivity
+
+The `fd_eps` step size is a free parameter, and the truncation-vs-cancellation
+trade-off described above means there is an optimal value, not a
+"smaller is always better" relationship. Sweeping `fd_eps` from `10⁻¹` to
+`10⁻⁸` at `x_Nb = 0.5`, 500 °C, and comparing each resulting FD value
+against the (step-size-independent) Jansson value:
+
+![FD step-size sweep: relative error vs fd_eps, mu and H, log-log](images/tutorial_derivative_validation/03_fd_stepsize_sweep.png)
+
+Both panels show the predicted U-shape: error decreases as `ε` shrinks from
+`10⁻¹`, reaches a minimum near `ε ≈ 4×10⁻⁶`, and increases again as `ε`
+shrinks further and floating-point cancellation dominates. The minimum
+achievable error is far smaller for `μ` (~10⁻⁷%, a first derivative via a
+single central difference) than for `H` (~3×10⁻⁴%, a second derivative,
+which amplifies cancellation error further) — expected, since each
+additional order of differentiation degrades the achievable floating-point
+precision.
+
+The default `fd_eps = 1e-4` sits on the truncation-error-dominated side of
+the minimum, not exactly at it, but close enough that the resulting error
+(0.000007% for `μ`, 0.000497% for `H`, at `x_Nb = 0.5`) is already far
+below any scale that matters for this site's tutorials. A smaller default
+would reduce truncation error further at this composition, at the cost of
+being closer to the cancellation-dominated regime for compositions or
+temperatures where `G_m` is smoother (smaller second derivatives), where
+the optimal `ε` shifts. `1e-4` is a reasonable general-purpose default
+precisely because it avoids being too close to either failure mode across
+a range of conditions, not because it is optimal at any single point.
+
+---
+
+## General principles
+
+Three lessons from this comparison generalize beyond this specific pair of
+methods:
+
+1. **An overlay plot of two curves expected to agree closely is not
+   evidence they agree closely** — it is only evidence the disagreement is
+   smaller than the plot's resolution can show, which is a much weaker
+   claim. A quantitative figure (relative error, or a parity plot with
+   enough dynamic range) is required to actually support a numeric
+   agreement claim.
+2. **Parity plots and log-scale relative-error plots answer different
+   questions.** A parity plot shows whether a relationship is linear and
+   unbiased — useful when deviations are large enough to be visible at
+   normal scale. A log-scale relative-error plot shows *how small* the
+   disagreement is and *where it stops being small* — necessary when the
+   two methods agree to several significant figures almost everywhere, as
+   here.
+3. **Finite-difference step size has an optimum, not a monotonic
+   best-direction.** Reporting or assuming "finite differences disagree
+   with the analytic result because the step size was too large" is only
+   half correct — too small a step size produces the same failure mode
+   from the opposite direction. Any claim about finite-difference accuracy
+   should state or justify the step size used.
+
+---
+
+## Common gotchas
+
+| Symptom | Likely cause |
+|---|---|
+| Two near-identical curves plotted together show no visible difference despite a large reported error metric | Expected when the disagreement is confined to a small fraction of the domain — see the [relative-error section](#the-representation-that-actually-works-relative-error-vs-composition-log-scale) above. Check a relative-error or parity representation before concluding the error metric is wrong. |
+| `pf-validate`'s RMSE_H value looks alarmingly large | The RMSE is computed over the full composition range, including the pure-element edges where `H` itself diverges — see the [Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences) for the same finding worked through in detail. |
+| Reducing `fd_eps` makes finite-difference results *less* accurate | Past the optimal step size, floating-point cancellation error dominates over truncation error — see the [step-size sensitivity](#step-size-sensitivity) section above. |
+| `H_ij` (off-diagonal) formula needed for a ternary/quaternary system | Shown in [Mathematical foundation](#mathematical-foundation) above; exercised directly in the [Hessian stability tutorial](tutorial_hessian_stability_binary.md)'s discussion of `GmInterpolant.d2g()` for `N_ind ≥ 2`. |
+
+## Related material
+
+- **Where these same numbers feed the solver** — the [Hessian stability analysis tutorial](tutorial_hessian_stability_binary.md) traces `λ_min`, `δ`, `λ*`, and `dt_stable` back to this same Hessian.
+- **The same validation question for boundary-finding, not derivatives** — the [binary tie-line tutorial](tutorial_binary_tieline.md) applies the same parity/zoomed-comparison approach to comparing `hull`, `fsolve`, and `pf-tieline` for the binodal boundary itself.
+- **Running this for a different system or temperature** — [CLI Reference](cli_reference.md#pf-validate-step-5-optional) for `pf-validate`'s full options.

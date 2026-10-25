@@ -370,7 +370,10 @@ pf-validate --config configs/nb_v_chem_c50.yaml
 The [Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences)
 runs this for real and works through why its RMSE summary table looks
 alarming at first glance (and why it isn't) — worth reading before trusting
-this command's numbers at face value.
+this command's numbers at face value. The
+[derivative validation tutorial](tutorial_derivative_validation.md) goes
+further still: parity plots, log-scale relative-error panels, and a
+step-size sensitivity sweep for the `fd_eps` parameter above.
 
 ---
 

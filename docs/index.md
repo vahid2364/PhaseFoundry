@@ -71,6 +71,14 @@
 
     [:octicons-arrow-right-24: See where the numbers come from](tutorial_hessian_stability_binary.md)
 
+-   :material-chart-bell-curve:{ .lg .middle } **Validating derivatives against finite differences**
+
+    ---
+
+    Why an overlay plot of two close-agreeing methods can hide a real discrepancy, and what to plot instead.
+
+    [:octicons-arrow-right-24: See the right way to compare them](tutorial_derivative_validation.md)
+
 -   :material-cube-scan:{ .lg .middle } **2D ternary elasto-chemical**
 
     ---

@@ -249,3 +249,4 @@ final microstructure.
 
 - **This Hessian defining the spinodal boundary** — the [binodal/spinodal tutorial](tutorial_binodal_spinodal_3T.md) uses `spinodal_boundary_binary()`, built on this same `d2g()` call, to find where it crosses zero.
 - **This Hessian driving an actual simulation** — the [2D binary tutorial](tutorial_2d_binary.md) is where every number reproduced above first appeared.
+- **A deeper look at the Jansson-vs-FD comparison itself** — the [derivative validation tutorial](tutorial_derivative_validation.md) takes the comparison above further: parity plots, a step-size sensitivity sweep, and a general discussion of why an overlay plot of two close-agreeing methods can be misleading.
