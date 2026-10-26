@@ -131,15 +131,15 @@ pf-validate --config configs/nb_v_chem_c50.yaml
 Residuals computed over x_NB in [0.0010, 0.9990] (200 raw CALPHAD grid points, 500 °C)
 
 Method      median |Δμ|/|μ|       P90       max   median |ΔH|/|H|       P90       max
-fd                 0.0000%   0.0002%  60.2682%           0.0128%   0.3844%  4877.9867%
+fd                 0.0000%   0.0002%  26.3703%           0.0128%   0.3844%  69.5787%
 jansson            0.0000%   0.0000%   0.0000%           0.0000%   0.0000%   0.0000%
-hybrid             0.0000%   0.0000%   0.0000%           0.0128%   0.3844%  4877.9867%
+hybrid             0.0000%   0.0000%   0.0000%           0.0128%   0.3844%  69.5787%
 
 For reference, absolute RMSE over this same full range (dominated by divergence near the pure-element edges — the median/P90 figures above are the representative accuracy numbers, not these):
 Method          RMSE G_m        RMSE μ        RMSE H  J/mol
-fd                   0.0        1452.5    23846737.7
+fd                   0.0         302.3      442218.8
 jansson              0.0           0.0           0.0
-hybrid               0.0           0.0    23846737.7
+hybrid               0.0           0.0      442218.8
 ```
 
 ![Raw pf-validate output: Jansson, FD, and hybrid curves overlaid](images/tutorial_derivative_validation/00_pf_validate_raw_comparison.png)
@@ -171,9 +171,9 @@ composition region the eye cannot resolve at this scale.
        Jansson and FD becomes a large *absolute* disagreement right at
        the edges, where `H` is already large in magnitude. At the true
        grid edges used above (`x_NB = 0.0010`, `0.9990`), this pushes the
-       single worst-point relative error in `H` to **4877.99%** — a number
-       that would be equally if not more misleading than the RMSE it
-       replaces, if reported alone.
+       single worst-point relative error in `H` to **69.58%** — still
+       large, but genuine (see the note below on a separate issue that,
+       until fixed, made this figure far worse than that).
     3. **RMSE squares every pointwise error before averaging.** A handful
        of edge points with absolute differences of thousands to hundreds
        of thousands of J/mol dominate the mean once squared, even though
@@ -188,12 +188,55 @@ composition region the eye cannot resolve at this scale.
     error above, `0.0128%`, and even its 90th percentile, `0.3844%`, both
     describe the interior accuracy correctly — consistent with the direct
     figure-level measurement at `x_Nb = 0.5` worked through below
-    (`0.000144%`) — while the **max**, `4877.99%`, remains a real but
+    (`0.000144%`) — while the **max**, `69.58%`, remains a real but
     unrepresentative single-point artifact, included only for completeness.
     This is the same finding the
     [Hessian stability tutorial's warning box](tutorial_hessian_stability_binary.md#validating-against-finite-differences)
     states directly: a naive full-range error summary is misleading taken
     at face value, not incorrect.
+
+!!! success "A real bug, found through this analysis and fixed: central differencing exactly at a grid boundary"
+    The max relative error in `H` at the true grid edge used to read
+    **4877.99%**, not 69.58% — nearly 70× worse than the number above. The
+    gap was not numerical-analysis texture; it was a genuine bug in
+    `GmInterpolant`, diagnosed directly from this investigation and since
+    fixed.
+
+    `GmInterpolant._eval_flat()` clips every composition query to
+    `grid_bounds` before evaluating the `G_m` spline, specifically to
+    prevent extrapolation past the training data. At `x_NB = 0.0010` (the
+    exact lower edge of the 200-point grid), the central-difference
+    stencil needs `G_m(x - ε)`, which — being below the grid's minimum —
+    was silently clipped to `G_m(x)`, identical to the stencil's own
+    center point. The formula
+
+    $$
+    H(x) = \frac{G_m(x+\epsilon) - 2\,G_m(x) + G_m(x-\epsilon)}{\epsilon^2}
+    $$
+
+    degenerated into `(G_m(x+ε) − G_m(x)) / ε²` — not a valid second-
+    derivative estimate at all, since one of its three required points had
+    silently collapsed onto another. The fix: `GmInterpolant.mu()`/`.d2g()`
+    now detect, per composition point, whether a central stencil would
+    cross `grid_bounds`, and switch to a matched 2nd-order one-sided
+    (forward or backward) stencil there instead — the standard remedy for
+    numerical differentiation at a domain boundary, which does not need
+    any point outside the training data's support. The off-diagonal
+    (mixed-partial) case, relevant for ternary-and-above systems near a
+    simplex vertex, is handled the same way per independent dimension.
+
+    | | `H` at `x_NB = 0.0010` (J/mol) | rel. error vs. Jansson |
+    |---|---|---|
+    | Jansson (exact) | 6,412,034.81 | — |
+    | FD, before the fix (clipped) | -306,366,173.25 | 4877.99% |
+    | FD, after the fix (one-sided) | 1,994,537.55 | 68.89% |
+
+    The remaining 68.89% is the genuine effect described in point 2 above
+    — real curvature the model has at that composition, which no finite-
+    difference scheme can fully capture working from a tabulated grid.
+    Switching to a one-sided stencil does not eliminate that; it only
+    removes the artifact that was making it look roughly 70× worse than
+    it actually is.
 
 ---
 
@@ -333,6 +376,15 @@ methods:
    percentile statistics are insensitive to this without requiring an
    arbitrary cutoff to exclude the problematic region; `pf-validate`
    reports both, as shown above.
+5. **A central-difference stencil evaluated exactly at a domain boundary
+   needs a point outside the domain, and silently clamping that point
+   corrupts the result rather than just losing accuracy.** The standard
+   remedy is a matched one-sided (forward/backward) stencil of the same
+   accuracy order, switched in automatically within one step size of a
+   boundary — not a weaker approximation, a differently-shaped one. This
+   is a general numerical-differentiation rule, not specific to CALPHAD
+   or to this codebase; see the box above for the real bug this produced
+   here and its fix.
 
 ---
 
@@ -342,9 +394,9 @@ methods:
 |---|---|
 | Two near-identical curves plotted together show no visible difference despite a large reported error metric | Expected when the disagreement is confined to a small fraction of the domain — see the [relative-error section](#the-representation-that-actually-works-relative-error-vs-composition-log-scale) above. Check a relative-error or parity representation before concluding the error metric is wrong. |
 | `pf-validate`'s legacy RMSE_H value looks alarmingly large | Expected — it is computed over the full composition range, including the pure-element edges where `H` itself diverges. Use the median/P90 relative error reported above it instead, which `pf-validate` now prints by default; see the [Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences) for the same finding worked through in detail. |
-| `pf-validate`'s **max** relative error (printed next to median/P90) is in the thousands of percent | Expected near the exact grid edges (`x → 0.001` or `0.999`) — see the note under [Running the validation](#running-the-validation) above. It is a real single-point artifact, not evidence the median/P90 figures are wrong. |
+| `pf-validate`'s **max** relative error (printed next to median/P90) is tens of percent at the exact grid edges | Expected — see the note under [Running the validation](#running-the-validation) above. This is the genuine, remaining curvature effect after the boundary-clipping bug described there was fixed; it is a real single-point artifact, not evidence the median/P90 figures are wrong. |
 | Reducing `fd_eps` makes finite-difference results *less* accurate | Past the optimal step size, floating-point cancellation error dominates over truncation error — see the [step-size sensitivity](#step-size-sensitivity) section above. |
-| `H_ij` (off-diagonal) formula needed for a ternary/quaternary system | Shown in [Mathematical foundation](#mathematical-foundation) above; exercised directly in the [Hessian stability tutorial](tutorial_hessian_stability_binary.md)'s discussion of `GmInterpolant.d2g()` for `N_ind ≥ 2`. |
+| `H_ij` (off-diagonal) formula needed for a ternary/quaternary system | Shown in [Mathematical foundation](#mathematical-foundation) above; exercised directly in the [Hessian stability tutorial](tutorial_hessian_stability_binary.md)'s discussion of `GmInterpolant.d2g()` for `N_ind ≥ 2`. Near a simplex vertex, each independent dimension switches to a one-sided stencil independently — see the boundary-bug note under [Running the validation](#running-the-validation). |
 
 ## Related material
 

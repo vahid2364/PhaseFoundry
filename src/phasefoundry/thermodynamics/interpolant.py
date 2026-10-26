@@ -612,6 +612,120 @@ class GmInterpolant:
         c_flat = c.reshape(self.N_ind, n_pts).T.copy()
         return c_flat, spatial_shape
 
+    # ── boundary-aware finite-difference stencils ───────────────────────────────
+    #
+    # A plain central difference evaluated within `eps` of a grid_bounds edge
+    # would have one of its stencil points silently clipped to the boundary by
+    # _clip_to_bounds() (used to avoid extrapolating past the training data) —
+    # collapsing that point onto the center point and corrupting the estimate,
+    # not merely losing some accuracy. The helpers below switch to a matched
+    # 2nd-order one-sided (forward/backward) stencil there instead, the
+    # standard remedy at a numerical-differentiation domain boundary.
+
+    def _fd_direction(self, x_i: np.ndarray, i: int, eps: float) -> np.ndarray:
+        """
+        Per-point stencil direction for independent dimension i.
+
+        0 = central (x_i ± eps both within grid_bounds[i])
+        +1 = forward  (x_i - eps would cross the lower bound)
+        -1 = backward (x_i + eps would cross the upper bound)
+        """
+        if self.grid_bounds is None:
+            return np.zeros(x_i.shape, dtype=int)
+        lo, hi = self.grid_bounds[i]
+        direction = np.zeros(x_i.shape, dtype=int)
+        direction[x_i - eps < lo] = 1
+        direction[x_i + eps > hi] = -1
+        return direction
+
+    def _d1_dim(self, c_flat: np.ndarray, i: int, eps: float) -> np.ndarray:
+        """∂G_m/∂x_i, 2nd-order accurate: central in the interior, one-sided
+        within eps of grid_bounds[i]."""
+        x_i = c_flat[:, i]
+
+        def shift(mult: float) -> np.ndarray:
+            c = c_flat.copy()
+            c[:, i] = x_i + mult * eps
+            return self._eval_flat(c)
+
+        g0           = self._eval_flat(c_flat)
+        gp1, gm1     = shift(1.0), shift(-1.0)
+        gp2          = shift(2.0)
+        gm2          = shift(-2.0)
+
+        central  = (gp1 - gm1) / (2.0 * eps)
+        forward  = (-3.0 * g0 + 4.0 * gp1 - gp2) / (2.0 * eps)
+        backward = (3.0 * g0 - 4.0 * gm1 + gm2) / (2.0 * eps)
+
+        direction = self._fd_direction(x_i, i, eps)
+        return np.where(direction == 1, forward,
+               np.where(direction == -1, backward, central))
+
+    def _d2_diag(self, c_flat: np.ndarray, i: int, eps: float) -> np.ndarray:
+        """H_ii = ∂²G_m/∂x_i², 2nd-order accurate: central in the interior,
+        one-sided within eps of grid_bounds[i]."""
+        x_i = c_flat[:, i]
+
+        def shift(mult: float) -> np.ndarray:
+            c = c_flat.copy()
+            c[:, i] = x_i + mult * eps
+            return self._eval_flat(c)
+
+        g0       = self._eval_flat(c_flat)
+        gp1, gm1 = shift(1.0), shift(-1.0)
+        gp2, gm2 = shift(2.0), shift(-2.0)
+        gp3, gm3 = shift(3.0), shift(-3.0)
+
+        central  = (gp1 - 2.0 * g0 + gm1) / eps**2
+        forward  = (2.0 * g0 - 5.0 * gp1 + 4.0 * gp2 - gp3) / eps**2
+        backward = (2.0 * g0 - 5.0 * gm1 + 4.0 * gm2 - gm3) / eps**2
+
+        direction = self._fd_direction(x_i, i, eps)
+        return np.where(direction == 1, forward,
+               np.where(direction == -1, backward, central))
+
+    def _d2_mixed(self, c_flat: np.ndarray, i: int, j: int, eps: float) -> np.ndarray:
+        """H_ij = ∂²G_m/∂x_i∂x_j (i != j), 2nd-order accurate: built as the
+        tensor product of matched 1st-derivative stencils in dimensions i and
+        j, each independently switched central/forward/backward — relevant
+        near a simplex vertex of a ternary-or-higher system, where two
+        independent compositions can approach their bounds simultaneously."""
+        x_i, x_j = c_flat[:, i], c_flat[:, j]
+
+        def shift(mi: float, mj: float) -> np.ndarray:
+            c = c_flat.copy()
+            c[:, i] = x_i + mi * eps
+            c[:, j] = x_j + mj * eps
+            return self._eval_flat(c)
+
+        # (offset multipliers, weights) per direction for a 2nd-order
+        # 1st-derivative stencil; weights omit the shared 1/(2 eps) factor
+        # from each of the two nested derivatives, applied together below.
+        stencils = {
+            0:  ((-1.0, 1.0),        (-1.0, 1.0)),
+            1:  ((0.0, 1.0, 2.0),    (-3.0, 4.0, -1.0)),
+            -1: ((0.0, -1.0, -2.0),  (3.0, -4.0, 1.0)),
+        }
+
+        dir_i = self._fd_direction(x_i, i, eps)
+        dir_j = self._fd_direction(x_j, j, eps)
+
+        out = np.zeros(x_i.shape)
+        for di, (offs_i, w_i) in stencils.items():
+            mask_i = (dir_i == di)
+            if not np.any(mask_i):
+                continue
+            for dj, (offs_j, w_j) in stencils.items():
+                mask = mask_i & (dir_j == dj)
+                if not np.any(mask):
+                    continue
+                acc = np.zeros(x_i.shape)
+                for a, wa in zip(offs_i, w_i):
+                    for b, wb in zip(offs_j, w_j):
+                        acc = acc + wa * wb * shift(a, b)
+                out = np.where(mask, acc / (4.0 * eps**2), out)
+        return out
+
     # ── public API ────────────────────────────────────────────────────────────
 
     def gm(self, c: np.ndarray) -> np.ndarray:
@@ -634,7 +748,9 @@ class GmInterpolant:
         Chemical potentials ∂G/∂cᵢ.
 
         For ``derivative_method="fd"`` or ``"hybrid"`` (Hessian):
-            Central finite differences on the G_m interpolant.
+            Finite differences on the G_m interpolant: central in the
+            interior, one-sided (forward/backward) within ``fd_eps`` of a
+            grid boundary — see ``_fd_direction()``.
 
         For ``derivative_method="jansson"`` or ``"hybrid"``:
             Direct evaluation of pre-built μᵢ interpolants.
@@ -655,14 +771,12 @@ class GmInterpolant:
             return mu_out.reshape((self.N_ind,) + shape)
 
         else:
-            # ── FD: central differences on G_m ────────────────────────────
+            # ── FD: boundary-aware finite differences on G_m ────────────────
             n_pts  = c_flat.shape[0]
             eps    = self._eps
             mu_out = np.empty((self.N_ind, n_pts))
             for i in range(self.N_ind):
-                cp = c_flat.copy(); cp[:, i] += eps
-                cm = c_flat.copy(); cm[:, i] -= eps
-                mu_out[i] = (self._eval_flat(cp) - self._eval_flat(cm)) / (2.0 * eps)
+                mu_out[i] = self._d1_dim(c_flat, i, eps)
             return mu_out.reshape((self.N_ind,) + shape)
 
     def d2g(self, c: np.ndarray) -> np.ndarray:
@@ -670,7 +784,9 @@ class GmInterpolant:
         Hessian Hᵢⱼ = ∂²G/∂cᵢ∂cⱼ.
 
         For ``derivative_method="fd"`` or ``"hybrid"``:
-            Finite differences on the G_m interpolant.
+            Finite differences on the G_m interpolant: central in the
+            interior, one-sided (forward/backward) within ``fd_eps`` of a
+            grid boundary — see ``_fd_direction()``.
 
         For ``derivative_method="jansson"``:
             Direct evaluation of pre-built ∂μᵢ/∂xⱼ interpolants.
@@ -692,28 +808,16 @@ class GmInterpolant:
             return H.reshape((self.N_ind, self.N_ind) + shape)
 
         else:
-            # ── FD: second-order finite differences on G_m ─────────────────
+            # ── FD: boundary-aware finite differences on G_m ────────────────
             eps = self._eps
             H   = np.empty((self.N_ind, self.N_ind, n_pts))
-            g0  = self._eval_flat(c_flat)
 
             for i in range(self.N_ind):
                 for j in range(self.N_ind):
                     if i == j:
-                        cp = c_flat.copy(); cp[:, i] += eps
-                        cm = c_flat.copy(); cm[:, i] -= eps
-                        H[i, j] = (
-                            self._eval_flat(cp) - 2.0 * g0 + self._eval_flat(cm)
-                        ) / eps**2
+                        H[i, j] = self._d2_diag(c_flat, i, eps)
                     else:
-                        cpp = c_flat.copy(); cpp[:, i] += eps; cpp[:, j] += eps
-                        cpm = c_flat.copy(); cpm[:, i] += eps; cpm[:, j] -= eps
-                        cmp = c_flat.copy(); cmp[:, i] -= eps; cmp[:, j] += eps
-                        cmm = c_flat.copy(); cmm[:, i] -= eps; cmm[:, j] -= eps
-                        H[i, j] = (
-                            self._eval_flat(cpp) - self._eval_flat(cpm)
-                            - self._eval_flat(cmp) + self._eval_flat(cmm)
-                        ) / (4.0 * eps**2)
+                        H[i, j] = self._d2_mixed(c_flat, i, j, eps)
 
             return H.reshape((self.N_ind, self.N_ind) + shape)
 
