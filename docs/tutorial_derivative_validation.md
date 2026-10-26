@@ -236,6 +236,19 @@ disagreement (10⁻⁴–10⁻⁵%, limited only by floating-point precision) ac
 most of the composition range, rising sharply to several percent — and, at
 the very edge, double digits — as `x_Nb → 0` or `x_Nb → 1`.
 
+Points are plotted individually rather than connected by a line, because
+each of the 300 points is an independent evaluation, and connecting them
+would draw a continuous curve implying structure that is not actually
+there. The visible fine-grained ripple within the flat interior region is
+real but not meaningful on its own: `GmInterpolant` fits a separate cubic
+spline to each of `G_m(x)` (used by FD) and the raw `MU`/`dMU` columns
+(used by Jansson), and a cubic spline's third derivative — which sets the
+local truncation error of a central difference — is only piecewise
+constant, jumping at every one of the 200 raw composition grid points.
+The ripple's spacing tracks that raw grid spacing directly; it is a
+property of comparing two independently-fit splines at sub-grid
+resolution, not a sign of a problem with either derivative method.
+
 **Numeric summary at the composition used throughout this site's binary
 tutorials (`c0 = 0.5`):** 0.000007% for `μ`, 0.000144% for `H` — six-figure
 agreement, consistent with the RMSE table's `jansson` row reading exactly
