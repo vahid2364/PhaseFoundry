@@ -149,18 +149,15 @@ labeled `ppt`. This matches standard usage, in which the matrix is the
 majority phase and the precipitate is the minority phase dispersed within
 it.
 
-This was not the original behavior. An earlier version of this script
-labeled the endpoints by composition instead — the reference-element-poor
-endpoint was always `mat`, regardless of which phase actually made up more
-of the alloy. At `c0 = 0.5` and 500 °C, that convention and the
-fraction-based convention disagree: the composition-poor-in-V endpoint
-(`x_Nb = 0.977`) holds only 41.4% of the alloy, while the
-richer-in-V endpoint (`x_Nb = 0.163`) holds 58.6%. Labeling by composition
-alone called the minority phase `mat`, the opposite of the usual
-convention. The fix applied here (`workflows/01c_calphad_tieline/run.py`)
-sorts by `fraction` instead, so `mat` is the majority phase at every
-composition and temperature, not only the ones where the two conventions
-happen to coincide.
+Composition alone is not a reliable stand-in for this: at `c0 = 0.5` and
+500 °C, the reference-element-poor endpoint (`x_Nb = 0.977`) holds only
+41.4% of the alloy, while the richer-in-V endpoint (`x_Nb = 0.163`) holds
+58.6%. A convention that labeled strictly by composition (e.g., always
+calling the reference-element-poor endpoint `mat`) would call the
+*minority* phase `mat` here — the opposite of the usual convention.
+Sorting by `fraction` instead (`workflows/01c_calphad_tieline/run.py`)
+keeps `mat` as the majority phase at every composition and temperature,
+not only the ones where the two conventions happen to coincide.
 
 ---
 

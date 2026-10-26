@@ -195,48 +195,35 @@ composition region the eye cannot resolve at this scale.
     states directly: a naive full-range error summary is misleading taken
     at face value, not incorrect.
 
-!!! success "A real bug, found through this analysis and fixed: central differencing exactly at a grid boundary"
-    The max relative error in `H` at the true grid edge used to read
-    **4877.99%**, not 69.58% — nearly 70× worse than the number above. The
-    gap was not numerical-analysis texture; it was a genuine bug in
-    `GmInterpolant`, diagnosed directly from this investigation and since
-    fixed.
-
-    `GmInterpolant._eval_flat()` clips every composition query to
-    `grid_bounds` before evaluating the `G_m` spline, specifically to
-    prevent extrapolation past the training data. At `x_NB = 0.0010` (the
-    exact lower edge of the 200-point grid), the central-difference
-    stencil needs `G_m(x - ε)`, which — being below the grid's minimum —
-    was silently clipped to `G_m(x)`, identical to the stencil's own
-    center point. The formula
+!!! note "Finite differences at a grid boundary"
+    A central-difference stencil evaluated exactly at a domain boundary
+    needs a function value outside the training data's support — at
+    `x_NB = 0.0010` (the lower edge of the 200-point grid), the formula
 
     $$
     H(x) = \frac{G_m(x+\epsilon) - 2\,G_m(x) + G_m(x-\epsilon)}{\epsilon^2}
     $$
 
-    degenerated into `(G_m(x+ε) − G_m(x)) / ε²` — not a valid second-
-    derivative estimate at all, since one of its three required points had
-    silently collapsed onto another. The fix: `GmInterpolant.mu()`/`.d2g()`
-    now detect, per composition point, whether a central stencil would
-    cross `grid_bounds`, and switch to a matched 2nd-order one-sided
+    needs `G_m(x - ε)`, which does not exist below the grid's minimum.
+    `GmInterpolant.mu()`/`.d2g()` handle this by detecting, per
+    composition point, whether a central stencil would cross
+    `grid_bounds`, and switching to a matched 2nd-order one-sided
     (forward or backward) stencil there instead — the standard remedy for
     numerical differentiation at a domain boundary, which does not need
     any point outside the training data's support. The off-diagonal
     (mixed-partial) case, relevant for ternary-and-above systems near a
     simplex vertex, is handled the same way per independent dimension.
 
+    At the true grid edge:
+
     | | `H` at `x_NB = 0.0010` (J/mol) | rel. error vs. Jansson |
     |---|---|---|
     | Jansson (exact) | 6,412,034.81 | — |
-    | FD, before the fix (clipped) | -306,366,173.25 | 4877.99% |
-    | FD, after the fix (one-sided) | 1,994,537.55 | 68.89% |
+    | FD (one-sided at the boundary) | 1,994,537.55 | 68.89% |
 
     The remaining 68.89% is the genuine effect described in point 2 above
     — real curvature the model has at that composition, which no finite-
     difference scheme can fully capture working from a tabulated grid.
-    Switching to a one-sided stencil does not eliminate that; it only
-    removes the artifact that was making it look roughly 70× worse than
-    it actually is.
 
 ---
 
@@ -383,8 +370,8 @@ methods:
    accuracy order, switched in automatically within one step size of a
    boundary — not a weaker approximation, a differently-shaped one. This
    is a general numerical-differentiation rule, not specific to CALPHAD
-   or to this codebase; see the box above for the real bug this produced
-   here and its fix.
+   or to this codebase; see the note above for how `GmInterpolant`
+   applies it.
 
 ---
 
@@ -394,9 +381,9 @@ methods:
 |---|---|
 | Two near-identical curves plotted together show no visible difference despite a large reported error metric | Expected when the disagreement is confined to a small fraction of the domain — see the [relative-error section](#the-representation-that-actually-works-relative-error-vs-composition-log-scale) above. Check a relative-error or parity representation before concluding the error metric is wrong. |
 | `pf-validate`'s legacy RMSE_H value looks alarmingly large | Expected — it is computed over the full composition range, including the pure-element edges where `H` itself diverges. Use the median/P90 relative error reported above it instead, which `pf-validate` now prints by default; see the [Hessian stability tutorial](tutorial_hessian_stability_binary.md#validating-against-finite-differences) for the same finding worked through in detail. |
-| `pf-validate`'s **max** relative error (printed next to median/P90) is tens of percent at the exact grid edges | Expected — see the note under [Running the validation](#running-the-validation) above. This is the genuine, remaining curvature effect after the boundary-clipping bug described there was fixed; it is a real single-point artifact, not evidence the median/P90 figures are wrong. |
+| `pf-validate`'s **max** relative error (printed next to median/P90) is tens of percent at the exact grid edges | Expected — see the note under [Running the validation](#running-the-validation) above. This is the genuine curvature effect near the pure-element limit; it is a real single-point artifact, not evidence the median/P90 figures are wrong. |
 | Reducing `fd_eps` makes finite-difference results *less* accurate | Past the optimal step size, floating-point cancellation error dominates over truncation error — see the [step-size sensitivity](#step-size-sensitivity) section above. |
-| `H_ij` (off-diagonal) formula needed for a ternary/quaternary system | Shown in [Mathematical foundation](#mathematical-foundation) above; exercised directly in the [Hessian stability tutorial](tutorial_hessian_stability_binary.md)'s discussion of `GmInterpolant.d2g()` for `N_ind ≥ 2`. Near a simplex vertex, each independent dimension switches to a one-sided stencil independently — see the boundary-bug note under [Running the validation](#running-the-validation). |
+| `H_ij` (off-diagonal) formula needed for a ternary/quaternary system | Shown in [Mathematical foundation](#mathematical-foundation) above; exercised directly in the [Hessian stability tutorial](tutorial_hessian_stability_binary.md)'s discussion of `GmInterpolant.d2g()` for `N_ind ≥ 2`. Near a simplex vertex, each independent dimension switches to a one-sided stencil independently — see the note under [Running the validation](#running-the-validation). |
 
 ## Related material
 

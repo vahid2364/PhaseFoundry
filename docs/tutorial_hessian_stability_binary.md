@@ -105,12 +105,11 @@ hybrid               0.0           0.0      442218.8
     pure-element edges, examined below — the same reason the **max**
     relative error above reaches a much larger `69.58%` at the single
     worst edge point, without that number being any more representative
-    of typical accuracy than the RMSE is. (This RMSE used to read 23.8
-    million and the max 4877.99% — a genuine central-differencing bug at
-    the grid boundary, found through this investigation and fixed; see
-    the [derivative validation tutorial](tutorial_derivative_validation.md#running-the-validation)
-    for the full story and the fix.) See that same page for the full
-    reasoning behind reporting median/P90 instead of RMSE.
+    of typical accuracy than the RMSE is. See the
+    [derivative validation tutorial](tutorial_derivative_validation.md#running-the-validation)
+    for the full reasoning behind reporting median/P90 instead of RMSE,
+    and for how `GmInterpolant` handles finite differences at a grid
+    boundary.
 
 ![CALPHAD data vs. Jansson/FD/Hybrid derivatives, with the spinodal region shaded](images/tutorial_hessian_stability_binary/01_derivative_comparison.png)
 
@@ -219,17 +218,9 @@ J/mol** — almost 3× larger than `|λ_min(c0)| = 7239.3 J/mol` — because the
 scan reaches compositions closer to the spinodal edge, where the curvature
 is steeper, even though the simulation's actual mean composition is at the
 much gentler x_Nb = 0.5. This is a more conservative (safer) estimate than
-using `λ_min(c0)` alone would provide.
-
-!!! note "A small, confirmed inconsistency"
-    `sim_params.txt` prints this line as `Stable dt (safety=0.4) dt_stable=
-    ...` — but `stable_dt()` is called without an explicit `safety`
-    argument (`solver.py:484`), so it actually uses the function's own
-    default, `safety=0.3` (`solver.py:200`), which is what the `0.18325`
-    value above was computed with. The `"(safety=0.4)"` in the printed
-    label does not match the value actually used — a small, pre-existing
-    documentation/display inconsistency, not a correctness error in the
-    stability calculation itself.
+using `λ_min(c0)` alone would provide. `sim_params.txt` prints this as
+`Stable dt (safety=0.3) dt_stable=1.8325e-01 s`, matching
+`stable_dt()`'s default (`solver.py:200`).
 
 ---
 
