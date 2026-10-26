@@ -188,7 +188,7 @@ composition region the eye cannot resolve at this scale.
     error above, `0.0128%`, and even its 90th percentile, `0.3844%`, both
     describe the interior accuracy correctly — consistent with the direct
     figure-level measurement at `x_Nb = 0.5` worked through below
-    (`0.000144%`) — while the **max**, `69.58%`, remains a real but
+    (`0.000970%`) — while the **max**, `69.58%`, remains a real but
     unrepresentative single-point artifact, included only for completeness.
     This is the same finding the
     [Hessian stability tutorial's warning box](tutorial_hessian_stability_binary.md#validating-against-finite-differences)
@@ -253,39 +253,32 @@ case here, and the reason a third representation is needed.
 ```python
 import numpy as np
 
-x = np.linspace(0.01, 0.99, 300).reshape(1, -1)
+x = np.sort(data["compositions"][:, el_list.index("NB")]).reshape(1, -1)
 mu_rel_err = np.abs(interp_fd.mu(x) - interp_j.mu(x)) / np.abs(interp_j.mu(x)) * 100
 H_rel_err  = np.abs(interp_fd.d2g(x)[0, 0] - interp_j.d2g(x)[0, 0]) / np.abs(interp_j.d2g(x)[0, 0]) * 100
 ```
 
 ![Relative error between Jansson and FD, mu and H, log scale](images/tutorial_derivative_validation/02_relative_error_mu_and_H.png)
 
-This is the figure that actually shows what the RMSE table reported. Both
-panels share the same shape: a broad, flat region of extremely small
-disagreement (10⁻⁴–10⁻⁵%, limited only by floating-point precision) across
-most of the composition range, rising sharply to several percent — and, at
-the very edge, double digits — as `x_Nb → 0` or `x_Nb → 1`.
-
-Points are plotted individually rather than connected by a line, because
-each of the 300 points is an independent evaluation, and connecting them
-would draw a continuous curve implying structure that is not actually
-there. The visible fine-grained ripple within the flat interior region is
-real but not meaningful on its own: `GmInterpolant` fits a separate cubic
-spline to each of `G_m(x)` (used by FD) and the raw `MU`/`dMU` columns
-(used by Jansson), and a cubic spline's third derivative — which sets the
-local truncation error of a central difference — is only piecewise
-constant, jumping at every one of the 200 raw composition grid points.
-The ripple's spacing tracks that raw grid spacing directly; it is a
-property of comparing two independently-fit splines at sub-grid
-resolution, not a sign of a problem with either derivative method.
+This is the figure that actually shows what the RMSE table reported,
+evaluated at the 200 raw CALPHAD grid points. Both panels share the same
+shape: a broad, flat region of extremely small disagreement
+(10⁻⁴–10⁻⁵%, limited only by floating-point precision) across most of the
+composition range, rising sharply to several percent — and, near the
+edge, several tens of percent — as `x_Nb → 0` or `x_Nb → 1`. Jansson's
+spline reproduces pycalphad's computed `MU`/`dMU` exactly at these
+points, so this isolates the FD method's own error directly, with no
+contribution from interpolating Jansson itself between points.
 
 **Numeric summary at the composition used throughout this site's binary
-tutorials (`c0 = 0.5`):** 0.000007% for `μ`, 0.000144% for `H` — six-figure
-agreement, consistent with the RMSE table's `jansson` row reading exactly
-`0.0` (rounding) relative to itself and the small `fd` RMSE values being
-driven entirely by the edge region. **Maximum disagreement observed**
-(`x_Nb ∈ [0.01, 0.99]`): 8.1% for `μ` at `x_Nb = 0.99`, 17.1% for `H` at
-`x_Nb = 0.987`.
+tutorials (`c0 = 0.5`, nearest raw grid point `x_Nb = 0.4975`):**
+0.000007% for `μ`, 0.000970% for `H`. Across the full 200-point grid, the
+median disagreement is 0.000007% for `μ` and 0.012758% for `H` —
+consistent with the RMSE table's `jansson` row reading exactly `0.0`
+(rounding) relative to itself and the small `fd` RMSE values being driven
+entirely by the edge region. **Maximum disagreement observed:** 26.37%
+for `μ` at `x_Nb = 0.989`, 69.58% for `H` at `x_Nb = 0.999` (the grid
+edge).
 
 The cause of the edge disagreement is the same effect documented in the
 [Hessian stability tutorial](tutorial_hessian_stability_binary.md#where-the-disagreement-actually-occurs):
