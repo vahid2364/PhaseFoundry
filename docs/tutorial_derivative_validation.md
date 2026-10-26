@@ -246,7 +246,63 @@ legible). A parity plot is the right tool when the two methods are
 expected to disagree by an amount visible at normal axis scale; it is not,
 by itself, sufficient when the disagreement is confined to a small
 fraction of the range and is small in absolute terms even there — the
-case here, and the reason a third representation is needed.
+case here, and the reason a different representation is needed. Log-scale
+axes do not rescue it, either: `symlog` compresses the *dynamic range* of
+`μ`/`H` shown, but the actual disagreement between the two methods is
+simply too small relative to their own magnitude to separate from the
+diagonal at any axis scale. A parity plot's core limitation is that it
+plots value against value; it cannot isolate a discrepancy that is small
+relative to the values themselves, regardless of how those axes are
+scaled.
+
+## Absolute residual: isolating the discrepancy directly
+
+Plotting the raw difference `FD − Jansson` directly, rather than one
+method's value against the other's, removes `μ`/`H`'s own magnitude from
+the comparison entirely — the only thing shown is the size of the
+disagreement itself:
+
+```python
+x = np.sort(data["compositions"][:, el_list.index("NB")]).reshape(1, -1)
+d_mu = interp_fd.mu(x) - interp_j.mu(x)
+d_H  = interp_fd.d2g(x)[0, 0] - interp_j.d2g(x)[0, 0]
+```
+
+![Absolute residual |FD - Jansson| vs. composition, log scale, with x_Nb = 0.01 and 0.99 marked](images/tutorial_derivative_validation/05_residual_abs_diff.png)
+
+This is where the discrepancy finally becomes directly visible. Both
+panels show a clean, smooth U-shape spanning several orders of
+magnitude: for `μ`, from roughly `10⁻⁵` J/mol in the interior to
+`~3 × 10³` J/mol at the edges; for `H`, from roughly `10⁻¹` J/mol in the
+interior to `~4 × 10⁶` J/mol at the edges. The vertical lines mark
+`x_Nb = 0.01` and `0.99`, the boundary of the composition range used for
+the earlier parity and step-size-sweep figures on this page — the
+residual is already climbing steeply by that point, well before the true
+grid edge at `x_Nb = 0.001`/`0.999`.
+
+### Why the Hessian residual is so much larger than the chemical-potential residual
+
+Two compounding effects, both traceable directly to the FD formulas in
+[Method 2: finite differences](#method-2-finite-differences) above:
+
+1. **An extra power of `ε` in the denominator.** `μ`'s central-difference
+   formula divides by `2ε`; `H`'s divides by `ε²`. With `fd_eps = 1e-4`,
+   that is an extra amplification factor of `1/ε = 10,000` on whatever
+   truncation or floating-point error is present in the underlying `G_m`
+   evaluations. This is directly confirmed by the medians in the figure
+   above: median `|Δμ| ≈ 0.0001` J/mol versus median `|ΔH| ≈ 1.39` J/mol —
+   a ratio of about `13,900`, close to the `10,000×` predicted purely from
+   the extra power of `ε`.
+2. **A higher-order derivative of `G_m` diverges faster near the edges.**
+   Central-difference truncation error for `μ` (a first derivative)
+   scales with `G_m`'s third derivative; for `H` (a second derivative),
+   it scales with the fourth derivative. Near a pure-element limit the
+   ideal-entropy term behaves like `x ln x`, whose successive derivatives
+   go `1/x → -1/x² → 2/x³ → ...` — each differentiation adds another
+   power of `1/x`. `H`'s truncation error is therefore driven by an
+   intrinsically steeper-diverging quantity than `μ`'s, independent of
+   the `ε²` amplification above, which is why panel (b)'s edge climb is
+   both higher and steeper than panel (a)'s.
 
 ## The representation that actually works: relative error vs. composition, log scale
 
@@ -345,13 +401,17 @@ methods:
    claim. A quantitative figure (relative error, or a parity plot with
    enough dynamic range) is required to actually support a numeric
    agreement claim.
-2. **Parity plots and log-scale relative-error plots answer different
-   questions.** A parity plot shows whether a relationship is linear and
-   unbiased — useful when deviations are large enough to be visible at
-   normal scale. A log-scale relative-error plot shows *how small* the
-   disagreement is and *where it stops being small* — necessary when the
-   two methods agree to several significant figures almost everywhere, as
-   here.
+2. **Parity plots, absolute-residual plots, and log-scale relative-error
+   plots answer different questions.** A parity plot shows whether a
+   relationship is linear and unbiased — useful when deviations are
+   large enough to be visible at normal scale, and no axis rescaling
+   fixes it when they are not, since it plots value against value. A
+   log-scale absolute-residual plot (`FD − reference`) removes the
+   values' own magnitude from the comparison and shows the physical size
+   of the disagreement directly. A log-scale relative-error plot shows
+   *how small* the disagreement is *relative to the values themselves*,
+   and where it stops being small — necessary when the two methods agree
+   to several significant figures almost everywhere, as here.
 3. **Finite-difference step size has an optimum, not a monotonic
    best-direction.** Reporting or assuming "finite differences disagree
    with the analytic result because the step size was too large" is only
