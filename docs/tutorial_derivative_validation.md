@@ -295,39 +295,6 @@ where the function being differenced is diverging most steeply — a genuine
 accuracy limitation of finite differences in that region, not a flaw in
 either implementation.
 
-### Isolating pure FD error: the raw grid points only
-
-The ripple above is not purely FD error. Jansson's spline is fit directly
-to the raw `MU`/`dMU` columns, so it reproduces pycalphad's own computed
-value *exactly* at each of the 200 raw grid points — zero interpolation
-error there — but, like any spline, it is only an approximation *between*
-them. Querying both methods at 300 arbitrary off-grid points, as above,
-therefore measures a mix of genuine FD error and Jansson's own (much
-smaller) sub-grid interpolation imprecision.
-
-Restricting the same comparison to only the 200 raw grid points removes
-that second contribution, since Jansson carries no interpolation error at
-all there:
-
-```python
-x_raw = np.sort(data["compositions"][:, el_list.index("NB")]).reshape(1, -1)
-mu_rel_err = np.abs(interp_fd.mu(x_raw) - interp_j.mu(x_raw)) / np.abs(interp_j.mu(x_raw)) * 100
-H_rel_err  = np.abs(interp_fd.d2g(x_raw)[0, 0] - interp_j.d2g(x_raw)[0, 0]) / np.abs(interp_j.d2g(x_raw)[0, 0]) * 100
-```
-
-![Relative error between Jansson and FD, restricted to the 200 raw CALPHAD grid points only](images/tutorial_derivative_validation/04_relative_error_raw_grid_points.png)
-
-The ripple is gone. Both panels now show a single smooth profile: small
-in the interior, growing toward the pure-element edges, with none of the
-high-frequency oscillation from the dense sweep. The median `H` error
-here, `0.0128%`, is slightly *larger* than the dense sweep's `0.0045%` —
-consistent with the mechanism above: a central-difference stencil centered
-*exactly* on a raw grid point straddles two different cubic spline pieces
-(one on either side of that point), which is a marginally worse case for
-truncation error than sampling comfortably inside a single piece, as most
-off-grid points do. This is the cleanest available measurement of the FD
-method's own error, free of any contribution from Jansson's interpolation.
-
 ---
 
 ## Step-size sensitivity
