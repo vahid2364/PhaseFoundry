@@ -310,6 +310,17 @@ which amplifies cancellation error further) — expected, since each
 additional order of differentiation degrades the achievable floating-point
 precision.
 
+The upturn at small \(\epsilon\) is ordinary floating-point subtractive
+cancellation: `G_m` is \(O(10^4)\) J/mol, but double precision carries
+only about 15-16 significant digits, so as \(\epsilon \to 10^{-8}\),
+`G_m(x\pm\epsilon)` and `G_m(x)` agree in most of those digits and the
+subtraction cancels out nearly all of the meaningful ones, leaving mostly
+rounding noise. Dividing that noise by \(\epsilon\) (for `μ`) or
+\(\epsilon^2\) (for `H`) amplifies it — which is why `H`'s upturn is so
+much steeper than `μ`'s: an extra power of \(\epsilon\) in the
+denominator amplifies the same rounding noise by roughly \(1/\epsilon\)
+more.
+
 The default `fd_eps = 1e-4` sits on the truncation-error-dominated side of
 the minimum, not exactly at it, but close enough that the resulting error
 (0.000007% for `μ`, 0.000497% for `H`, at `x_Nb = 0.5`) is already far
