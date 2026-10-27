@@ -101,10 +101,30 @@ def _simplex_lattice_grid(elements, composition_ranges, reference_element,
         C(scale + n_el - 1, n_el - 1)
     e.g. ternary n=15 → C(17,2)=136, quaternary n=15 → C(18,3)=816,
          pentenary n=10 → C(13,4)=715.
+
+    For a binary system (n_el == 2) this general lattice-then-filter
+    approach always discards exactly 2 points (the true x=0 and x=1
+    endpoints, which fall outside any composition_ranges that excludes
+    the pure elements), returning n_points - 2 valid rows rather than
+    n_points. That generality is unnecessary with only one independent
+    axis, so the binary case is handled separately below by sampling
+    composition_ranges directly: every requested point is used, and the
+    returned grid spans the configured range exactly.
     """
+    n_el = len(elements)
+
+    if n_el == 2:
+        el     = independent[0]
+        lo, hi = composition_ranges[el]
+        x_ind  = np.linspace(lo, hi, n_points)
+        return np.array(
+            [[xi, 1.0 - xi] if elements[0] == el else [1.0 - xi, xi]
+             for xi in x_ind],
+            dtype=np.float64,
+        )
+
     from itertools import combinations
 
-    n_el  = len(elements)
     scale = n_points - 1
 
     # Warn if the unfiltered lattice is very large
