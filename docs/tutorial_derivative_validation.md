@@ -344,6 +344,51 @@ where the function being differenced is diverging most steeply — a genuine
 accuracy limitation of finite differences in that region, not a flaw in
 either implementation.
 
+### Sensitivity to grid resolution
+
+Everything above uses the Nb-V table's default 200-point composition
+grid. Regenerating the same table at higher resolution (`thermo.n_points`
+in the Step 1 config, passed to the same `pycalphad`-backed pipeline —
+not a resampling of the existing data) shows which parts of this result
+are limited by grid density and which are not:
+
+![Relative error at n=200, 398, and 598 composition grid points, shared y-axis per row](images/tutorial_derivative_validation/06_grid_resolution_comparison.png)
+
+| | n = 200 | n = 398 | n = 598 |
+|---|---|---|---|
+| Median `μ` error | 0.000007% | 0.000010% | 0.000010% |
+| Median `H` error | 0.012758% | 0.003009% | 0.001284% |
+| Max `μ` error | 26.37% | 3.86% | 3.04% |
+| Max `H` error | 69.58% | 27.84% | 27.54% |
+
+The two quantities respond differently, and the reason is the same
+knot-spacing argument used earlier in this section. `H`'s median error
+keeps dropping as the grid refines, roughly halving with each near-doubling
+of point density — the two independently-fit splines (one for `G_m`, used
+by FD; one for `MU`/`dMU`, used by Jansson) have less room to diverge
+between consecutive data points as those points move closer together.
+`μ`'s median, by contrast, is flat at `~0.00001%` across all three
+resolutions: it is already limited by floating-point precision, not by
+grid density, so adding more points cannot improve it further. The max
+error at the true composition edge also drops with finer grids, but that
+comparison is not perfectly like-for-like — the outermost grid point
+itself moves slightly closer to the true boundary as `n` increases, so
+part of the improvement reflects a different edge composition being
+sampled, not only better resolution at a fixed point.
+
+One further, narrower observation: the composition where `μ`'s relative
+error bottoms out (the sharp downward spike visible near `x_Nb ≈ 0.11` at
+n = 200, and near `x_Nb ≈ 0.77`–`0.78` at both n = 398 and n = 598) is not
+a physical feature of the system, unlike `H`'s spike at the spinodal
+boundary (`x_Nb ≈ 0.39`), which stays fixed across all three grids. At
+that `μ` crossing, the raw disagreement between FD and Jansson is already
+down at the floating-point noise floor (`~10⁻⁴` J/mol, against `μ` itself
+of order `10⁴` J/mol), so which composition happens to produce an exact
+sign cancellation is essentially decided by sub-digit rounding detail in
+each grid's own spline construction, not by anything physically
+meaningful — which is also why its location is not stable under
+refinement the way a genuine physical feature would be.
+
 ---
 
 ## Step-size sensitivity
