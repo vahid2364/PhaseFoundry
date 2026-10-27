@@ -349,37 +349,42 @@ either implementation.
 Everything above uses the Nb-V table's default 200-point composition
 grid. Regenerating the same table at higher resolution (`thermo.n_points`
 in the Step 1 config, passed to the same `pycalphad`-backed pipeline —
-not a resampling of the existing data) shows which parts of this result
-are limited by grid density and which are not:
+not a resampling of the existing data), with `composition_ranges`
+held fixed at `[0.001, 0.999]` so only the point density changes, shows
+which parts of this result are limited by grid density and which are not:
 
-![Relative error at n=200, 398, and 598 composition grid points, shared y-axis per row](images/tutorial_derivative_validation/06_grid_resolution_comparison.png)
+![Relative error at n=200, 400, and 600 composition grid points, all spanning [0.001, 0.999], shared y-axis per row](images/tutorial_derivative_validation/06_grid_resolution_comparison.png)
 
-| | n = 200 | n = 398 | n = 598 |
+| | n = 200 | n = 400 | n = 600 |
 |---|---|---|---|
 | Median `μ` error | 0.000007% | 0.000010% | 0.000010% |
-| Median `H` error | 0.012758% | 0.003009% | 0.001284% |
-| Max `μ` error | 26.37% | 3.86% | 3.04% |
-| Max `H` error | 69.58% | 27.84% | 27.54% |
+| Median `H` error | 0.012758% | 0.003005% | 0.001280% |
+| Max `μ` error (at `x_Nb = 0.999`) | 26.37%\* | 9.28% | 5.37% |
+| Max `H` error (at `x_Nb = 0.999`) | 69.58% | 52.12% | 40.85% |
+
+\* n = 200's own worst point falls at `x_Nb = 0.989`, not exactly `0.999`,
+since that table is the one already published elsewhere on this site and
+was not regenerated here; n = 400 and 600 were built specifically for
+this comparison and share the exact same composition bounds, so their
+two columns are directly comparable point-for-point at the true edge.
 
 The two quantities respond differently, and the reason is the same
 knot-spacing argument used earlier in this section. `H`'s median error
 keeps dropping as the grid refines, roughly halving with each near-doubling
 of point density — the two independently-fit splines (one for `G_m`, used
 by FD; one for `MU`/`dMU`, used by Jansson) have less room to diverge
-between consecutive data points as those points move closer together.
+between consecutive data points as those points move closer together. The
+max error at the true edge (`x_Nb = 0.999`, identical for all three grids
+here) drops the same way, confirming this is a genuine resolution effect
+and not an artifact of the worst point moving to a different composition.
 `μ`'s median, by contrast, is flat at `~0.00001%` across all three
 resolutions: it is already limited by floating-point precision, not by
-grid density, so adding more points cannot improve it further. The max
-error at the true composition edge also drops with finer grids, but that
-comparison is not perfectly like-for-like — the outermost grid point
-itself moves slightly closer to the true boundary as `n` increases, so
-part of the improvement reflects a different edge composition being
-sampled, not only better resolution at a fixed point.
+grid density, so adding more points cannot improve it further.
 
 One further, narrower observation: the composition where `μ`'s relative
 error bottoms out (the sharp downward spike visible near `x_Nb ≈ 0.11` at
-n = 200, and near `x_Nb ≈ 0.77`–`0.78` at both n = 398 and n = 598) is not
-a physical feature of the system, unlike `H`'s spike at the spinodal
+n = 200, and near `x_Nb ≈ 0.77` at both n = 400 and n = 600) is not a
+physical feature of the system, unlike `H`'s spike at the spinodal
 boundary (`x_Nb ≈ 0.39`), which stays fixed across all three grids. At
 that `μ` crossing, the raw disagreement between FD and Jansson is already
 down at the floating-point noise floor (`~10⁻⁴` J/mol, against `μ` itself
