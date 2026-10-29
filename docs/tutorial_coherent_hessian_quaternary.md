@@ -9,40 +9,56 @@ Metall.* 9 (1961) 795) coherency correction added on top of it. By the end
 you will have built the calculation by hand, piece by piece, then run the
 same thing as a one-command, config-driven workflow.
 
-No new config file is required for the step-by-step part below; it only
-reads two files already on disk: `data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb`
-and `data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv`.
+!!! note "Prerequisites"
+    No new config file is needed for the step-by-step part below — it only
+    reads two files already on disk:
+
+    - `data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb` — the CALPHAD
+      thermodynamic database
+    - `data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv`
+      — the SQS/MLIP elastic-constants table
+
+    Running the full sweep later *as a workflow* does need a config file —
+    see ["Running the full temperature sweep as a
+    workflow"](#running-the-full-temperature-sweep-as-a-workflow) below.
 
 ---
 
 ## Step 1 — the chemical Hessian
 
 `chemical_hessian()` evaluates the Gibbs-Duhem-reduced Hessian
-`H_ij = d(mu_i - mu_ref)/dx_j` at one composition and temperature, via
-pycalphad's Jansson derivatives — the same quantity the
+\(H_{ij} = \partial(\mu_i - \mu_{\rm ref})/\partial x_j\) at one composition
+and temperature, via pycalphad's Jansson derivatives — the same quantity the
 [binary tutorial](tutorial_hessian_stability_binary.md#the-hessian-api-and-what-it-reduces-to-for-binary)
 introduces, just a genuine 3×3 matrix here instead of a 1×1 one (independent
 elements Hf, Nb, Ti; V is the reference).
 
 What this matrix *is*: the curvature of the Gibbs free energy surface,
-`H_ij = d^2G/dx_i dx_j`. Nudge the composition in direction `i` and watch
-how the thermodynamic driving force in direction `j` responds — a positive
-eigenvalue means the free-energy surface curves upward there (a bowl: any
-fluctuation raises the energy, so it decays back), a negative eigenvalue
-means it curves downward (a dome: some fluctuation *lowers* the energy, so
-the system spontaneously grows it). That spontaneous growth of a
-composition fluctuation is exactly spinodal decomposition, which is why a
-negative eigenvalue is the instability signal everywhere in this codebase.
 
-pycalphad doesn't hand you `d^2G/dx_i dx_j` directly — it gives
-`d(mu_i)/dx_j`, a first derivative of chemical potential. The two are
-related through the definition of chemical potential for a dependent
-(reference) component, `mu_i - mu_ref = dG/dx_i`. Differentiating both
-sides by `x_j`:
+$$
+H_{ij} = \frac{\partial^2 G}{\partial x_i\, \partial x_j}
+$$
 
-```
-d(mu_i)/dx_j - d(mu_ref)/dx_j = d^2G / (dx_i dx_j)
-```
+Nudge the composition in direction `i` and watch how the thermodynamic
+driving force in direction `j` responds — a positive eigenvalue means the
+free-energy surface curves upward there (a bowl: any fluctuation raises the
+energy, so it decays back), a negative eigenvalue means it curves downward
+(a dome: some fluctuation *lowers* the energy, so the system spontaneously
+grows it). That spontaneous growth of a composition fluctuation is exactly
+spinodal decomposition, which is why a negative eigenvalue is the
+instability signal everywhere in this codebase.
+
+pycalphad doesn't hand you \(\partial^2 G/\partial x_i\,\partial x_j\)
+directly — it gives \(\partial \mu_i/\partial x_j\), a first derivative of
+chemical potential. The two are related through the definition of chemical
+potential for a dependent (reference) component,
+\(\mu_i - \mu_{\rm ref} = \partial G/\partial x_i\). Differentiating both
+sides by \(x_j\):
+
+$$
+\frac{\partial \mu_i}{\partial x_j} - \frac{\partial \mu_{\rm ref}}{\partial x_j}
+= \frac{\partial^2 G}{\partial x_i\, \partial x_j}
+$$
 
 That subtraction — `dmu(eli, elj) - dmu(reference_element, elj)` in the
 code — is this relation applied directly: it converts "how element `i`'s
@@ -107,14 +123,18 @@ Step 4 below uses to convert a lattice mismatch into an energy penalty.
 
 ## Step 3 — the Vegard eigenstrain coefficients
 
-`eta_k = (1/a) * da/dx_k`, one per independent element, via central finite
-difference on the interpolated lattice parameter — same method as the
-alpha-coefficients computed inside `workflows/01b_lookup_elastic`, just
-callable directly at a single composition here. Physically, `eta_k` is the
-fractional stretch of the lattice per unit change in element `k`'s
-composition: Vegard's law treats `a(x)` as roughly linear in composition,
-and `eta` is that line's slope, normalized by `a` itself so it's a strain
-(dimensionless) rather than an absolute length.
+$$
+\eta_k = \frac{1}{a}\frac{\partial a}{\partial x_k}
+$$
+
+one per independent element, via central finite difference on the
+interpolated lattice parameter — same method as the alpha-coefficients
+computed inside `workflows/01b_lookup_elastic`, just callable directly at a
+single composition here. Physically, \(\eta_k\) is the fractional stretch
+of the lattice per unit change in element `k`'s composition: Vegard's law
+treats \(a(x)\) as roughly linear in composition, and \(\eta\) is that
+line's slope, normalized by \(a\) itself so it's a strain (dimensionless)
+rather than an absolute length.
 
 ```python
 from phasefoundry.elasticity.sqs_interpolant import vegard_eta_coefficients
@@ -131,21 +151,21 @@ effect on the lattice parameter of the three.
 
 ## Step 4 — the isotropic coherency correction
 
-Where `2 * V_m * M * (eta ⊗ eta)` comes from (Cahn, 1961): if the
-composition fluctuates by `delta_x_k` in some direction, the local lattice
-*wants* to change size by `sum_k eta_k * delta_x_k` (that's just Step 3's
-definition of `eta`, applied to a fluctuation instead of the whole
-composition). If that region is mechanically constrained to stay coherent
-with its surroundings — forced to keep the same lattice spacing rather than
-relaxing to its own preferred size — the elastic energy it costs is
-proportional to the *square* of that mismatch:
+Where \(2 V_m M (\eta \otimes \eta)\) comes from (Cahn, 1961): if the
+composition fluctuates by \(\delta x_k\) in some direction, the local
+lattice *wants* to change size by \(\sum_k \eta_k\, \delta x_k\) (that's
+just Step 3's definition of \(\eta\), applied to a fluctuation instead of
+the whole composition). If that region is mechanically constrained to stay
+coherent with its surroundings — forced to keep the same lattice spacing
+rather than relaxing to its own preferred size — the elastic energy it
+costs is proportional to the *square* of that mismatch:
 
-```
-(sum_k eta_k * delta_x_k)^2  =  delta_x^T (eta eta^T) delta_x
-```
+$$
+\left(\sum_k \eta_k\, \delta x_k\right)^2 = \delta x^T (\eta \eta^T) \delta x
+$$
 
-`eta eta^T` (the outer product) is exactly the matrix form of that
-quadratic penalty; `2*V_m*M` is the constant converting squared lattice
+\(\eta \eta^T\) (the outer product) is exactly the matrix form of that
+quadratic penalty; \(2 V_m M\) is the constant converting squared lattice
 mismatch into energy per mole. The code below builds exactly this matrix.
 
 ```python
@@ -173,7 +193,7 @@ stiffened; the two composition directions orthogonal to it are completely
 unaffected by this correction. (`tests/test_coherent_hessian.py`'s
 `test_isotropic_correction_is_rank_one_and_psd` checks exactly this: two of
 the three eigenvalues of the correction matrix are zero, the third equals
-`2*V_m*M*|eta|^2`.)
+\(2 V_m M |\eta|^2\).)
 
 ```python
 H_coh = H_chem + correction
@@ -292,8 +312,8 @@ Three files land in `results/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV/coherent_hessian_
 per composition and overall:
 
 - `eigenvalues_<label>.csv` — the full eigenvalue sweep (all three
-  eigenvalues at every temperature, not just `λ_min` — enough to plot λ₂
-  as above for any composition), e.g.:
+  eigenvalues at every temperature, not just \(\lambda_{\min}\) — enough to
+  plot \(\lambda_2\) as above for any composition), e.g.:
 
   | temperature_K | chem_eig_1 | coh_eig_1 |
   |---|---|---|
@@ -302,7 +322,7 @@ per composition and overall:
   | 900.0 | −33,662.1 | 19,027.8 |
 
 - `fig_04_eigenvalues.png`/`.pdf` — a 3-panel plot, one per composition,
-  chemical and coherent `λ_1` vs. temperature.
+  chemical and coherent \(\lambda_1\) vs. temperature.
 - `provenance.yaml` — the exact `a_ref`/`M`/`eta` used per composition, so
   reproducing a specific number later doesn't mean re-deriving it.
 
@@ -329,9 +349,10 @@ Swapping only the TDB in is not enough to settle the sign; also correcting
 eta/M against the production elastic CSV flips it again. The two inputs
 interact through the rank-1 correction built in Step 4: eta_Hf alone is
 69% larger in the production data than in the notebook's hand-transcribed
-value (Step 3), and because the correction scales with `eta^2`, that single
-coefficient change is enough on its own to swing λ_min(coherent) from
-negative to positive at this composition and temperature. In other words,
+value (Step 3), and because the correction scales with \(\eta^2\), that
+single coefficient change is enough on its own to swing
+\(\lambda_{\min}({\rm coherent})\) from negative to positive at this
+composition and temperature. In other words,
 getting the TDB right without also getting eta/M right from the same
 production source can still give you the wrong stability conclusion.
 
@@ -339,7 +360,7 @@ production source can still give you the wrong stability conclusion.
 
 ## Limitations: what this does not settle
 
-A positive `λ_min(H^coh)` at one composition only rules out spontaneous,
+A positive \(\lambda_{\min}(H^{\rm coh})\) at one composition only rules out spontaneous,
 barrierless decomposition from that exact point, under the isotropic
 approximation used in Step 4. It does not, by itself, explain why a full
 elasto-chemical phase-field simulation of this same composition (see the
@@ -351,17 +372,17 @@ explanations remain open, in roughly decreasing order of how directly
 testable they are with code already in this repo:
 
 1. **Isotropic vs. anisotropic elasticity** — Step 4 uses one scalar
-   modulus `M`. The real solver's `C_ijkl(x)` is strongly anisotropic at
-   this composition (`A_Z = 1.52`); the isotropic worst-case estimate here
-   may simply be too stabilizing.
-2. **Fixed point vs. composition-dependent field** — `eta` and `M` are
+   modulus \(M\). The real solver's \(C_{ijkl}(x)\) is strongly anisotropic
+   at this composition (\(A_Z = 1.52\)); the isotropic worst-case estimate
+   here may simply be too stabilizing.
+2. **Fixed point vs. composition-dependent field** — \(\eta\) and \(M\) are
    evaluated once, at exactly the mean composition (Steps 2–3). The real
    simulation starts from finite-amplitude noise and re-evaluates
    composition-dependent elastic properties pointwise as the field evolves.
-3. **Local vs. global stability** — a positive `λ_min` rules out linear
-   (spinodal) decomposition, not a lower-energy two-phase state reached via
-   nucleation past a finite barrier, which discretized noise over a long
-   (700,000 s) simulation can still seed.
+3. **Local vs. global stability** — a positive \(\lambda_{\min}\) rules out
+   linear (spinodal) decomposition, not a lower-energy two-phase state
+   reached via nucleation past a finite barrier, which discretized noise
+   over a long (700,000 s) simulation can still seed.
 
 None of these is resolved by the calculation in this tutorial; testing them
 would mean evaluating the anisotropic correction along multiple modulation
