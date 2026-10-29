@@ -60,6 +60,7 @@ nav:
   - Tutorial — Binary Tie-Lines (3-way check): tutorial_binary_tieline.md
   - Tutorial — 2D Binary Walkthrough: tutorial_2d_binary.md
   - Tutorial — Hessian Stability Analysis (Binary): tutorial_hessian_stability_binary.md
+  - Tutorial — Coherent-Hessian Stability Analysis (Quaternary): tutorial_coherent_hessian_quaternary.md
   - Tutorial — 2D Ternary Elasto-Chemical: tutorial_2d_ternary_elastic.md
   - Tutorial — Tie-Lines & Phase Maps (Ternary): tutorial_tieline_phase_map.md
 

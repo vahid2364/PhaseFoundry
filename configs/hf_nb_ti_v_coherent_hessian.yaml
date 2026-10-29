@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Nb-Hf-Ti-V Quaternary — Isotropic Coherent-Hessian Stability Sweep
+# ─────────────────────────────────────────────────────────────────────────────
+# Reproduces manuscript Figure 4 (eigenvalues_Hf25/Hf1/Hf4.pdf,
+# fig_04_eigenvalues.pdf) against files actually tracked in this repository.
+#
+# The original figure was generated from
+# notebooks/stability_analysis_nonisotropic.ipynb, which queried a TDB
+# ('HfNbVTi.tdb') and an elastic-constants CSV
+# ('sqs_elastic_constants_HfNbVTi.csv') that do not exist anywhere in this
+# repo, with eta/M/lattice-parameter values hand-transcribed into the
+# notebook rather than read from any tracked file. This config instead
+# points at the production TDB and elastic CSV used for every other
+# quaternary result in the paper, including the Fig. 7(b) simulation.
+#
+# See paper/2025_Kunselman_Design_of_Spinodal_Microstructures_in_HEAs/
+# revision/rebuttal.md, Reviewer 4 -- Comment 1.
+#
+# Run:
+#   python workflows/01e_coherent_hessian/run.py --config configs/hf_nb_ti_v_coherent_hessian.yaml
+
+system:
+  name:              nb_hf_ti_v
+  db_path:           data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb
+  elements:          [HF, NB, TI, V]       # V is reference; HF, NB, TI are independent
+  phase:             BCC_A2
+  reference_element: V
+
+elastic:
+  elastic_csv: data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv
+
+# Gauge-invariant orthogonal projection (Kadirvel et al., Scripta Materialia
+# 212 (2022) 114521, Table 1). Valid only for this exact (HF, NB, TI | V-ref)
+# 3-independent-element ordering. Set to "none" to skip projection.
+gauge_invariant_projection: kadirvel_hf_nb_ti
+
+delta_fd:       0.02   # finite-difference step for Vegard eta coefficients
+atoms_per_cell: 2.0    # BCC
+
+temperature:
+  start_K: 300
+  stop_K:  2000
+  step_K:  50
+
+# The three manuscript Figure 4 panels.
+compositions:
+  - label: equiatomic_Hf25Nb25Ti25V25
+    composition: {HF: 0.25, NB: 0.25, TI: 0.25}
+  - label: Hf10Nb40Ti40V10
+    composition: {HF: 0.10, NB: 0.40, TI: 0.40}
+  - label: Hf60Nb10Ti10V20
+    composition: {HF: 0.60, NB: 0.10, TI: 0.10}
+
+output:
+  results_dir: results/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV
+  run_name:    coherent_hessian_fig4_reproduction

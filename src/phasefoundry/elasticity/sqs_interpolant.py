@@ -68,7 +68,8 @@ def build_interpolators(df: pd.DataFrame, ind_elements: list[str]) -> dict:
                                    NearestNDInterpolator)
 
     props  = ["C11_GPa", "C12_GPa", "C44_GPa", "a_relaxed_A",
-              "shear_modulus_vrh_GPa", "bulk_modulus_vrh_GPa", "poisson_ratio"]
+              "shear_modulus_vrh_GPa", "bulk_modulus_vrh_GPa", "poisson_ratio",
+              "biaxial_modulus_M_GPa"]
     coords = np.column_stack([df[_element_col(el)].values for el in ind_elements])
     interps: dict = {}
 
@@ -170,3 +171,52 @@ def query_composition(interps: dict, comp: dict,
     x_ind = np.array([comp.get(el.upper(), 0.0) for el in ind_elements],
                      dtype=float)
     return {prop: fn(x_ind) for prop, fn in interps.items()}
+
+
+# ── Vegard eigenstrain coefficients ─────────────────────────────────────────────
+
+def vegard_eta_coefficients(interps: dict, comp: dict,
+                            ind_elements: list[str],
+                            delta_fd: float = 0.02) -> dict[str, float]:
+    """
+    Per-element Vegard eigenstrain coefficients eta_k = (1/a) * da/dx_k at
+    a single composition, via central finite difference on the
+    ``a_relaxed_A`` interpolant.
+
+    Same method and default step size as the alpha-coefficient calculation
+    in ``workflows/01b_lookup_elastic/run.py`` (there, evaluated at the
+    midpoint between two endpoint compositions for the simulation's
+    Vegard-tensor eigenstrain; here, callable at any single composition,
+    e.g. for a coherent-Hessian stability analysis at one point).
+
+    Parameters
+    ----------
+    interps : dict
+        Output of ``build_interpolators()``; must include ``"a_relaxed_A"``.
+    comp : dict
+        Composition to evaluate at, e.g. ``{"NB": 0.25, "HF": 0.25, "TI": 0.25}``.
+    ind_elements : list[str]
+        Independent elements, in the order eta should be returned.
+    delta_fd : float
+        Finite-difference step in mole fraction (default 0.02).
+
+    Returns
+    -------
+    dict[str, float]
+        ``{element: eta_k}`` for each element in ``ind_elements``.
+    """
+    if "a_relaxed_A" not in interps:
+        raise KeyError("vegard_eta_coefficients() requires an 'a_relaxed_A' "
+                       "interpolant; build it with build_interpolators().")
+
+    x0 = np.array([comp.get(el.upper(), 0.0) for el in ind_elements], dtype=float)
+    a_ref = interps["a_relaxed_A"](x0)
+
+    eta: dict[str, float] = {}
+    for k, el in enumerate(ind_elements):
+        x_p = x0.copy(); x_p[k] += delta_fd
+        x_m = x0.copy(); x_m[k] -= delta_fd
+        da_dxk = (interps["a_relaxed_A"](x_p) - interps["a_relaxed_A"](x_m)) / (2 * delta_fd)
+        eta[el] = float(da_dxk / a_ref)
+
+    return eta
