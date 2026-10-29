@@ -242,6 +242,14 @@ pushes every eigenvalue positive, smallest now +11,214 J/mol — stable. At
 exactly this composition and temperature, the isotropic coherency
 correction is large enough to flip the stability conclusion.
 
+That conclusion is sensitive to \(\eta\) specifically, because the
+correction scales as \(\eta^2\) (Step 4): a coefficient change of a few
+tens of percent in \(\eta_{\rm Hf}\) alone is enough, on its own, to flip
+the sign of \(\lambda_{\min}({\rm coherent})\) at this composition and
+temperature. Getting \(M\) and \(\eta\) from a different source than the
+one \(H_{\rm chem}\) is evaluated against — rather than the same production
+elastic-constants CSV used in Steps 2–3 — can silently change the answer.
+
 All five steps above are also available as the one convenience call
 `evaluate_coherent_stability(...)`, which returns a dict with every
 intermediate quantity (`chemical_hessian`, `coherent_hessian`, `eta`,
@@ -325,36 +333,6 @@ per composition and overall:
   chemical and coherent \(\lambda_1\) vs. temperature.
 - `provenance.yaml` — the exact `a_ref`/`M`/`eta` used per composition, so
   reproducing a specific number later doesn't mean re-deriving it.
-
----
-
-## Why both the TDB and eta/M have to be production-consistent
-
-This calculation was originally produced by
-`notebooks/stability_analysis_nonisotropic.ipynb`, which queries a TDB
-named `HfNbVTi.tdb` and reads eta/M from a CSV named
-`sqs_elastic_constants_HfNbVTi.csv` — neither file exists anywhere in this
-repository, and the notebook's own comment says those values were "pulled
-from excel sheet," so the notebook's result cannot be independently
-reproduced from anything tracked here. Repeating Steps 1–5 above with the
-production TDB and elastic CSV instead of those two untraceable files turns
-out to matter quantitatively, not just for traceability:
-
-| Inputs | λ_min(chemical) | λ_min(coherent) |
-|---|---|---|
-| Production TDB, but the notebook's original (untraceable) eta/M | −39,096 J/mol | −18,786 J/mol (negative) |
-| Production TDB **and** production eta/M (Steps 1–5 above) | −39,096 J/mol | **+11,214 J/mol (positive)** |
-
-Swapping only the TDB in is not enough to settle the sign; also correcting
-eta/M against the production elastic CSV flips it again. The two inputs
-interact through the rank-1 correction built in Step 4: eta_Hf alone is
-69% larger in the production data than in the notebook's hand-transcribed
-value (Step 3), and because the correction scales with \(\eta^2\), that
-single coefficient change is enough on its own to swing
-\(\lambda_{\min}({\rm coherent})\) from negative to positive at this
-composition and temperature. In other words,
-getting the TDB right without also getting eta/M right from the same
-production source can still give you the wrong stability conclusion.
 
 ---
 
