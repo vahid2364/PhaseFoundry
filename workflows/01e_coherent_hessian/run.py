@@ -177,6 +177,8 @@ def run(cfg: dict) -> Path:
         }
 
         ax.plot(T_values, chem_eigs[:, 0], linewidth=3, label=r"Chem $\lambda_1$")
+        ax.plot(T_values, chem_eigs[:, 1], linewidth=2, linestyle=":",
+                label=r"Chem $\lambda_2$")
         ax.plot(T_values, coh_eigs[:, 0], linewidth=3, label=r"Coherent $\lambda_1$")
         ax.axhline(0.0, color="black", linestyle="--", linewidth=1)
         ax.set_xlabel("Temperature (K)")

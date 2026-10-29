@@ -208,6 +208,16 @@ python workflows/01e_coherent_hessian/run.py \
 
 ![All three Figure 4 panels, regenerated from the production TDB and elastic CSV](images/tutorial_coherent_hessian_quaternary/01_fig4_reproduction.png)
 
+Figure 4's own caption describes three lines per panel — chemical λ₁,
+chemical **λ₂**, and coherent λ₁ — and specifically attributes panel (b)'s
+non-linear λ₁ curve to "a large difference in the slopes of the directions
+of principal curvature." The original notebook's plotting cells never
+actually plot λ₂, even though it's sitting in the same computed eigenvalue
+array right next to λ₁ — this workflow adds it (dotted line above), which
+is what makes that slope difference visible in panel (b): chemical λ₂ rises
+far more steeply than λ₁ there, crossing zero around 575–600 K versus λ₁'s
+~700 K, exactly the effect the caption describes.
+
 Three files land in `results/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV/coherent_hessian_fig4_reproduction/`
 per composition and overall:
 
