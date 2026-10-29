@@ -4,9 +4,8 @@ Step 1e — Isotropic coherent-Hessian stability sweep
 Computes chemical and coherent (isotropic Cahn 1961) Hessian eigenvalues
 over a temperature sweep, for one or more compositions, and plots them.
 
-This is the config-driven, reproducible replacement for the notebook
-calculation that generated the submitted manuscript's Figure 4
-(``notebooks/stability_analysis_nonisotropic.ipynb``): that notebook queried
+This is the config-driven, reproducible replacement for the calculation in
+``notebooks/stability_analysis_nonisotropic.ipynb``: that notebook queried
 a TDB and an elastic-constants CSV that are not tracked in this repository,
 with eta/M/lattice-parameter values hand-transcribed into the notebook
 rather than read from any file here. This workflow instead reads everything

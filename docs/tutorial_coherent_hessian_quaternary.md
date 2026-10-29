@@ -3,11 +3,11 @@
 The [binary Hessian stability tutorial](tutorial_hessian_stability_binary.md)
 covers `N_ind = 1`, where the Hessian is a bare scalar, and leaves the
 coherency (elastic) correction out entirely. This tutorial covers both
-extensions at once, for the quaternary Hf-Nb-Ti-V system used throughout the
-manuscript's Section 3.4: a genuine `N_ind = 3` Hessian, plus the classical
-isotropic (Cahn, *Acta Metall.* 9 (1961) 795) coherency correction added on
-top of it. By the end you will have built the calculation by hand, piece by
-piece, then run the same thing as a one-command, config-driven workflow.
+extensions at once, for the equiatomic quaternary Hf-Nb-Ti-V system: a
+genuine `N_ind = 3` Hessian, plus the classical isotropic (Cahn, *Acta
+Metall.* 9 (1961) 795) coherency correction added on top of it. By the end
+you will have built the calculation by hand, piece by piece, then run the
+same thing as a one-command, config-driven workflow.
 
 No new config file is required for the step-by-step part below; it only
 reads two files already on disk: `data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb`
@@ -275,24 +275,25 @@ python workflows/01e_coherent_hessian/run.py \
   Written: .../coherent_hessian_fig4_reproduction/provenance.yaml
 ```
 
-![All three Figure 4 panels, regenerated from the production TDB and elastic CSV](images/tutorial_coherent_hessian_quaternary/01_fig4_reproduction.png)
+![All three composition panels, regenerated from the production TDB and elastic CSV](images/tutorial_coherent_hessian_quaternary/01_fig4_reproduction.png)
 
-Figure 4's own caption describes three lines per panel — chemical λ₁,
-chemical **λ₂**, and coherent λ₁ — and specifically attributes panel (b)'s
-non-linear λ₁ curve to "a large difference in the slopes of the directions
-of principal curvature." The original notebook's plotting cells never
-actually plot λ₂, even though it's sitting in the same computed eigenvalue
-array right next to λ₁ — this workflow adds it (dotted line above), which
-is what makes that slope difference visible in panel (b): chemical λ₂ rises
-far more steeply than λ₁ there, crossing zero around 575–600 K versus λ₁'s
-~700 K, exactly the effect the caption describes.
+The original notebook's plotting cells only ever plot chemical λ₁ and
+coherent λ₁ — two lines — even though the full, sorted eigenvalue array it
+computes at every temperature already contains a second chemical eigenvalue
+(λ₂) that's simply never passed to `plt.plot()`. Plotting it too (dotted
+line above) exposes something the two-line version hides: for the
+Hf10Nb40Ti40V10 panel, chemical λ₂ rises far more steeply with temperature
+than chemical λ₁ does, crossing zero around 575–600 K versus λ₁'s ~700 K —
+a large difference in the slopes of the two principal curvature directions
+for that composition, invisible if you only ever look at the smallest
+eigenvalue.
 
 Three files land in `results/HfNbTiV_BCC_PhaseForge_v2/NbHfTiV/coherent_hessian_fig4_reproduction/`
 per composition and overall:
 
 - `eigenvalues_<label>.csv` — the full eigenvalue sweep (all three
-  eigenvalues at every temperature, not just `λ_min` — enough to reproduce
-  Figure 4's second-eigenvalue panel too), e.g.:
+  eigenvalues at every temperature, not just `λ_min` — enough to plot λ₂
+  as above for any composition), e.g.:
 
   | temperature_K | chem_eig_1 | coh_eig_1 |
   |---|---|---|
@@ -307,31 +308,32 @@ per composition and overall:
 
 ---
 
-## What checking this against the manuscript's Figure 4 revealed
+## Why both the TDB and eta/M have to be production-consistent
 
-The calculation above isn't hypothetical — it is the same calculation
-behind the manuscript's Figure 4, redone from files that are actually
-tracked in this repository. The original figure was produced by
+This calculation was originally produced by
 `notebooks/stability_analysis_nonisotropic.ipynb`, which queries a TDB
 named `HfNbVTi.tdb` and reads eta/M from a CSV named
-`sqs_elastic_constants_HfNbVTi.csv` — neither exists anywhere in this repo;
-the notebook's own comment says those values were "pulled from excel
-sheet." Repeating Steps 1–5 above with the production files, instead of
-those two untraceable ones, changes the answer:
+`sqs_elastic_constants_HfNbVTi.csv` — neither file exists anywhere in this
+repository, and the notebook's own comment says those values were "pulled
+from excel sheet," so the notebook's result cannot be independently
+reproduced from anything tracked here. Repeating Steps 1–5 above with the
+production TDB and elastic CSV instead of those two untraceable files turns
+out to matter quantitatively, not just for traceability:
 
 | Inputs | λ_min(chemical) | λ_min(coherent) |
 |---|---|---|
-| Original notebook (untraceable TDB + CSV) | — | positive (reviewer's reading of the published figure) |
-| Production TDB, original notebook's η/M | −39,096 J/mol | −18,786 J/mol (negative) |
-| Production TDB **and** production η/M (Steps 1–5 above) | −39,096 J/mol | **+11,214 J/mol (positive)** |
+| Production TDB, but the notebook's original (untraceable) eta/M | −39,096 J/mol | −18,786 J/mol (negative) |
+| Production TDB **and** production eta/M (Steps 1–5 above) | −39,096 J/mol | **+11,214 J/mol (positive)** |
 
-Swapping only the TDB flips the sign one way; also correcting η/M (η_Hf
-turns out to be 69% larger from the production data than the notebook's
-hand-transcribed value — see Step 3) flips it back. The fully
-production-consistent calculation reproduces the reviewer's reading of the
-published figure, so the apparent contradiction with Fig. 7(b)'s observed
-decomposition is **not** a data-provenance artifact — the real explanation
-has to come from the modeling gap described next.
+Swapping only the TDB in is not enough to settle the sign; also correcting
+eta/M against the production elastic CSV flips it again. The two inputs
+interact through the rank-1 correction built in Step 4: eta_Hf alone is
+69% larger in the production data than in the notebook's hand-transcribed
+value (Step 3), and because the correction scales with `eta^2`, that single
+coefficient change is enough on its own to swing λ_min(coherent) from
+negative to positive at this composition and temperature. In other words,
+getting the TDB right without also getting eta/M right from the same
+production source can still give you the wrong stability conclusion.
 
 ---
 
@@ -339,11 +341,14 @@ has to come from the modeling gap described next.
 
 A positive `λ_min(H^coh)` at one composition only rules out spontaneous,
 barrierless decomposition from that exact point, under the isotropic
-approximation used in Step 4. It does not, by itself, explain why
-Fig. 7(b)'s finite-amplitude, anisotropic, spatially-resolved phase-field
-simulation decomposes anyway. Three candidate explanations remain open, in
-roughly decreasing order of how directly testable they are with code
-already in this repo:
+approximation used in Step 4. It does not, by itself, explain why a full
+elasto-chemical phase-field simulation of this same composition (see the
+[2D ternary elasto-chemical tutorial](tutorial_2d_ternary_elastic.md) for
+the anisotropic machinery such a simulation actually uses) can still
+decompose, starting from finite-amplitude initial noise rather than an
+infinitesimal perturbation at the exact mean composition. Three candidate
+explanations remain open, in roughly decreasing order of how directly
+testable they are with code already in this repo:
 
 1. **Isotropic vs. anisotropic elasticity** — Step 4 uses one scalar
    modulus `M`. The real solver's `C_ijkl(x)` is strongly anisotropic at

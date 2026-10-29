@@ -4,11 +4,10 @@ tests/test_coherent_hessian.py
 Regression tests for phasefoundry.thermodynamics.coherent_hessian.
 
 Pins today's (2026-10-28) verified, production-consistent numbers for the
-quaternary Hf-Nb-Ti-V coherent-Hessian stability analysis (manuscript
-Figure 4, Reviewer 4 / Comment 1), so that a future change to the TDB, the
-elastic-constants CSV, the Vegard-coefficient step size, or the
-gauge-invariant projection convention is caught here instead of resurfacing
-silently as a reviewer comment. See
+quaternary Hf-Nb-Ti-V coherent-Hessian stability analysis, so that a future
+change to the TDB, the elastic-constants CSV, the Vegard-coefficient step
+size, or the gauge-invariant projection convention is caught here instead
+of resurfacing silently somewhere else. See
 docs/tutorial_coherent_hessian_quaternary.md for the full derivation and
 provenance story.
 
@@ -63,19 +62,18 @@ def test_production_data_files_exist():
     assert ELASTIC_CSV_PATH.exists(), f"Production elastic CSV missing: {ELASTIC_CSV_PATH}"
 
 
-# ── end-to-end regression: the verified Figure 4(a) reconciliation numbers ────
+# ── end-to-end regression: the verified reconciliation numbers ────────────────
 
 def test_equiatomic_500C_production_inputs():
     """
-    Equiatomic Hf25Nb25Ti25V25 at 500 C / 773.15 K (Fig. 7(b)'s temperature),
-    using the production TDB and production elastic CSV throughout.
+    Equiatomic Hf25Nb25Ti25V25 at 500 C / 773.15 K, using the production TDB
+    and production elastic CSV throughout.
 
-    These are the numbers that reconcile with the reviewer's reading of the
-    published Figure 4(a) (lambda_min(coherent) > 0): swapping only the TDB
-    (keeping the notebook's original, untraceable eta/M) gives a *negative*
-    coherent eigenvalue instead -- a false lead investigated and ruled out
-    this session. Both eta/M AND the TDB must be production-consistent to
-    reproduce the published sign.
+    Swapping only the TDB (keeping the notebook's original, untraceable
+    eta/M) gives a *negative* coherent eigenvalue instead of the positive
+    one below -- a false lead investigated and ruled out this session (see
+    test_tdb_only_swap_gives_opposite_sign() below). Both eta/M AND the TDB
+    must be production-consistent to get this sign.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

@@ -1,20 +1,21 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Nb-Hf-Ti-V Quaternary — Isotropic Coherent-Hessian Stability Sweep
 # ─────────────────────────────────────────────────────────────────────────────
-# Reproduces manuscript Figure 4 (eigenvalues_Hf25/Hf1/Hf4.pdf,
-# fig_04_eigenvalues.pdf) against files actually tracked in this repository.
+# Reproduces the eigenvalues_Hf25/Hf1/Hf4.pdf / fig_04_eigenvalues.pdf
+# analysis against files actually tracked in this repository.
 #
-# The original figure was generated from
+# The original calculation was generated from
 # notebooks/stability_analysis_nonisotropic.ipynb, which queried a TDB
 # ('HfNbVTi.tdb') and an elastic-constants CSV
 # ('sqs_elastic_constants_HfNbVTi.csv') that do not exist anywhere in this
 # repo, with eta/M/lattice-parameter values hand-transcribed into the
 # notebook rather than read from any tracked file. This config instead
 # points at the production TDB and elastic CSV used for every other
-# quaternary result in the paper, including the Fig. 7(b) simulation.
+# quaternary result in this repository, including the elasto-chemical
+# phase-field simulation of this same composition.
 #
-# See paper/2025_Kunselman_Design_of_Spinodal_Microstructures_in_HEAs/
-# revision/rebuttal.md, Reviewer 4 -- Comment 1.
+# See docs/tutorial_coherent_hessian_quaternary.md for the full derivation
+# and the provenance story behind this config.
 #
 # Run:
 #   python workflows/01e_coherent_hessian/run.py --config configs/hf_nb_ti_v_coherent_hessian.yaml
@@ -42,7 +43,7 @@ temperature:
   stop_K:  2000
   step_K:  50
 
-# The three manuscript Figure 4 panels.
+# The three compositions this analysis is evaluated at.
 compositions:
   - label: equiatomic_Hf25Nb25Ti25V25
     composition: {HF: 0.25, NB: 0.25, TI: 0.25}
