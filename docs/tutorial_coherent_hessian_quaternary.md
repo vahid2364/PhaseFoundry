@@ -24,6 +24,34 @@ pycalphad's Jansson derivatives — the same quantity the
 introduces, just a genuine 3×3 matrix here instead of a 1×1 one (independent
 elements Hf, Nb, Ti; V is the reference).
 
+What this matrix *is*: the curvature of the Gibbs free energy surface,
+`H_ij = d^2G/dx_i dx_j`. Nudge the composition in direction `i` and watch
+how the thermodynamic driving force in direction `j` responds — a positive
+eigenvalue means the free-energy surface curves upward there (a bowl: any
+fluctuation raises the energy, so it decays back), a negative eigenvalue
+means it curves downward (a dome: some fluctuation *lowers* the energy, so
+the system spontaneously grows it). That spontaneous growth of a
+composition fluctuation is exactly spinodal decomposition, which is why a
+negative eigenvalue is the instability signal everywhere in this codebase.
+
+pycalphad doesn't hand you `d^2G/dx_i dx_j` directly — it gives
+`d(mu_i)/dx_j`, a first derivative of chemical potential. The two are
+related through the definition of chemical potential for a dependent
+(reference) component, `mu_i - mu_ref = dG/dx_i`. Differentiating both
+sides by `x_j`:
+
+```
+d(mu_i)/dx_j - d(mu_ref)/dx_j = d^2G / (dx_i dx_j)
+```
+
+That subtraction — `dmu(eli, elj) - dmu(reference_element, elj)` in the
+code — is this relation applied directly: it converts "how element `i`'s
+chemical potential reacts to an `x_j` change" into the actual curvature, by
+removing the part of that reaction that's just bookkeeping for whichever
+element was designated dependent (V here). This is the same Gibbs-Duhem
+step already used in `phasefoundry.thermodynamics.spinodal`, just written
+out here for the full 3x3 case instead of a single binary entry.
+
 ```python
 from phasefoundry.thermodynamics.coherent_hessian import chemical_hessian
 
@@ -72,12 +100,21 @@ props["a_relaxed_A"]           # 3.2918   (lattice parameter, angstrom)
 props["biaxial_modulus_M_GPa"] # 144.5950
 ```
 
+`M` is a stiffness number: the elastic energy, per unit volume, it costs to
+force a region to keep matching its neighbors' lattice spacing ("stay
+coherent") instead of relaxing freely to its own preferred size. It's what
+Step 4 below uses to convert a lattice mismatch into an energy penalty.
+
 ## Step 3 — the Vegard eigenstrain coefficients
 
 `eta_k = (1/a) * da/dx_k`, one per independent element, via central finite
 difference on the interpolated lattice parameter — same method as the
 alpha-coefficients computed inside `workflows/01b_lookup_elastic`, just
-callable directly at a single composition here.
+callable directly at a single composition here. Physically, `eta_k` is the
+fractional stretch of the lattice per unit change in element `k`'s
+composition: Vegard's law treats `a(x)` as roughly linear in composition,
+and `eta` is that line's slope, normalized by `a` itself so it's a strain
+(dimensionless) rather than an absolute length.
 
 ```python
 from phasefoundry.elasticity.sqs_interpolant import vegard_eta_coefficients
@@ -94,6 +131,23 @@ effect on the lattice parameter of the three.
 
 ## Step 4 — the isotropic coherency correction
 
+Where `2 * V_m * M * (eta ⊗ eta)` comes from (Cahn, 1961): if the
+composition fluctuates by `delta_x_k` in some direction, the local lattice
+*wants* to change size by `sum_k eta_k * delta_x_k` (that's just Step 3's
+definition of `eta`, applied to a fluctuation instead of the whole
+composition). If that region is mechanically constrained to stay coherent
+with its surroundings — forced to keep the same lattice spacing rather than
+relaxing to its own preferred size — the elastic energy it costs is
+proportional to the *square* of that mismatch:
+
+```
+(sum_k eta_k * delta_x_k)^2  =  delta_x^T (eta eta^T) delta_x
+```
+
+`eta eta^T` (the outer product) is exactly the matrix form of that
+quadratic penalty; `2*V_m*M` is the constant converting squared lattice
+mismatch into energy per mole. The code below builds exactly this matrix.
+
 ```python
 from phasefoundry.thermodynamics.coherent_hessian import isotropic_coherent_correction
 
@@ -109,12 +163,17 @@ array([[65744.2, 33181.6, 27483.9],
        [27483.9, 13871.3, 11489.4]])
 ```
 
-This is `2 * V_m * M * (eta ⊗ eta)` — a rank-1 matrix built purely from the
-outer product of `eta` with itself, scaled by the modulus and molar volume.
-Every entry is positive (it has to be: it's `M` times a vector outer
-product with itself), so adding it to `H_chem` can only push eigenvalues
-*up*, toward stability — that's the physical content of "coherency
-penalizes decomposition."
+Two structural properties follow directly from "a vector times itself":
+the matrix is **positive semi-definite** (built from a square, it can never
+be negative in any direction), so adding it to `H_chem` can only push
+eigenvalues *up*, toward stability — the mathematical statement of
+"coherency strain always opposes decomposition, never promotes it." And it
+is **rank 1** — only the single direction `eta` points along gets
+stiffened; the two composition directions orthogonal to it are completely
+unaffected by this correction. (`tests/test_coherent_hessian.py`'s
+`test_isotropic_correction_is_rank_one_and_psd` checks exactly this: two of
+the three eigenvalues of the correction matrix are zero, the third equals
+`2*V_m*M*|eta|^2`.)
 
 ```python
 H_coh = H_chem + correction
@@ -128,10 +187,20 @@ array([[27034.8, 15916.1,  5258. ],
 
 ## Step 5 — gauge-invariant eigenvalues
 
-Raw eigenvalues of `H_chem`/`H_coh` would depend on the arbitrary choice of
-V as the reference element. `hessian_eigenvalues()` projects through the
+Why this projection is needed: `H_chem` as built in Step 1 lives in a basis
+that secretly depends on which element got picked as the reference (V,
+here) — Hf, Nb, Ti are treated as independent coordinates and V is
+whatever's left over, and that asymmetry is baked into the raw matrix
+entries. If "is this alloy stable" (the sign of the smallest eigenvalue)
+changed depending on whether V, Hf, or Nb happened to be labeled the
+dependent component, that would be an artifact of notation, not physics.
+`hessian_eigenvalues()` removes that dependence by projecting through the
 orthogonal matrix `KADIRVEL_HF_NB_TI_O` (Table 1, Kadirvel et al., *Scripta
-Materialia* 212 (2022) 114521) first, so the result doesn't:
+Materialia* 212 (2022) 114521) first — it rotates into a basis where all
+four elements are treated symmetrically (genuinely orthonormal composition
+directions, not "three independents plus a leftover"), so the eigenvalues
+computed afterward are the same no matter which element you'd chosen as
+reference. That's what "gauge-invariant" means here:
 
 ```python
 from phasefoundry.thermodynamics.coherent_hessian import (
