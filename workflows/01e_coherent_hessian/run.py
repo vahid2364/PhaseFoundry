@@ -1,8 +1,12 @@
 """
-Step 1e — Isotropic coherent-Hessian stability sweep
+Step 1e — Coherent-Hessian stability sweep
 ======================================================
-Computes chemical and coherent (isotropic Cahn 1961) Hessian eigenvalues
-over a temperature sweep, for one or more compositions, and plots them.
+Computes chemical and coherent Hessian eigenvalues over a temperature
+sweep, for one or more compositions, and plots them -- both the classical
+isotropic (Cahn 1961) single-scalar-M correction, and its direction-
+dependent generalization H_coh(n) = H + 2*Vm*Y(n)*(eta (x) eta), evaluated
+at the worst-case (softest) wavevector direction for the actual cubic
+C_ijkl at each composition.
 
 This is the config-driven, reproducible replacement for the calculation in
 ``notebooks/stability_analysis_nonisotropic.ipynb``: that notebook queried
@@ -46,9 +50,12 @@ from phasefoundry.config import load_config, apply_overrides, resolve_paths, sum
 from phasefoundry.thermodynamics.coherent_hessian import (
     chemical_hessian,
     isotropic_coherent_correction,
+    anisotropic_coherent_correction,
+    softest_direction,
     hessian_eigenvalues,
     KADIRVEL_HF_NB_TI_O,
 )
+from phasefoundry.elasticity.fft_solver import build_cubic_stiffness
 from phasefoundry.elasticity.sqs_interpolant import (
     load_and_filter, build_interpolators, query_composition,
     vegard_eta_coefficients,
@@ -132,19 +139,37 @@ def run(cfg: dict) -> Path:
         eta   = vegard_eta_coefficients(interps, comp, independent_elements, delta_fd=delta_fd)
         M_GPa = props["biaxial_modulus_M_GPa"]
         a_ref = props["a_relaxed_A"]
-        print(f"    a_ref = {a_ref:.4f} A   M = {M_GPa:.4f} GPa")
+        C11, C12, C44 = props["C11_GPa"], props["C12_GPa"], props["C44_GPa"]
+        A_Z = 2.0 * C44 / (C11 - C12)
+        print(f"    a_ref = {a_ref:.4f} A   M (CSV) = {M_GPa:.4f} GPa   A_Z = {A_Z:.4f}")
         for el in independent_elements:
             print(f"    eta_{el} = {eta[el]:.6f}")
 
-        correction = isotropic_coherent_correction(
+        # isotropic correction (single scalar M from the CSV)
+        correction_iso = isotropic_coherent_correction(
             eta, M_GPa * 1e9, a_ref,
             independent_elements=independent_elements,
             atoms_per_cell=atoms_per_cell,
         )
 
+        # anisotropic correction, evaluated at the worst-case (softest) direction
+        # for the actual cubic C_ijkl at this composition
+        C_tensor = build_cubic_stiffness(C11 * 1e9, C12 * 1e9, C44 * 1e9)
+        scan = softest_direction(C_tensor)
+        Y_min_GPa = scan["Y_min"] / 1e9
+        n_min = scan["n_min"]
+        print(f"    Y_min = {Y_min_GPa:.4f} GPa  along n = {np.round(n_min, 3)}  "
+              f"(worst-case direction)")
+        correction_aniso = anisotropic_coherent_correction(
+            C_tensor, n_min, eta, a_ref,
+            independent_elements=independent_elements,
+            atoms_per_cell=atoms_per_cell,
+        )
+
         n_ind = len(independent_elements)
-        chem_eigs = np.full((len(T_values), n_ind), np.nan)
-        coh_eigs  = np.full((len(T_values), n_ind), np.nan)
+        chem_eigs       = np.full((len(T_values), n_ind), np.nan)
+        coh_eigs_iso     = np.full((len(T_values), n_ind), np.nan)
+        coh_eigs_aniso   = np.full((len(T_values), n_ind), np.nan)
 
         for i, T in enumerate(T_values):
             try:
@@ -156,14 +181,15 @@ def run(cfg: dict) -> Path:
             except Exception as exc:
                 print(f"    [skip] T={T:.0f} K: {exc}")
                 continue
-            H_coh = H_chem + correction
-            chem_eigs[i] = hessian_eigenvalues(H_chem, O)
-            coh_eigs[i]  = hessian_eigenvalues(H_coh, O)
+            chem_eigs[i]     = hessian_eigenvalues(H_chem, O)
+            coh_eigs_iso[i]   = hessian_eigenvalues(H_chem + correction_iso, O)
+            coh_eigs_aniso[i] = hessian_eigenvalues(H_chem + correction_aniso, O)
 
         out = pd.DataFrame({"temperature_K": T_values})
         for k in range(n_ind):
             out[f"chem_eig_{k + 1}"] = chem_eigs[:, k]
-            out[f"coh_eig_{k + 1}"]  = coh_eigs[:, k]
+            out[f"coh_eig_isotropic_M_{k + 1}"] = coh_eigs_iso[:, k]
+            out[f"coh_eig_anisotropic_Ymin_{k + 1}"] = coh_eigs_aniso[:, k]
         csv_path = out_dir / f"eigenvalues_{label}.csv"
         out.to_csv(csv_path, index=False)
         print(f"    Written: {csv_path}")
@@ -171,19 +197,25 @@ def run(cfg: dict) -> Path:
         provenance["compositions"][label] = {
             "composition": comp,
             "a_ref_A": round(float(a_ref), 6),
-            "M_GPa": round(float(M_GPa), 6),
+            "M_GPa_csv": round(float(M_GPa), 6),
+            "A_Z": round(float(A_Z), 6),
+            "Y_min_GPa": round(float(Y_min_GPa), 6),
+            "n_min": [round(float(x), 6) for x in n_min],
             "eta": {el: round(float(v), 8) for el, v in eta.items()},
         }
 
         ax.plot(T_values, chem_eigs[:, 0], linewidth=3, label=r"Chem $\lambda_1$")
         ax.plot(T_values, chem_eigs[:, 1], linewidth=2, linestyle=":",
                 label=r"Chem $\lambda_2$")
-        ax.plot(T_values, coh_eigs[:, 0], linewidth=3, label=r"Coherent $\lambda_1$")
+        ax.plot(T_values, coh_eigs_iso[:, 0], linewidth=3,
+                label=r"Coherent $\lambda_1$ (scalar $M$)")
+        ax.plot(T_values, coh_eigs_aniso[:, 0], linewidth=2.5, linestyle="--",
+                label=r"Coherent $\lambda_1$ ($Y(\mathbf{n}_{\min})$, anisotropic)")
         ax.axhline(0.0, color="black", linestyle="--", linewidth=1)
         ax.set_xlabel("Temperature (K)")
         ax.set_ylabel("Eigenvalues (J/mol)")
         ax.set_title(label)
-        ax.legend()
+        ax.legend(fontsize=8)
 
     fig.tight_layout()
     fig_path_png = out_dir / "fig_04_eigenvalues.png"

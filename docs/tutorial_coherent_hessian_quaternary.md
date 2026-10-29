@@ -258,6 +258,142 @@ know what each piece means and just want the numbers.
 
 ---
 
+## Step 6 — generalizing to a direction-dependent coherency modulus Y(n)
+
+Step 4's scalar \(M\) is applied the same way regardless of which direction
+a composition fluctuation modulates along. That's only correct if the
+crystal is elastically isotropic. This alloy isn't: at the equiatomic
+composition \(A_Z = 2C_{44}/(C_{11}-C_{12}) = 1.29 \ne 1\), so the true
+coherency modulus depends on the wavevector direction \(\mathbf{n}\):
+
+$$
+H^{\rm coh}_{ij}(\mathbf{n}) = H^{\rm chem}_{ij} + 2 V_m\, Y(\mathbf{n})\, \eta_i \eta_j
+$$
+
+with
+
+$$
+Y(\mathbf{n}) = \frac{1}{2}\left[
+  C_{ijkl}\,\delta_{ij}\delta_{kl}
+  - n_i\,\sigma^0_{ij}\,\Omega_{jk}(\mathbf{n})\,\sigma^0_{kl}\,n_k
+\right],
+\qquad
+\sigma^0 = C\!:\!I,
+\qquad
+\Omega(\mathbf{n}) = \left[C_{ijkl}\,n_j n_l\right]^{-1}
+$$
+
+$\sigma^0$ is the "eigenstress" a unit dilatational eigenstrain would produce
+if the material were held rigidly fixed, and \(\Omega(\mathbf{n})\) is the
+same acoustic-tensor Green's function
+`phasefoundry.elasticity.fft_solver._build_green_operator()` builds for the
+real phase-field simulation — evaluated here at one direction instead of a
+full Fourier grid. `coherency_modulus()` implements this directly:
+
+```python
+from phasefoundry.thermodynamics.coherent_hessian import coherency_modulus
+from phasefoundry.elasticity.fft_solver import build_cubic_stiffness
+
+C = build_cubic_stiffness(
+    props["C11_GPa"] * 1e9, props["C12_GPa"] * 1e9, props["C44_GPa"] * 1e9,
+)
+coherency_modulus(C, n=[1, 0, 0])
+```
+
+```
+128565186632.9  # Pa  ->  128.5652 GPa
+```
+
+Two checks validate this before trusting it for anything else. First, for
+an isotropic stiffness tensor (\(A_Z=1\)) \(Y(\mathbf{n})\) must come out
+identical for every direction — it does, to 9 significant figures, for any
+\(\mathbf{n}\) tested. Second, \(Y([1,0,0])\) must reduce to the textbook
+cubic \(\langle100\rangle\) result \(C_{11}+C_{12}-2C_{12}^2/C_{11}\) — it
+does, exactly. (Both checks are
+`tests/test_coherent_hessian.py::test_coherency_modulus_isotropic_is_direction_independent`
+and `::test_coherency_modulus_cubic_100_matches_closed_form`.) This also
+settles something from Step 2: the CSV's own `biaxial_modulus_M_GPa`
+column (144.60 GPa) is *not* this quantity — it's some other modulus,
+computed by whichever external script built that CSV column, not tracked
+in this repository. `coherency_modulus()` is the one that's actually
+validated against known closed-form elasticity results.
+
+**The direction that matters is the softest one** — the \(\mathbf{n}\) that
+minimizes \(Y(\mathbf{n})\), since that's the fluctuation direction least
+resisted by coherency and therefore the one that actually governs onset of
+instability:
+
+```python
+from phasefoundry.thermodynamics.coherent_hessian import (
+    softest_direction, anisotropic_coherent_correction,
+)
+
+scan = softest_direction(C)   # dense scan over the unit sphere
+scan["Y_min"] / 1e9, scan["n_min"]
+```
+
+```
+(128.5652, array([0., 0., 1.]))
+```
+
+For this composition (\(A_Z=1.29>1\)), the softest direction is exactly
+\(\langle100\rangle\) — the classical cubic-elasticity result ($A_Z>1 \Rightarrow
+\langle100\rangle$ soft, $A_Z<1 \Rightarrow \langle110\rangle$ soft),
+confirmed numerically here rather than assumed. There's no hidden softer
+direction being missed by using \(\langle100\rangle\); it already is the
+worst case.
+
+Using this validated, worst-case \(Y(\mathbf{n}_{\min})=128.57\)~GPa in
+place of the CSV's \(M=144.60\)~GPa:
+
+```python
+from phasefoundry.thermodynamics.coherent_hessian import (
+    evaluate_anisotropic_coherent_stability,
+)
+
+result = evaluate_anisotropic_coherent_stability(
+    db_path="data/tdb/HfNbTiV_BCC_PhaseForge_v2_Tdep.tdb",
+    elastic_csv_path="data/HfNbTiV_BCC_PhaseForge_v2/sqs_elastic_constants_HfNbVTi-orb-v2.csv",
+    elements=["HF", "NB", "TI", "V"],
+    phase="BCC_A2",
+    composition={"HF": 0.25, "NB": 0.25, "TI": 0.25},
+    temperature_K=773.15,
+    reference_element="V",
+    O=KADIRVEL_HF_NB_TI_O,
+)
+result["lambda_min_coherent"]
+```
+
+```
+9839.0   # J/mol -- still positive (stable), vs. +11214 with the CSV's M
+```
+
+**Reading the result:** the weaker, properly-derived worst-case correction
+lowers \(\lambda_{\min}(\rm coherent)\) from +11,214 to +9,839 J/mol — about
+12% smaller, as expected — but it stays solidly positive. Generalizing
+away from the isotropic single-\(M\) approximation to the actual
+direction-dependent, worst-case coherency modulus does **not** flip the
+stability conclusion at this composition and temperature. This rules out
+one specific candidate explanation for why a full phase-field simulation
+of this composition can still show decomposition despite this screening
+tool predicting stability: it is not that the isotropic approximation was
+hiding a softer, more destabilizing direction.
+
+`workflows/01e_coherent_hessian/run.py` runs Steps 1–6 together over the
+full temperature sweep and all three compositions, plotting both
+corrections side by side:
+
+![Chemical and coherent eigenvalues, both the isotropic scalar-M correction and the anisotropic worst-case Y(n) correction, for all three compositions](images/tutorial_coherent_hessian_quaternary/01_fig4_reproduction.png)
+
+The anisotropic (dashed red) curve sits consistently below the isotropic
+(solid green) one in all three panels — a weaker, more physically
+defensible correction — but never crosses back to negative anywhere the
+isotropic curve doesn't already predict instability. Each composition's
+`provenance.yaml` entry now also records `A_Z`, `Y_min_GPa`, and `n_min`
+alongside the existing `a_ref`/`M`/`eta` fields.
+
+---
+
 ## Running the full temperature sweep as a workflow
 
 Steps 1–5 are one composition, one temperature. The config-driven workflow
@@ -339,33 +475,36 @@ per composition and overall:
 ## Limitations: what this does not settle
 
 A positive \(\lambda_{\min}(H^{\rm coh})\) at one composition only rules out spontaneous,
-barrierless decomposition from that exact point, under the isotropic
-approximation used in Step 4. It does not, by itself, explain why a full
-elasto-chemical phase-field simulation of this same composition (see the
+barrierless decomposition from that exact point. It does not, by itself,
+explain why a full elasto-chemical phase-field simulation of this same
+composition (see the
 [2D ternary elasto-chemical tutorial](tutorial_2d_ternary_elastic.md) for
 the anisotropic machinery such a simulation actually uses) can still
 decompose, starting from finite-amplitude initial noise rather than an
-infinitesimal perturbation at the exact mean composition. Three candidate
-explanations remain open, in roughly decreasing order of how directly
-testable they are with code already in this repo:
+infinitesimal perturbation at the exact mean composition. Two candidate
+explanations remain open; a third has been tested and ruled out:
 
-1. **Isotropic vs. anisotropic elasticity** — Step 4 uses one scalar
-   modulus \(M\). The real solver's \(C_{ijkl}(x)\) is strongly anisotropic
-   at this composition (\(A_Z = 1.52\)); the isotropic worst-case estimate
-   here may simply be too stabilizing.
-2. **Fixed point vs. composition-dependent field** — \(\eta\) and \(M\) are
-   evaluated once, at exactly the mean composition (Steps 2–3). The real
-   simulation starts from finite-amplitude noise and re-evaluates
-   composition-dependent elastic properties pointwise as the field evolves.
+1. ~~**Isotropic vs. anisotropic elasticity**~~ — **ruled out (Step 6).**
+   Generalizing Step 4's single scalar \(M\) to the direction-dependent,
+   worst-case \(Y(\mathbf{n}_{\min})\) for this composition's actual
+   \(A_Z=1.29\) anisotropy weakens the correction (+9,839 vs. +11,214 J/mol)
+   but does not flip its sign. (Note: \(A_Z=1.29\) here is evaluated at the
+   exact equiatomic composition tested in Steps 1–6; the simulation's
+   matrix endpoint composition, a different point in composition space, has
+   its own separate \(A_Z\approx1.52\) — the two should not be conflated.)
+2. **Fixed point vs. composition-dependent field** — \(\eta\) and \(M\) (or
+   \(Y(\mathbf{n})\)) are evaluated once, at exactly the mean composition
+   (Steps 2–3, 6). The real simulation starts from finite-amplitude noise
+   and re-evaluates composition-dependent elastic properties pointwise as
+   the field evolves.
 3. **Local vs. global stability** — a positive \(\lambda_{\min}\) rules out
    linear (spinodal) decomposition, not a lower-energy two-phase state
    reached via nucleation past a finite barrier, which discretized noise
    over a long (700,000 s) simulation can still seed.
 
-None of these is resolved by the calculation in this tutorial; testing them
-would mean evaluating the anisotropic correction along multiple modulation
-directions instead of the isotropic worst case, or tracking local stability
-along the real matrix/precipitate composition trajectory rather than only
+Neither remaining item is resolved by the calculation in this tutorial;
+testing them would mean tracking local stability along the real
+matrix/precipitate composition trajectory rather than only
 at the symmetric starting point — natural follow-on work for this module.
 
 ---

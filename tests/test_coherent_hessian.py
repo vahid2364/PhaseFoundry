@@ -34,6 +34,10 @@ from phasefoundry.thermodynamics.coherent_hessian import (
     hessian_eigenvalues,
     project_gauge_invariant,
     evaluate_coherent_stability,
+    coherency_modulus,
+    softest_direction,
+    anisotropic_coherent_correction,
+    evaluate_anisotropic_coherent_stability,
     KADIRVEL_HF_NB_TI_O,
 )
 
@@ -201,6 +205,97 @@ def test_chemical_hessian_requires_full_composition():
                 DB_PATH, ELEMENTS, PHASE, {"HF": 0.25, "NB": 0.25},  # missing TI
                 T_500C_K, REFERENCE_ELEMENT,
             )
+
+
+# ── anisotropic (direction-dependent) coherency modulus Y(n) ──────────────────
+
+def _build_cubic_C(C11, C12, C44):
+    C = np.zeros((3, 3, 3, 3))
+    for i in range(3):
+        C[i, i, i, i] = C11
+        for j in range(3):
+            if i != j:
+                C[i, i, j, j] = C12
+                C[i, j, i, j] = C44
+                C[i, j, j, i] = C44
+    return C
+
+
+def test_coherency_modulus_isotropic_is_direction_independent():
+    """At A_Z=1 (2*C44 = C11-C12), Y(n) must be the same for every n."""
+    C11, C12 = 150.0e9, 50.0e9
+    C44 = (C11 - C12) / 2.0
+    C = _build_cubic_C(C11, C12, C44)
+    directions = [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 2, 3]]
+    values = [coherency_modulus(C, n) for n in directions]
+    assert all(v == pytest.approx(values[0], rel=1e-9) for v in values)
+
+
+def test_coherency_modulus_cubic_100_matches_closed_form():
+    """Y([100]) must equal the textbook Cahn <100> result C11+C12-2*C12^2/C11."""
+    C11, C12, C44 = 167.0903e9, 112.2250e9, 35.4109e9  # equiatomic matrix, production CSV
+    C = _build_cubic_C(C11, C12, C44)
+    Y_100 = coherency_modulus(C, [1, 0, 0])
+    expected = C11 + C12 - 2 * C12 ** 2 / C11
+    assert Y_100 == pytest.approx(expected, rel=1e-9)
+
+
+def test_softest_direction_matches_known_cubic_rule():
+    """For A_Z > 1, the cubic coherency modulus is minimized at <100>."""
+    C11, C12, C44 = 167.0903e9, 112.2250e9, 35.4109e9  # A_Z = 1.29 > 1
+    C = _build_cubic_C(C11, C12, C44)
+    scan = softest_direction(C, n_theta=60, n_phi=120)
+    assert np.allclose(np.abs(scan["n_min"]), [0, 0, 1], atol=1e-2)
+    assert scan["Y_min"] == pytest.approx(coherency_modulus(C, [1, 0, 0]), rel=1e-3)
+
+
+def test_equiatomic_500C_anisotropic_worst_case():
+    """
+    The reviewer-requested generalization: H_coh(n) = H + 2*Vm*Y(n)*eta*eta^T,
+    evaluated at the worst-case (softest) direction instead of a single
+    scalar M. Weaker correction than the (non-physical) CSV M value, but
+    still not enough to flip the sign at this composition/temperature.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        result = evaluate_anisotropic_coherent_stability(
+            db_path=DB_PATH,
+            elastic_csv_path=ELASTIC_CSV_PATH,
+            elements=ELEMENTS,
+            phase=PHASE,
+            composition=EQUIATOMIC,
+            temperature_K=T_500C_K,
+            reference_element=REFERENCE_ELEMENT,
+            O=KADIRVEL_HF_NB_TI_O,
+        )
+
+    assert result["A_Z"] == pytest.approx(1.2908, abs=5e-4)
+    assert np.allclose(np.abs(result["n_min"]), [0, 0, 1], atol=1e-2)
+    assert result["Y_min_GPa"] == pytest.approx(128.565, abs=5e-3)
+    assert result["lambda_min_chemical"] == pytest.approx(-39095.6, rel=1e-3)
+    assert result["lambda_min_coherent"] == pytest.approx(9839.0, rel=1e-2)
+    assert result["lambda_min_coherent"] > 0, (
+        "still stable at the worst-case direction -- rules out 'isotropic M "
+        "hides a softer direction' as the Fig. 4(a)/Fig. 7(b) explanation"
+    )
+
+
+def test_anisotropic_correction_matches_isotropic_at_same_Y():
+    """anisotropic_coherent_correction(C, n, ...) must reduce exactly to
+    isotropic_coherent_correction(..., M=Y(n), ...) -- same formula, just
+    with Y(n) computed instead of supplied."""
+    C11, C12, C44 = 167.0903e9, 112.2250e9, 35.4109e9
+    C = _build_cubic_C(C11, C12, C44)
+    n = [1, 0, 0]
+    eta = {"HF": 0.1, "NB": 0.05, "TI": 0.02}
+    ind = ["HF", "NB", "TI"]
+    a_ref = 3.3
+
+    aniso = anisotropic_coherent_correction(C, n, eta, a_ref, independent_elements=ind)
+    iso = isotropic_coherent_correction(
+        eta, coherency_modulus(C, n), a_ref, independent_elements=ind,
+    )
+    assert np.allclose(aniso, iso)
 
 
 if __name__ == "__main__":
