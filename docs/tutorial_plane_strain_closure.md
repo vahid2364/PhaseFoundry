@@ -18,15 +18,14 @@ physically a 3D crystal, it has to decide what happens to the part of the
 problem living along `z`.
 
 This tutorial works that decision out from first principles — what the
-standard choices even are, why the solver's existing default turns out to
-be neither of them, and how to build and check the one that actually fits
-a 2D cross-section of bulk material. Along the way, it turns out the new
-piece of physics isn't new at all: it reduces exactly to the \(Y(\mathbf{n})\)
-machinery the previous tutorial already built, once you specialize it to an
-in-plane direction. The last step walks through a real mistake made while
-applying this to an actual saved simulation, kept in deliberately — it's
-exactly the kind of mistake this particular closure invites, and working
-through it is more instructive than simply being warned about it.
+two standard choices are, how each one follows from Hooke's law, and how
+to check either one against an independent reference. Along the way, the
+new piece of physics turns out not to be new at all: it reduces exactly to
+the \(Y(\mathbf{n})\) machinery the previous tutorial already built, once
+specialized to an in-plane direction. The last step works through a
+modeling detail that matters specifically once this new option is used —
+kept in as a worked example, because seeing it worked through end to end
+is more useful than simply being told about it in the abstract.
 
 !!! note "Prerequisites"
     Steps 0–5 need nothing but the solver itself and a handful of made-up or
@@ -68,11 +67,10 @@ stiffness component at all — the 3×3 tensors get sliced down to 2×2 before
 anything happens with them. That's not a modeling error introduced by this
 codebase; it's the literal published algorithm this solver is based on
 (Gururajan & Abinandanan, *Acta Materialia* 55 (2007) 5015, which works in
-2D throughout and never discusses a closure by name). But it does mean the
-solver has been silently making a dimensional-reduction choice that is
-neither textbook option above, and this tutorial's job is to add the
-missing option and show it is the correct one for "a slice through bulk
-material."
+2D throughout and never discusses a closure by name). This tutorial adds
+the other textbook option, plane strain, as a second, explicit choice
+appropriate when the 2D simulation is meant to represent a slice through
+bulk 3D material rather than a thin, free-standing sheet.
 
 ## Step 1 — what an eigenstrain is, from Vegard's law up
 
@@ -109,8 +107,8 @@ could happen to it:
    eigenstrain, requires — including feeding back into \(\sigma_{11}\) and
    \(\sigma_{22}\) through the material's Poisson-type coupling.
 
-Option 1 is not option 2 or option 3. It discards information a correct
-treatment of either textbook case would keep.
+Option 1 is distinct from both textbook cases: it does not carry the
+out-of-plane information that either one uses.
 
 ## Step 3 — deriving the plane-strain closure
 
@@ -134,7 +132,7 @@ $$
             + \underbrace{C_{12}\,\varepsilon^{\rm el}_{33}}_{=\,-C_{12}\,\varepsilon^{*}_{33}}
 $$
 
-The underbraced term is exactly what `"in_plane_only"` throws away. It is not a
+The underbraced term is exactly what `"in_plane_only"` does not include. It is not a
 small correction in general — it is the entire Poisson-type coupling that
 makes a locked-in out-of-plane eigenstrain push back on the in-plane stress
 at all. `solve_elasticity`'s `eigenstrain_closure="plane_strain"` option
@@ -253,6 +251,8 @@ out = solve_elasticity(disk, C, C, eps_star_field=eps_star_field,
 | `plane_strain` | −928.57 MPa | −910.02 MPa | +2.00% |
 | ratio (plane_strain / in_plane_only) | 1.3000 | 1.3000 | — |
 
+![sigma_11 field around the circular inclusion for both closures, and the radial profile against each closure's own analytical target](images/tutorial_plane_strain_closure/01_circular_inclusion.png)
+
 **Reading the result:** both closures land within 2% of their own
 analytical target — each the *correct* target, not the same one — and the
 1.3× ratio predicted by hand above reappears exactly in the simulated
@@ -336,20 +336,20 @@ With the relation correct, the FFT solver's energy matches this \(Y(\mathbf{n})\
 to \(\sim 10^{-15}\) relative error, for 3 materials × 3 directions (9/9).
 The default `"in_plane_only"` closure, computed the same way but without the
 out-of-plane correction, is consistently *lower* — e.g. 86.3 vs. 120.8 GPa
-along \(\langle100\rangle\) for the production composition — quantifying
-exactly how much softer the published algorithm's omission makes the
-coherency barrier, rather than just asserting that it does. All of this is
+along \(\langle100\rangle\) for the production composition — giving a
+concrete, quantitative sense of how the two closures differ rather than
+just a qualitative statement that they do. All of this is
 captured as a permanent regression test in `tests/test_plane_strain_closure.py`
 (`TestPlaneStrainAnalytical`, `TestPlaneStrainFFTEnergy`,
 `TestInPlaneOnlyDiffersFromPlaneStrain`).
 
 ## Step 6 — a worked pitfall on real simulation data
 
-Applying this to an actual saved simulation (the −1.6% quaternary run whose
-`fields.npz` holds 61 composition snapshots) at first gave a nonsensical
-result: `plane_strain`'s energy came out **100,000× to 240,000× larger**
-than `in_plane_only`'s, varying with time in a way the physics gives no reason
-to expect.
+Applying this to an actual saved simulation (a quaternary run whose
+`fields.npz` holds 61 composition snapshots) at first gave a result far
+outside any physically reasonable range: `plane_strain`'s energy came out
+**100,000× to 240,000× larger** than `in_plane_only`'s, varying with time
+in a way the physics gives no reason to expect.
 
 ```
      t [s]   std(x_Hf)   U_in_plane_only   U_plane_strain (wrong)   ratio
@@ -359,7 +359,7 @@ to expect.
      325000   4.07e-03      42909.5           1.846e+08            4,303
 ```
 
-The cause: `FixedVegardModel.eps_star_field()` computes
+The reason: `FixedVegardModel.eps_star_field()` computes
 \(\varepsilon^*(x) = \sum_k \alpha_k\, c_k(x)\) using the **absolute**
 composition fields, not their deviation from the simulation's mean
 composition \(c_0 = (0.25, 0.25, 0.25)\). Evaluated at `c0` itself, this
@@ -367,7 +367,7 @@ gives \(\varepsilon^*_{33} \approx \sum_k \alpha_k \cdot 0.25 \approx 0.065\)
 — a 6.5% "eigenstrain," present even where the composition is exactly at
 its mean and there is, physically, nothing to be strained about.
 
-For `"in_plane_only"` this mistake is invisible: a spatially uniform offset to
+For `"in_plane_only"` this detail is invisible: a spatially uniform offset to
 \(\varepsilon^*\) just shifts the macroscopic strain \(E\) by the same
 constant and costs zero elastic energy, regardless of whether that offset
 is "real" or an artifact of where the reference point was chosen. For
@@ -415,19 +415,22 @@ Converting that ~1.7× ratio to absolute terms puts it in context. At
 \(-3.67\times10^{9}\ {\rm J/m^3}\) once converted through this run's molar
 volume. Even at the latest snapshot checked here (\(t=325{,}000\ {\rm s}\)),
 the full plane-strain elastic energy is \(\sim 1.18\times10^{5}\ {\rm
-J/m^3}\) — about five orders of magnitude smaller. At this stage of
-decomposition the correction is real and reproducible, but numerically
-negligible next to the chemical driving force; it only grows as
-decomposition proceeds toward finite amplitude.
+J/m^3}\) — about five orders of magnitude smaller. Early on, while
+composition fluctuations are still small, this correction stays
+numerically modest next to the chemical driving force; both closures'
+corrections grow together as decomposition proceeds toward finite
+amplitude.
 
-More importantly, the *direction* of the effect settles a question this
-closure was originally built to answer: `plane_strain` is *more*
-stabilizing than `in_plane_only`, not less. A phase-field simulation using the
-weaker `in_plane_only` closure that still shows decomposition would decompose
-*even more reluctantly* under the physically more complete `plane_strain`
-treatment — so this closure cannot be the explanation for a simulation that
-decomposes despite a linear-stability screen predicting it shouldn't.
-Ruling that out is itself a useful, if negative, result.
+The qualitative direction of the effect is the more general takeaway: for
+a purely dilatational eigenstrain (the case this whole tutorial has used),
+every comparison here — the circular inclusion, the single Fourier mode,
+and this real composition field — came out the same way, `plane_strain`
+giving a *larger* coherency correction than `in_plane_only`. That's a
+direct consequence of Step 3: the extra Poisson-type term only ever adds
+resistance to the in-plane deformation; it never removes any. Knowing that
+direction ahead of time is useful for interpreting either closure's
+result: `in_plane_only` gives the smaller of the two coherency corrections
+for this kind of eigenstrain, `plane_strain` the larger.
 
 **Practical rule:** use `"in_plane_only"` when reproducing a published algorithm
 exactly as described (it matches Gururajan & Abinandanan (2007) verbatim,
