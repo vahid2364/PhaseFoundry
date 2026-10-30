@@ -215,6 +215,7 @@ def solve_elasticity(
     eps_star_field: Optional[np.ndarray] = None,
     C_eff_override : Optional[np.ndarray] = None,
     C_field_override: Optional[np.ndarray] = None,
+    eigenstrain_closure: str = "truncate",
 ) -> dict:
     """
     Solve mechanical equilibrium for a 2D or 3D periodic microstructure.
@@ -264,6 +265,26 @@ def solve_elasticity(
         If provided, used directly as the spatially varying stiffness field
         C(x) instead of the default h(c)-blend between C_mat and C_ppt.
         Pass ``model.C_field(c_all, C_mat, C_ppt)`` for LocalVegardModel.
+    eigenstrain_closure : {"truncate", "plane_strain"}
+        How the 2D solve (``d=2``) treats the out-of-plane (33) eigenstrain
+        component. Ignored for 3D (``d=3``), where nothing is truncated.
+
+        ``"truncate"`` (default, unchanged behaviour): the out-of-plane
+        eigenstrain and stiffness components are dropped entirely --
+        neither plane strain nor plane stress, just omitted. This matches
+        Gururajan & Abinandanan (2007)'s own 2D formulation as published,
+        which never names a closure either.
+
+        ``"plane_strain"``: imposes eps_33 = eps_13 = eps_23 = 0 (no
+        out-of-plane displacement, appropriate for a 2D cross-section of a
+        bulk 3D material) while keeping the out-of-plane eigenstrain
+        eps*_33 (and eps*_13, eps*_23 if present) in the problem, so its
+        Poisson-type coupling into the in-plane stress via C_i3kl/C_ijk3
+        is retained. Requires ``eigenstrain``/``eps_star_field`` to carry
+        the full 3x3 eigenstrain (not pre-truncated to 2x2); raises
+        ValueError otherwise. No u_3 displacement field is solved for --
+        the correction is a closed-form addition to the in-plane stress,
+        not an extra degree of freedom.
 
     Returns
     -------
@@ -299,9 +320,10 @@ def solve_elasticity(
     C_d     = C_field[..., :d, :d, :d, :d]   # (*spatial, d, d, d, d)
     C_eff_d = C_eff[:d, :d, :d, :d]           # (d, d, d, d)
 
-    # Eigenstrain field ε*(x)
+    # Eigenstrain field ε*(x) -- keep the pre-truncation source around so the
+    # plane-strain closure below can still see the out-of-plane component.
     if eps_star_field is not None:
-        eps_star = eps_star_field[..., :d, :d]  # (*spatial, d, d)
+        eps_star_src = eps_star_field                        # (*spatial, Ds, Ds)
     else:
         if eigenstrain is None:
             raise ValueError(
@@ -309,8 +331,44 @@ def solve_elasticity(
                 "or 'eps_star_field' (*spatial,d,d)."
             )
         h = scheme.h(c)                                      # (*spatial,)
-        es = eigenstrain[:d, :d]                             # (d, d)
-        eps_star = h[..., None, None] * es[None, ...]        # (*spatial, d, d)
+        eps_star_src = h[..., None, None] * eigenstrain[None, ...]  # (*spatial, Ds, Ds)
+
+    eps_star = eps_star_src[..., :d, :d]                      # (*spatial, d, d)
+
+    # Plane-strain closure: eps_33 = eps_13 = eps_23 = 0 is imposed (no u_3
+    # field is solved for -- those total-strain components are just zero by
+    # construction), but eps*_33 etc. are NOT -- their Poisson-type coupling
+    # into the in-plane stress via C_i3kl/C_ijk3 survives. This correction
+    # is constant across iterations (it never involves the solved-for
+    # in-plane strain), so it is computed once, outside the loop below.
+    sigma_oop_correction = None
+    if eigenstrain_closure == "plane_strain" and d == 2:
+        if eps_star_src.shape[-2] < 3 or eps_star_src.shape[-1] < 3:
+            raise ValueError(
+                "eigenstrain_closure='plane_strain' requires a full 3x3 "
+                "eigenstrain (the out-of-plane eps*_33 component must be "
+                f"present); got shape (..., {eps_star_src.shape[-2]}, "
+                f"{eps_star_src.shape[-1]})."
+            )
+        C_io_full = C_field[..., :d, :d, :, :]                # (*spatial, d, d, 3, 3)
+        eps_el_oop = -eps_star_src.copy()                     # (*spatial, 3, 3)
+        eps_el_oop[..., :d, :d] = 0.0                         # in-plane handled per-iteration below
+        sigma_oop_correction = np.einsum(
+            "...ijkl,...kl->...ij", C_io_full, eps_el_oop,
+        )                                                      # (*spatial, d, d)
+    elif eigenstrain_closure not in ("truncate", "plane_strain"):
+        raise ValueError(
+            f"Unknown eigenstrain_closure {eigenstrain_closure!r}. "
+            "Choose 'truncate' or 'plane_strain'."
+        )
+
+    def _stress(eps_el_inplane: np.ndarray) -> np.ndarray:
+        """σ_ij from the in-plane elastic strain, plus the plane-strain
+        out-of-plane correction when active."""
+        sigma = np.einsum("...ijkl,...kl->...ij", C_d, eps_el_inplane)
+        if sigma_oop_correction is not None:
+            sigma = sigma + sigma_oop_correction
+        return sigma
 
     # Green's operator in Fourier space — (*spatial, d, d)
     G = _build_green_operator(C_eff_d, spatial_shape, Lx)
@@ -351,7 +409,7 @@ def solve_elasticity(
         )
         eps_fluct = np.real(np.fft.ifftn(eps_fluct_hat, axes=fft_axes))
         eps_el_0  = eps_fluct - eps_star
-        sigma_0   = np.einsum("...ijkl,...kl->...ij", C_d, eps_el_0)
+        sigma_0   = _stress(eps_el_0)
         tau_0     = sigma_0 - np.einsum("ijkl,...kl->...ij", C_eff_d, eps_fluct)
         tau_mean_0 = tau_0.mean(axis=tuple(range(d)))
         E   = voigt_to_tensor(S_eff_V @ tensor_to_voigt(sigma_applied - tau_mean_0))
@@ -366,9 +424,9 @@ def solve_elasticity(
     for iteration in range(max_iter):
         eps_old = eps.copy()
 
-        # stress  σ_ij = C_ijkl(x) [ε_kl - ε*_kl(x)]
+        # stress  σ_ij = C_ijkl(x) [ε_kl - ε*_kl(x)]  (+ plane-strain OOP term)
         eps_el = eps - eps_star
-        sigma  = np.einsum("...ijkl,...kl->...ij", C_d, eps_el)
+        sigma  = _stress(eps_el)
 
         # polarisation stress  τ_ij = σ_ij - C^eff_ijkl ε_kl
         sigma_eff = np.einsum("ijkl,...kl->...ij", C_eff_d, eps)
@@ -415,7 +473,7 @@ def solve_elasticity(
                   f"Δε_rms = {d_eps:.3e}")
 
     eps_el = eps - eps_star
-    sigma_final = np.einsum("...ijkl,...kl->...ij", C_d, eps_el)
+    sigma_final = _stress(eps_el)
 
     return {
         "strain"           : eps,
