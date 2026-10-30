@@ -61,16 +61,20 @@ A 2D phase-field simulation of a precipitate growing inside a bulk alloy is
 the second case, not the first — there's no free surface a few nanometers
 away; the material in `z` is just more of the same bulk crystal.
 
-`solve_elasticity`'s existing default, `eigenstrain_closure="in_plane_only"`, is
-neither of these. It simply never computes an out-of-plane eigenstrain or
-stiffness component at all — the 3×3 tensors get sliced down to 2×2 before
-anything happens with them. That's not a modeling error introduced by this
-codebase; it's the literal published algorithm this solver is based on
-(Gururajan & Abinandanan, *Acta Materialia* 55 (2007) 5015, which works in
-2D throughout and never discusses a closure by name). This tutorial adds
-the other textbook option, plane strain, as a second, explicit choice
-appropriate when the 2D simulation is meant to represent a slice through
-bulk 3D material rather than a thin, free-standing sheet.
+`solve_elasticity` provides two `eigenstrain_closure` options for a 2D
+simulation: `"in_plane_only"` (the default) and `"plane_strain"`. Of the
+three cases described above, `"in_plane_only"` corresponds to neither
+plane stress nor plane strain: it never computes an out-of-plane
+eigenstrain or stiffness component at all, slicing the 3×3 tensors down to
+2×2 before anything happens with them. This is the literal published
+algorithm the solver is based on (Gururajan & Abinandanan, *Acta
+Materialia* 55 (2007) 5015), which works in 2D throughout and does not
+name a closure at all. `"plane_strain"` provides the second textbook
+option explicitly, appropriate when the 2D simulation is meant to
+represent a slice through bulk 3D material rather than a thin,
+free-standing sheet. (Plane stress, the third textbook case from Step 0,
+is not implemented as an option here, since it is the case appropriate
+for a free-standing sheet rather than a precipitate inside bulk material.)
 
 ## Step 1 — what an eigenstrain is, from Vegard's law up
 
