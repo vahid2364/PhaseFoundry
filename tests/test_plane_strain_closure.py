@@ -18,10 +18,21 @@ Level 2 — Numerical: the production FFT solve_elasticity(...,
     microstructure) avoids the O(1e8)-vs-O(1e-7) stress cancellation that
     made pointwise comparisons unreliable during development.
 
-Level 3 — Contrast: the default "truncate" closure must differ from both
-    of the above by a material- and direction-dependent amount, confirming
-    it is neither plane strain nor plane stress, just omission (as
-    documented in solve_elasticity's docstring).
+Level 3 — Contrast: the default "in_plane_only" closure must differ from
+    both of the above by a material- and direction-dependent amount,
+    confirming it is neither plane strain nor plane stress, just omission
+    (as documented in solve_elasticity's docstring).
+
+Level 4 — Classical circular-inclusion (Eshelby disk): a uniform
+    dilatational eigenstrain filling a circular region, in an elastically
+    HOMOGENEOUS isotropic medium (same modulus inside and outside, so the
+    only thing under test is the eigenstrain closure, not a stiffness
+    contrast), has a known closed-form uniform interior stress -- one
+    formula for a genuinely-2D material ("in_plane_only"), a different one
+    (ratio 1+nu) for true plane strain. This is the same kind of check
+    Gururajan & Abinandanan (2007) themselves ran against Mura's analytical
+    solutions. See docs/tutorial_plane_strain_closure.md Step 5a for the
+    by-hand derivation of both formulas.
 """
 
 from __future__ import annotations
@@ -30,7 +41,9 @@ import numpy as np
 import pytest
 
 from phasefoundry.thermodynamics.coherent_hessian import coherency_modulus
-from phasefoundry.elasticity.fft_solver import build_cubic_stiffness, solve_elasticity
+from phasefoundry.elasticity.fft_solver import (
+    build_cubic_stiffness, build_isotropic_stiffness, solve_elasticity,
+)
 
 
 def _Y_planestrain_2x2(C: np.ndarray, n2: np.ndarray) -> float:
@@ -120,12 +133,13 @@ class TestPlaneStrainFFTEnergy:
         )
 
 
-class TestTruncateDiffersFromPlaneStrain:
-    """Level 3: "truncate" is neither plane strain nor plane stress -- confirm
-    it gives a materially different (lower) coherency energy, quantifying the
-    documented limitation rather than silently matching by coincidence."""
+class TestInPlaneOnlyDiffersFromPlaneStrain:
+    """Level 3: "in_plane_only" is neither plane strain nor plane stress --
+    confirm it gives a materially different (lower) coherency energy,
+    quantifying the documented limitation rather than silently matching by
+    coincidence."""
 
-    def test_truncate_softer_than_plane_strain_for_production_case(self):
+    def test_in_plane_only_softer_than_plane_strain_for_production_case(self):
         C11, C12, C44 = 154.8251e9, 102.9682e9, 39.346e9
         C = build_cubic_stiffness(C11, C12, C44)
         N = 32
@@ -139,9 +153,9 @@ class TestTruncateDiffersFromPlaneStrain:
             c, C, C, eps_star_field=eps_star_field,
             Lx=Lx, tol=1e-12, max_iter=200, eigenstrain_closure="plane_strain",
         )
-        out_tr = solve_elasticity(
+        out_ip = solve_elasticity(
             c, C, C, eps_star_field=eps_star_field,
-            Lx=Lx, tol=1e-12, max_iter=200, eigenstrain_closure="truncate",
+            Lx=Lx, tol=1e-12, max_iter=200, eigenstrain_closure="in_plane_only",
         )
 
         eps_el_full_ps = np.zeros((N, N, 3, 3))
@@ -151,14 +165,99 @@ class TestTruncateDiffersFromPlaneStrain:
             "...ij,ijkl,...kl->...", eps_el_full_ps, C, eps_el_full_ps
         )).mean() / eta0**2
 
-        eps_el_2d_tr = out_tr["elastic_strain"]
-        Y_tr_2d_only = 2.0 * (0.5 * np.einsum(
-            "...ab,abcd,...cd->...", eps_el_2d_tr, C[:2, :2, :2, :2], eps_el_2d_tr
+        eps_el_2d_ip = out_ip["elastic_strain"]
+        Y_ip_2d_only = 2.0 * (0.5 * np.einsum(
+            "...ab,abcd,...cd->...", eps_el_2d_ip, C[:2, :2, :2, :2], eps_el_2d_ip
         )).mean() / eta0**2
 
-        assert Y_tr_2d_only < Y_ps, (
-            "truncate closure should understate the coherency energy relative "
-            f"to plane_strain: truncate={Y_tr_2d_only:.4e}, plane_strain={Y_ps:.4e}"
+        assert Y_ip_2d_only < Y_ps, (
+            "in_plane_only closure should understate the coherency energy "
+            f"relative to plane_strain: in_plane_only={Y_ip_2d_only:.4e}, "
+            f"plane_strain={Y_ps:.4e}"
+        )
+
+
+class TestCircularInclusion:
+    """Level 4: classical Eshelby-disk check (see docs/tutorial_plane_strain_closure.md
+    Step 5a for the by-hand derivation of both closed-form target stresses)."""
+
+    @staticmethod
+    def _sigma_rr_analytical(G, nu, eps0, closure):
+        if closure == "in_plane_only":
+            return -G * eps0 / (1.0 - nu)
+        if closure == "plane_strain":
+            return -G * (1.0 + nu) * eps0 / (1.0 - nu)
+        raise ValueError(closure)
+
+    @staticmethod
+    def _run_disk(G, nu, eps0, a_over_Lx, N, Lx=1.0):
+        C = build_isotropic_stiffness(G, nu)
+        x = np.linspace(0.0, Lx, N, endpoint=False)
+        X, Y = np.meshgrid(x, x, indexing="ij")
+        x0 = y0 = Lx / 2.0
+        dx = np.minimum(np.abs(X - x0), Lx - np.abs(X - x0))
+        dy = np.minimum(np.abs(Y - y0), Lx - np.abs(Y - y0))
+        r = np.sqrt(dx**2 + dy**2)
+        a = a_over_Lx * Lx
+        disk = (r < a).astype(float)
+
+        eps_star_field = eps0 * disk[..., None, None] * np.eye(3)[None, None, ...]
+        results = {}
+        for closure in ("in_plane_only", "plane_strain"):
+            out = solve_elasticity(
+                disk, C, C, eps_star_field=eps_star_field,
+                Lx=Lx, tol=1e-10, max_iter=1000, eigenstrain_closure=closure,
+            )
+            inner = r < 0.5 * a
+            results[closure] = float(out["stress"][..., 0, 0][inner].mean())
+        return results
+
+    def test_fft_matches_each_closures_own_analytical_target(self):
+        """Both closures must land near their own (different) analytical
+        answer -- the residual is a periodic-image finite-domain effect
+        (shrinks with a/Lx, not with resolution), not solver error."""
+        G, nu, eps0 = 50e9, 0.3, 0.01
+        sigma = self._run_disk(G, nu, eps0, a_over_Lx=0.05, N=256)
+        for closure in ("in_plane_only", "plane_strain"):
+            target = self._sigma_rr_analytical(G, nu, eps0, closure)
+            rel = abs(sigma[closure] - target) / abs(target)
+            assert rel < 0.02, (
+                f"{closure}: FFT={sigma[closure]:.4e}, analytical={target:.4e}, "
+                f"rel diff={rel:.4f}"
+            )
+
+    def test_ratio_matches_one_plus_nu(self):
+        """The ratio plane_strain/in_plane_only must match the closed-form
+        1+nu prediction, independent of the periodic-image error common to
+        both."""
+        G, nu, eps0 = 50e9, 0.3, 0.01
+        sigma = self._run_disk(G, nu, eps0, a_over_Lx=0.08, N=256)
+        ratio = sigma["plane_strain"] / sigma["in_plane_only"]
+        assert abs(ratio - (1.0 + nu)) < 1e-3, f"ratio={ratio:.6f}, expected {1+nu}"
+
+    def test_error_shrinks_with_smaller_inclusion_not_with_resolution(self):
+        """Confirms the residual gap to the analytical (infinite-matrix)
+        target is a finite-domain-size artifact: it tracks a/Lx, and is
+        essentially unchanged by doubling the grid resolution."""
+        G, nu, eps0 = 50e9, 0.3, 0.01
+
+        def err(a_over_Lx, N):
+            sigma = self._run_disk(G, nu, eps0, a_over_Lx, N)
+            target = self._sigma_rr_analytical(G, nu, eps0, "in_plane_only")
+            return abs(sigma["in_plane_only"] - target) / abs(target)
+
+        err_large = err(0.12, 256)
+        err_small = err(0.03, 256)
+        assert err_small < err_large / 10, (
+            f"shrinking a/Lx should shrink the error roughly linearly: "
+            f"a/Lx=0.12 -> {err_large:.4f}, a/Lx=0.03 -> {err_small:.4f}"
+        )
+
+        err_N256 = err(0.08, 256)
+        err_N512 = err(0.08, 512)
+        assert abs(err_N512 - err_N256) < 0.01, (
+            f"doubling resolution at fixed a/Lx should barely move the error: "
+            f"N=256 -> {err_N256:.4f}, N=512 -> {err_N512:.4f}"
         )
 
 
@@ -188,7 +287,7 @@ class TestPlaneStrainInputValidation:
                 Lx=1.0, eigenstrain_closure="plane_stress",
             )
 
-    def test_default_truncate_unaffected_by_new_parameter(self):
+    def test_default_in_plane_only_unaffected_by_new_parameter(self):
         """The default behaviour must stay byte-for-byte unchanged."""
         C_mat = build_cubic_stiffness(246e9, 132e9, 28e9)
         C_ppt = build_cubic_stiffness(200e9, 110e9, 20e9)
@@ -202,6 +301,6 @@ class TestPlaneStrainInputValidation:
         )
         out_explicit = solve_elasticity(
             c, C_mat, C_ppt, eigenstrain=0.01 * np.eye(2),
-            Lx=1e-6, tol=1e-8, max_iter=200, eigenstrain_closure="truncate",
+            Lx=1e-6, tol=1e-8, max_iter=200, eigenstrain_closure="in_plane_only",
         )
         np.testing.assert_array_equal(out_default["stress"], out_explicit["stress"])

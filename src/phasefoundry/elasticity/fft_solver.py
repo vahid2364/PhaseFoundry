@@ -215,7 +215,7 @@ def solve_elasticity(
     eps_star_field: Optional[np.ndarray] = None,
     C_eff_override : Optional[np.ndarray] = None,
     C_field_override: Optional[np.ndarray] = None,
-    eigenstrain_closure: str = "truncate",
+    eigenstrain_closure: str = "in_plane_only",
 ) -> dict:
     """
     Solve mechanical equilibrium for a 2D or 3D periodic microstructure.
@@ -265,11 +265,11 @@ def solve_elasticity(
         If provided, used directly as the spatially varying stiffness field
         C(x) instead of the default h(c)-blend between C_mat and C_ppt.
         Pass ``model.C_field(c_all, C_mat, C_ppt)`` for LocalVegardModel.
-    eigenstrain_closure : {"truncate", "plane_strain"}
+    eigenstrain_closure : {"in_plane_only", "plane_strain"}
         How the 2D solve (``d=2``) treats the out-of-plane (33) eigenstrain
-        component. Ignored for 3D (``d=3``), where nothing is truncated.
+        component. Ignored for 3D (``d=3``), where nothing is dropped.
 
-        ``"truncate"`` (default, unchanged behaviour): the out-of-plane
+        ``"in_plane_only"`` (default, unchanged behaviour): the out-of-plane
         eigenstrain and stiffness components are dropped entirely --
         neither plane strain nor plane stress, just omitted. This matches
         Gururajan & Abinandanan (2007)'s own 2D formulation as published,
@@ -356,10 +356,10 @@ def solve_elasticity(
         sigma_oop_correction = np.einsum(
             "...ijkl,...kl->...ij", C_io_full, eps_el_oop,
         )                                                      # (*spatial, d, d)
-    elif eigenstrain_closure not in ("truncate", "plane_strain"):
+    elif eigenstrain_closure not in ("in_plane_only", "plane_strain"):
         raise ValueError(
             f"Unknown eigenstrain_closure {eigenstrain_closure!r}. "
-            "Choose 'truncate' or 'plane_strain'."
+            "Choose 'in_plane_only' or 'plane_strain'."
         )
 
     def _stress(eps_el_inplane: np.ndarray) -> np.ndarray:

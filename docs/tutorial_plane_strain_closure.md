@@ -62,7 +62,7 @@ A 2D phase-field simulation of a precipitate growing inside a bulk alloy is
 the second case, not the first — there's no free surface a few nanometers
 away; the material in `z` is just more of the same bulk crystal.
 
-`solve_elasticity`'s existing default, `eigenstrain_closure="truncate"`, is
+`solve_elasticity`'s existing default, `eigenstrain_closure="in_plane_only"`, is
 neither of these. It simply never computes an out-of-plane eigenstrain or
 stiffness component at all — the 3×3 tensors get sliced down to 2×2 before
 anything happens with them. That's not a modeling error introduced by this
@@ -98,7 +98,7 @@ number as \(\varepsilon^*_{11}(x,y)\) and \(\varepsilon^*_{22}(x,y)\), just
 along an axis the simulation doesn't track a displacement for. Three things
 could happen to it:
 
-1. **Ignore it** (`"truncate"`): never compute it, never let it affect
+1. **Ignore it** (`"in_plane_only"`): never compute it, never let it affect
    anything. This is the current default.
 2. **Plane stress**: let \(\varepsilon_{33}\) float freely so
    \(\sigma_{33}=0\) — wrong physics here (Step 0), but worth naming so it's
@@ -134,7 +134,7 @@ $$
             + \underbrace{C_{12}\,\varepsilon^{\rm el}_{33}}_{=\,-C_{12}\,\varepsilon^{*}_{33}}
 $$
 
-The underbraced term is exactly what `"truncate"` throws away. It is not a
+The underbraced term is exactly what `"in_plane_only"` throws away. It is not a
 small correction in general — it is the entire Poisson-type coupling that
 makes a locked-in out-of-plane eigenstrain push back on the in-plane stress
 at all. `solve_elasticity`'s `eigenstrain_closure="plane_strain"` option
@@ -185,10 +185,107 @@ this two different ways.
 
 ## Step 5 — validating the closure
 
-**Problem A — pure algebra, no solver.** Re-derive \(Y(\mathbf{n})\) using
-*only* the in-plane \(2\times2\) acoustic-tensor block (no `z`-components
-anywhere in the calculation), and compare against the full 3D formula from
-the coherent-Hessian tutorial:
+### Step 5a — a circular precipitate against the classical analytical solution
+
+The most convincing check isn't an abstract Fourier mode — it's the same
+kind of problem Gururajan & Abinandanan (2007) themselves validated their
+solver against: a circular precipitate, with a known exact solution from
+classical elasticity (Eshelby, Mura) to compare against. Set up the
+simplest version of it: an isotropic material, shear modulus \(G\) and
+Poisson's ratio \(\nu\), with a uniform dilatational eigenstrain
+\(\varepsilon_0\) filling a circular region of radius \(a\) and *exactly
+the same elastic constants* outside it — no stiffness contrast, so the
+only thing being tested is the eigenstrain closure, not the solver's
+handling of a material interface.
+
+**Deriving both analytical answers by hand.** By symmetry the displacement
+is purely radial, \(u_r(r)\). Outside the inclusion there's no eigenstrain,
+and solving the axisymmetric equilibrium equation with "stress-free at
+infinity" rules out the growing solution, leaving \(u_r^{\rm out}=B/r\).
+Inside, "bounded at the origin" rules out the \(1/r\) part, leaving
+\(u_r^{\rm in}=A\,r\) — notably a *uniform* strain, which is the classical
+Eshelby property: a circular (or spherical, or any ellipsoidal) region with
+uniform eigenstrain develops perfectly uniform stress and strain inside it,
+for any radius. Matching \(u_r\) and the traction \(\sigma_{rr}\) at
+\(r=a\) gives one equation for \(A\) (and hence the interior stress) in
+each of the two cases:
+
+- **Genuinely 2D** (no `z` at all — Gururajan & Abinandanan's own
+  formulation, and this repo's `"in_plane_only"` closure once the material is
+  isotropic): Hooke's law uses only the in-plane trace,
+  \(\sigma_{rr}=\lambda(\varepsilon_{rr}+\varepsilon_{\theta\theta})+2\mu\varepsilon_{rr}\).
+  Working through the matching conditions:
+  $$
+  \sigma_{rr}^{\rm in} = \sigma_{\theta\theta}^{\rm in}
+  = -\frac{G}{1-\nu}\,\varepsilon_0
+  $$
+- **True plane strain** (\(\varepsilon_{zz}\equiv0\) imposed everywhere,
+  but \(\varepsilon^{*}_{zz}=\varepsilon_0\) is still physically present,
+  so \(\varepsilon^{\rm el}_{zz}=-\varepsilon_0\) is a nonzero, *fixed*
+  elastic strain that enters Hooke's law's three-index trace even though no
+  `z` displacement is ever solved for): the same matching procedure, now
+  carrying that extra term through, gives
+  $$
+  \sigma_{rr}^{\rm in} = \sigma_{\theta\theta}^{\rm in}
+  = -\frac{G(1+\nu)}{1-\nu}\,\varepsilon_0
+  $$
+
+Both are exact, closed-form, and independent of \(a\). Their ratio is
+\(1+\nu\) — a clean, specific numerical prediction, derivable with pencil
+and paper before running a single line of code: for \(\nu=0.3\),
+`plane_strain` should come out exactly 1.3× `in_plane_only`.
+
+**Checking the solver against both.** \(G=50\) GPa, \(\nu=0.3\),
+\(\varepsilon_0=0.01\), a sharp circular eigenstrain field of radius
+\(a=0.08 L_x\) on a 256×256 periodic grid, same `C_mat=C_ppt` everywhere
+(homogeneous modulus):
+
+```python
+disk = (r < a).astype(float)                       # sharp indicator, r from domain center
+eps_star_field = eps0 * disk[..., None, None] * np.eye(3)[None, None, ...]
+out = solve_elasticity(disk, C, C, eps_star_field=eps_star_field,
+                        Lx=Lx, eigenstrain_closure=closure)
+```
+
+| | analytical | FFT solver (\(a/L_x=0.08\)) | error |
+|---|---|---|---|
+| `in_plane_only` | −714.29 MPa | −700.01 MPa | +2.00% |
+| `plane_strain` | −928.57 MPa | −910.02 MPa | +2.00% |
+| ratio (plane_strain / in_plane_only) | 1.3000 | 1.3000 | — |
+
+**Reading the result:** both closures land within 2% of their own
+analytical target — each the *correct* target, not the same one — and the
+1.3× ratio predicted by hand above reappears exactly in the simulated
+numbers, to 4 significant figures. The ~2% gap isn't solver error: the
+analytical formula assumes a single inclusion in a truly *infinite* matrix,
+while the FFT solver sees a periodic array of inclusions (one per domain
+image), so neighboring periodic copies perturb the field. Shrinking the
+inclusion relative to the domain confirms this directly — the error tracks
+\(a/L_x\), not grid resolution:
+
+| \(a/L_x\) | error (either closure) |
+|---|---|
+| 0.12 | 4.53% |
+| 0.08 | 2.00% |
+| 0.05 | 0.71% |
+| 0.03 | 0.13% |
+
+(Doubling the grid resolution at fixed \(a/L_x\) changes the error by
+\(<0.1\) percentage points — confirming it's a finite-domain-size effect,
+not a discretization one.) This is the same ~1% ballpark of agreement
+Gururajan & Abinandanan reported for their own circular/elliptical
+precipitate checks against Mura's solutions.
+
+### Step 5b — a single Fourier mode, for the real (anisotropic) material
+
+The circular-precipitate check above only works cleanly for an isotropic
+material — an anisotropic circular inclusion doesn't have as simple a
+closed form. To check the closure for the actual cubic, anisotropic
+production elastic constants, go back to the \(Y(\mathbf{n})\) connection
+from Step 4 instead. Re-derive \(Y(\mathbf{n})\) using *only* the in-plane
+\(2\times2\) acoustic-tensor block (no `z`-components anywhere in the
+calculation), and compare against the full 3D formula from the
+coherent-Hessian tutorial:
 
 ```python
 def Y_planestrain_2x2(C, n2):
@@ -207,16 +304,16 @@ Checked against `coherency_modulus(C, n)` for three materials (\(A_Z=0.7\),
 in-plane angles each — every pair agrees to machine precision
 (`rel.diff < 1e-12`), confirming Step 4's claim is exact, not approximate.
 
-**Problem B — does the actual FFT solver agree?** Build an eigenstrain
-field that's a single, exactly-representable Fourier mode,
+Then feed a single, exactly-representable Fourier-mode eigenstrain field,
 \(\varepsilon^*(x,y) = \eta_0 \cos(\mathbf{k}\cdot\mathbf{r})\,\delta_{ij}\),
-run `solve_elasticity(..., eigenstrain_closure="plane_strain")` on a
-homogeneous medium, and compare its total elastic energy to Problem A's
-prediction. A single mode (rather than a general microstructure) sidesteps
-the catastrophic cancellation that made pointwise stress comparisons
-unreliable earlier in this closure's development — the energies compared
-here are directly the quantities of interest, not a near-zero difference of
-two much larger numbers.
+into `solve_elasticity(..., eigenstrain_closure="plane_strain")` on a
+homogeneous medium, and compare its total elastic energy to the formula
+above. A single mode (rather than a general microstructure, and unlike
+Step 5a's sharp disk) sidesteps *both* the catastrophic cancellation that
+made pointwise stress comparisons unreliable earlier in this closure's
+development *and* the periodic-image error Step 5a has to live with — a
+single mode already *is* exactly periodic, so there's no finite-domain
+artifact to converge away.
 
 Converting energy to \(Y\) needs the amplitude convention spelled out, not
 assumed — getting this wrong is an easy, silent mistake. In the
@@ -235,31 +332,31 @@ validation like this one is ever off by exactly a clean integer factor
 across every single test case, suspect the amplitude convention before the
 solver.
 
-With the relation correct, the FFT solver's energy matches Problem A's
-\(Y(\mathbf{n})\) to \(\sim 10^{-15}\) relative error, for 3 materials × 3
-directions (9/9). The default `"truncate"` closure, computed the same way
-but without the out-of-plane correction, is consistently *lower* — e.g.
-86.3 vs. 120.8 GPa along \(\langle100\rangle\) for the production
-composition — quantifying exactly how much softer the published algorithm's
-omission makes the coherency barrier, rather than just asserting that it
-does. All of this is captured as a permanent regression test in
-`tests/test_plane_strain_closure.py` (`TestPlaneStrainAnalytical`,
-`TestPlaneStrainFFTEnergy`, `TestTruncateDiffersFromPlaneStrain`).
+With the relation correct, the FFT solver's energy matches this \(Y(\mathbf{n})\)
+to \(\sim 10^{-15}\) relative error, for 3 materials × 3 directions (9/9).
+The default `"in_plane_only"` closure, computed the same way but without the
+out-of-plane correction, is consistently *lower* — e.g. 86.3 vs. 120.8 GPa
+along \(\langle100\rangle\) for the production composition — quantifying
+exactly how much softer the published algorithm's omission makes the
+coherency barrier, rather than just asserting that it does. All of this is
+captured as a permanent regression test in `tests/test_plane_strain_closure.py`
+(`TestPlaneStrainAnalytical`, `TestPlaneStrainFFTEnergy`,
+`TestInPlaneOnlyDiffersFromPlaneStrain`).
 
 ## Step 6 — a worked pitfall on real simulation data
 
 Applying this to an actual saved simulation (the −1.6% quaternary run whose
 `fields.npz` holds 61 composition snapshots) at first gave a nonsensical
 result: `plane_strain`'s energy came out **100,000× to 240,000× larger**
-than `truncate`'s, varying with time in a way the physics gives no reason
+than `in_plane_only`'s, varying with time in a way the physics gives no reason
 to expect.
 
 ```
-     t [s]   std(x_Hf)   U_truncate   U_plane_strain (wrong)     ratio
-      25000   5.96e-04      762.5          1.845e+08           241,991
-     100000   8.37e-04     1739.6          1.846e+08           106,096
-     200000   1.62e-03     6701.9          1.846e+08            27,540
-     325000   4.07e-03    42909.5          1.846e+08             4,303
+     t [s]   std(x_Hf)   U_in_plane_only   U_plane_strain (wrong)   ratio
+      25000   5.96e-04        762.5           1.845e+08          241,991
+     100000   8.37e-04       1739.6           1.846e+08          106,096
+     200000   1.62e-03       6701.9           1.846e+08           27,540
+     325000   4.07e-03      42909.5           1.846e+08            4,303
 ```
 
 The cause: `FixedVegardModel.eps_star_field()` computes
@@ -270,7 +367,7 @@ gives \(\varepsilon^*_{33} \approx \sum_k \alpha_k \cdot 0.25 \approx 0.065\)
 — a 6.5% "eigenstrain," present even where the composition is exactly at
 its mean and there is, physically, nothing to be strained about.
 
-For `"truncate"` this mistake is invisible: a spatially uniform offset to
+For `"in_plane_only"` this mistake is invisible: a spatially uniform offset to
 \(\varepsilon^*\) just shifts the macroscopic strain \(E\) by the same
 constant and costs zero elastic energy, regardless of whether that offset
 is "real" or an artifact of where the reference point was chosen. For
@@ -295,19 +392,19 @@ With that correction, the same four snapshots give a stable, physically
 reasonable result:
 
 ```
-     t [s]   std(x_Hf)   U_truncate   U_plane_strain      ratio
-      25000   5.96e-04      761.7         1272.0           1.670
-     100000   8.37e-04     1738.7         2926.4           1.683
-     200000   1.62e-03     6701.9        11332.1           1.691
-     325000   4.07e-03    42909.5        72869.4           1.698
+     t [s]   std(x_Hf)   U_in_plane_only   U_plane_strain   ratio
+      25000   5.96e-04        761.7           1272.0        1.670
+     100000   8.37e-04       1738.7           2926.4        1.683
+     200000   1.62e-03       6701.9          11332.1        1.691
+     325000   4.07e-03      42909.5          72869.4        1.698
 ```
 
 A consistent ~1.67–1.70× across a 13× range of fluctuation amplitude — a
 robust, amplitude-independent material effect, not noise. The lesson for
-anyone else extending the `"truncate"`-only production pipeline to use
+anyone else extending the `"in_plane_only"`-only production pipeline to use
 `"plane_strain"`: check what your eigenstrain model does *at the mean
 composition* before trusting it under this closure. A convention that is
-completely harmless under `"truncate"` is not automatically harmless under
+completely harmless under `"in_plane_only"` is not automatically harmless under
 `"plane_strain"`.
 
 ## Step 7 — result, and which closure to use
@@ -325,14 +422,14 @@ decomposition proceeds toward finite amplitude.
 
 More importantly, the *direction* of the effect settles a question this
 closure was originally built to answer: `plane_strain` is *more*
-stabilizing than `truncate`, not less. A phase-field simulation using the
-weaker `truncate` closure that still shows decomposition would decompose
+stabilizing than `in_plane_only`, not less. A phase-field simulation using the
+weaker `in_plane_only` closure that still shows decomposition would decompose
 *even more reluctantly* under the physically more complete `plane_strain`
 treatment — so this closure cannot be the explanation for a simulation that
 decomposes despite a linear-stability screen predicting it shouldn't.
 Ruling that out is itself a useful, if negative, result.
 
-**Practical rule:** use `"truncate"` when reproducing a published algorithm
+**Practical rule:** use `"in_plane_only"` when reproducing a published algorithm
 exactly as described (it matches Gururajan & Abinandanan (2007) verbatim,
 and is the production default for that reason). Use `"plane_strain"` when
 the 2D simulation is meant to represent a slice through bulk 3D material
