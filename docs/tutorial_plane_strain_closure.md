@@ -1,15 +1,29 @@
 # Tutorial: The Plane-Strain Eigenstrain Closure for the 2D Elasticity Solver
 
-The [coherent-Hessian tutorial](tutorial_coherent_hessian_quaternary.md) works
-entirely with a single wavevector direction \(\mathbf{n}\) in an infinite 3D
-solid — it never has to decide what to do about a simulation that only
-spans two spatial dimensions. The actual phase-field solver
-(`phasefoundry.elasticity.fft_solver.solve_elasticity`) does have to decide
-that, every time it runs a 2D simulation of what is physically a 3D crystal.
-This tutorial builds that decision up from first principles, validates one
-particular choice against the Y(n) machinery from the previous tutorial, and
-then walks through a real mistake made while applying it to real simulation
-data — kept in because it's exactly the kind of mistake this closure invites.
+Every real crystal is three-dimensional, but a simulation of one doesn't
+have to be — it's common, and often necessary just to keep the computation
+tractable, to evolve a precipitate's microstructure on a 2D grid: composition
+and displacement fields that only ever vary in `x` and `y`, never in `z`.
+The [coherent-Hessian tutorial](tutorial_coherent_hessian_quaternary.md)
+never has to confront what that choice costs, because it analyzes a single
+composition wave along one direction \(\mathbf{n}\) in an infinite, fully
+3D solid — there is never a third dimension to set aside. The phase-field
+solver this repository actually runs for kinetics
+(`phasefoundry.elasticity.fft_solver.solve_elasticity`) can't avoid the
+question: every time it solves a genuinely 2D simulation of what is
+physically a 3D crystal, it has to decide what happens to the part of the
+problem living along `z`.
+
+This tutorial works that decision out from first principles — what the
+standard choices even are, why the solver's existing default turns out to
+be neither of them, and how to build and check the one that actually fits
+a 2D cross-section of bulk material. Along the way, it turns out the new
+piece of physics isn't new at all: it reduces exactly to the \(Y(\mathbf{n})\)
+machinery the previous tutorial already built, once you specialize it to an
+in-plane direction. The last step walks through a real mistake made while
+applying this to an actual saved simulation, kept in deliberately — it's
+exactly the kind of mistake this particular closure invites, and working
+through it is more instructive than simply being warned about it.
 
 !!! note "Prerequisites"
     Steps 0–5 need nothing but the solver itself and a handful of made-up or
@@ -24,7 +38,7 @@ data — kept in because it's exactly the kind of mistake this closure invites.
 
 ---
 
-## Step 0 — why a 2D simulation of a 3D crystal needs a decision at all
+## Step 0 — plane stress vs. plane strain, in the abstract
 
 A composition field `c(x, y)` only varies in two directions, but the crystal
 it represents still has a third one. Classical continuum mechanics has two
