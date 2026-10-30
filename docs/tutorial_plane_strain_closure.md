@@ -5,10 +5,13 @@ have to be — it's common, and often necessary just to keep the computation
 tractable, to evolve a precipitate's microstructure on a 2D grid: composition
 and displacement fields that only ever vary in `x` and `y`, never in `z`.
 The [coherent-Hessian tutorial](tutorial_coherent_hessian_quaternary.md)
-never has to confront what that choice costs, because it analyzes a single
-composition wave along one direction \(\mathbf{n}\) in an infinite, fully
-3D solid — there is never a third dimension to set aside. The phase-field
-solver this repository actually runs for kinetics
+never has to confront what that choice costs. It can evaluate a composition
+wave along *any* direction \(\mathbf{n}\) it likes — Step 6 there scans the
+entire unit sphere to find the softest one — but every one of those
+directions lives in an infinite, fully 3D solid with no spatial grid at
+all. There is simply never a third dimension to set aside, no matter how
+many directions get checked. The phase-field solver this repository
+actually runs for kinetics
 (`phasefoundry.elasticity.fft_solver.solve_elasticity`) can't avoid the
 question: every time it solves a genuinely 2D simulation of what is
 physically a 3D crystal, it has to decide what happens to the part of the
